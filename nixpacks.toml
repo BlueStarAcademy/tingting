@@ -1,0 +1,12 @@
+# Default for tingting-api service (override build/start for tingting-web in Railway dashboard)
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = ["npm run build:api"]
+
+[start]
+cmd = "npm run start:api"

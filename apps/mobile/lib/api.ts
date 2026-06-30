@@ -9,13 +9,16 @@ import type {
   UserProfile,
   Visit,
 } from '@tingting/shared';
+import { SHOP_ITEMS } from '@tingting/shared';
 import { getSupabase, isSupabaseConfigured } from './supabase';
+import { httpApi, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
 
-export { isSupabaseConfigured };
+export { isSupabaseConfigured, isHttpApiConfigured };
 
 export const api = {
   async getSession(): Promise<AuthSession | null> {
+    if (isHttpApiConfigured) return httpApi.getSession();
     if (!isSupabaseConfigured) return localStore.getSession();
     const sb = getSupabase()!;
     const { data } = await sb.auth.getSession();
@@ -24,6 +27,7 @@ export const api = {
   },
 
   async signIn(email: string, password: string): Promise<AuthSession> {
+    if (isHttpApiConfigured) return httpApi.signIn(email, password);
     if (!isSupabaseConfigured) return localStore.signIn(email, password);
     const sb = getSupabase()!;
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -32,6 +36,7 @@ export const api = {
   },
 
   async signUp(email: string, password: string, displayName: string): Promise<AuthSession> {
+    if (isHttpApiConfigured) return httpApi.signUp(email, password, displayName);
     if (!isSupabaseConfigured) return localStore.signUp(email, password, displayName);
     const sb = getSupabase()!;
     const { data, error } = await sb.auth.signUp({ email, password });
@@ -41,15 +46,18 @@ export const api = {
   },
 
   async signInDemo(): Promise<AuthSession> {
+    if (isHttpApiConfigured) return httpApi.signInDemo();
     return localStore.signInDemo();
   },
 
   async signOut(): Promise<void> {
+    if (isHttpApiConfigured) return httpApi.signOut();
     if (!isSupabaseConfigured) return localStore.signOut();
     await getSupabase()!.auth.signOut();
   },
 
   async getProfile(): Promise<UserProfile | null> {
+    if (isHttpApiConfigured) return httpApi.getProfile();
     if (!isSupabaseConfigured) return localStore.getProfile();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -67,6 +75,7 @@ export const api = {
   },
 
   async completeOnboarding(displayName: string): Promise<UserProfile> {
+    if (isHttpApiConfigured) return httpApi.completeOnboarding(displayName);
     if (!isSupabaseConfigured) return localStore.completeOnboarding(displayName);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -75,6 +84,7 @@ export const api = {
   },
 
   async getHomeDashboard(): Promise<HomeDashboard> {
+    if (isHttpApiConfigured) return httpApi.getHomeDashboard();
     if (!isSupabaseConfigured) return localStore.getHomeDashboard();
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('get_home_dashboard');
@@ -98,26 +108,30 @@ export const api = {
   },
 
   async getGroups(): Promise<Group[]> {
+    if (isHttpApiConfigured) return httpApi.getGroups();
     if (!isSupabaseConfigured) return localStore.getGroups();
     const dash = await this.getHomeDashboard();
     return dash.groups;
   },
 
   async createGroup(name: string, description?: string): Promise<{ group: Group; cost: number }> {
+    if (isHttpApiConfigured) return httpApi.createGroup(name, description);
     if (!isSupabaseConfigured) return localStore.createGroup(name, description);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('create_group', { p_name: name, p_description: description });
     if (error) throw error;
-    const group = await localStore.getGroup(data.id);
+    const group = await httpApi.getGroup(data.id);
     return { group: group!, cost: data.cost };
   },
 
   async getGroup(id: string): Promise<Group | null> {
+    if (isHttpApiConfigured) return httpApi.getGroup(id);
     if (!isSupabaseConfigured) return localStore.getGroup(id);
     return localStore.getGroup(id);
   },
 
   async getPlaces(regionCode?: string): Promise<Place[]> {
+    if (isHttpApiConfigured) return httpApi.getPlaces(regionCode);
     if (!isSupabaseConfigured) return localStore.getPlaces(regionCode);
     const sb = getSupabase()!;
     let q = sb.from('places').select('*');
@@ -127,6 +141,7 @@ export const api = {
   },
 
   async getPlace(id: string): Promise<Place | null> {
+    if (isHttpApiConfigured) return httpApi.getPlace(id);
     if (!isSupabaseConfigured) return localStore.getPlace(id);
     const sb = getSupabase()!;
     const { data } = await sb.from('places').select('*').eq('id', id).single();
@@ -134,6 +149,7 @@ export const api = {
   },
 
   async getVisits(): Promise<Visit[]> {
+    if (isHttpApiConfigured) return httpApi.getVisits();
     if (!isSupabaseConfigured) return localStore.getVisits();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -142,12 +158,14 @@ export const api = {
   },
 
   async getVisit(id: string): Promise<Visit | null> {
+    if (isHttpApiConfigured) return httpApi.getVisit(id);
     if (!isSupabaseConfigured) return localStore.getVisit(id);
     const visits = await this.getVisits();
     return visits.find((v) => v.id === id) ?? null;
   },
 
   async createVisit(input: Parameters<typeof localStore.createVisit>[0]): Promise<Visit> {
+    if (isHttpApiConfigured) return httpApi.createVisit(input);
     if (!isSupabaseConfigured) return localStore.createVisit(input);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -165,6 +183,7 @@ export const api = {
   },
 
   async updateVisit(id: string, patch: Partial<Visit>): Promise<Visit> {
+    if (isHttpApiConfigured) return httpApi.updateVisit(id, patch);
     if (!isSupabaseConfigured) return localStore.updateVisit(id, patch);
     const sb = getSupabase()!;
     const { data, error } = await sb.from('visits').update({
@@ -177,11 +196,13 @@ export const api = {
   },
 
   async getQuests(): Promise<Quest[]> {
+    if (isHttpApiConfigured) return httpApi.getQuests();
     if (!isSupabaseConfigured) return localStore.getQuests();
     return localStore.getQuests();
   },
 
   async completeQuest(questId: string, lat: number, lng: number): Promise<{ reward: number; stars: number }> {
+    if (isHttpApiConfigured) return httpApi.completeQuest(questId, lat, lng);
     if (!isSupabaseConfigured) return localStore.completeQuest(questId, lat, lng);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('complete_quest', { p_quest_id: questId, p_lat: lat, p_lng: lng });
@@ -190,6 +211,7 @@ export const api = {
   },
 
   async spendStars(amount: number, reason: string): Promise<number> {
+    if (isHttpApiConfigured) return httpApi.spendStars(amount, reason);
     if (!isSupabaseConfigured) return localStore.spendStars(amount, reason);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('spend_stars', { p_amount: amount, p_reason: reason });
@@ -198,6 +220,7 @@ export const api = {
   },
 
   async useAiFeature(feature: string): Promise<{ cost: number; stars: number }> {
+    if (isHttpApiConfigured) return httpApi.useAiFeature(feature);
     if (!isSupabaseConfigured) return localStore.useAiFeature(feature);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('use_ai_feature', { p_feature: feature });
@@ -206,6 +229,7 @@ export const api = {
   },
 
   async getRecommendations(placeId: string): Promise<PlaceRecommendation[]> {
+    if (isHttpApiConfigured) return httpApi.getRecommendations(placeId);
     if (!isSupabaseConfigured) return localStore.getRecommendations(placeId);
     const sb = getSupabase()!;
     const { data } = await sb.from('place_recommendations').select('*').eq('place_id', placeId);
@@ -220,6 +244,7 @@ export const api = {
   },
 
   async addRecommendation(placeId: string, text: string, rating: number): Promise<PlaceRecommendation> {
+    if (isHttpApiConfigured) return httpApi.addRecommendation(placeId, text, rating);
     if (!isSupabaseConfigured) return localStore.addRecommendation(placeId, text, rating);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -234,10 +259,12 @@ export const api = {
   },
 
   getShopItems(): ShopItem[] {
+    if (isHttpApiConfigured) return SHOP_ITEMS;
     return localStore.getShopItems();
   },
 
   async getUnlockedEditorAssets(): Promise<string[]> {
+    if (isHttpApiConfigured) return httpApi.getUnlockedEditorAssets();
     if (!isSupabaseConfigured) return localStore.getUnlockedEditorAssets();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -246,6 +273,7 @@ export const api = {
   },
 
   async unlockEditorAsset(assetId: string, cost: number): Promise<string[]> {
+    if (isHttpApiConfigured) return httpApi.unlockEditorAsset(assetId, cost);
     if (!isSupabaseConfigured) return localStore.unlockEditorAsset(assetId, cost);
     const sb = getSupabase()!;
     const { error } = await sb.rpc('spend_stars', { p_amount: cost, p_reason: 'editor_asset:' + assetId });

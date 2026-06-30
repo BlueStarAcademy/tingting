@@ -48,6 +48,18 @@ When env vars are set, `lib/api.ts` uses Supabase; otherwise local-store is prim
 ## Scripts
 
 ```bash
-npm run mobile          # from repo root
+npm run mobile          # from repo root — Expo dev server
 npm run typecheck       # TypeScript check
+npm run build:api       # Build Railway API
+npm run build:web       # Export Expo Web to apps/mobile/dist
 ```
+
+## Railway 배포
+
+**[docs/RAILWAY.md](docs/RAILWAY.md)** — PostgreSQL + API + Web 3서비스 설정 가이드 (한국어)
+
+요약:
+1. Railway에서 GitHub `BlueStarAcademy/tingting` 연결
+2. **PostgreSQL** 추가
+3. **tingting-api**: Build `npm install && npm run build:api`, Start `npm run start:api`
+4. **tingting-web**: Build `npm install && npm run build:web`, Start `npm run start:web`, Variable `EXPO_PUBLIC_API_URL`

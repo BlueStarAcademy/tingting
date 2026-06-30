@@ -1,0 +1,86 @@
+-- TingTing Railway PostgreSQL schema (no Supabase auth)
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL DEFAULT '',
+  display_name TEXT NOT NULL DEFAULT '',
+  stars INT NOT NULL DEFAULT 100,
+  onboarding_complete BOOLEAN NOT NULL DEFAULT false,
+  visited_regions TEXT[] NOT NULL DEFAULT '{}',
+  is_demo BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+  group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS places (
+  id TEXT PRIMARY KEY,
+  region_code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  category TEXT,
+  image_url TEXT
+);
+
+CREATE TABLE IF NOT EXISTS visits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  place_id TEXT NOT NULL REFERENCES places(id),
+  group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+  photo_uri TEXT,
+  edited_photo_uri TEXT,
+  note TEXT,
+  filter TEXT,
+  visited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION
+);
+
+CREATE TABLE IF NOT EXISTS quest_completions (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  quest_id TEXT NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, quest_id)
+);
+
+CREATE TABLE IF NOT EXISTS place_recommendations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  place_id TEXT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS editor_unlocks (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  asset_id TEXT NOT NULL,
+  unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, asset_id)
+);
+
+CREATE TABLE IF NOT EXISTS star_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount INT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

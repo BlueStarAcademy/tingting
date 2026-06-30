@@ -8,6 +8,13 @@
   ],
   "scripts": {
     "mobile": "npm run start --workspace=mobile",
-    "typecheck": "npm run typecheck --workspace=mobile"
+    "typecheck": "npm run typecheck --workspace=mobile",
+    "build:api": "npm run build --workspace=@tingting/api",
+    "start:api": "npm run start --workspace=@tingting/api",
+    "build:web": "npm run export:web --workspace=mobile",
+    "start:web": "serve apps/mobile/dist -s -l tcp://0.0.0.0:${PORT:-8080}"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
   }
 }

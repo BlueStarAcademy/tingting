@@ -1,0 +1,11 @@
+# Railway API service
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run start:api"
+restartPolicyType = "ON_FAILURE"
+
+[deploy.healthcheck]
+path = "/health"
+timeout = 120

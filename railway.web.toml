@@ -1,0 +1,7 @@
+# Railway Web service — rename service to tingting-web in dashboard
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run start:web"
+restartPolicyType = "ON_FAILURE"

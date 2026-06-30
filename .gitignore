@@ -3,6 +3,7 @@
 dist/
 apps/mobile/dist/
 apps/api/dist/
+packages/shared/dist/
 web-build/
 .env
 .env.local

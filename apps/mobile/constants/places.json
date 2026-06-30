@@ -1,0 +1,182 @@
+[
+  {
+    "id": "p-seo-1",
+    "regionCode": "SEO",
+    "name": "경복궁",
+    "description": "조선 왕조의 법궁",
+    "lat": 37.5796,
+    "lng": 126.977,
+    "category": "heritage"
+  },
+  {
+    "id": "p-seo-2",
+    "regionCode": "SEO",
+    "name": "남산타워",
+    "description": "서울의 랜드마크",
+    "lat": 37.5512,
+    "lng": 126.9882,
+    "category": "landmark"
+  },
+  {
+    "id": "p-bus-1",
+    "regionCode": "BUS",
+    "name": "해운대",
+    "description": "부산 대표 해변",
+    "lat": 35.1587,
+    "lng": 129.1604,
+    "category": "beach"
+  },
+  {
+    "id": "p-bus-2",
+    "regionCode": "BUS",
+    "name": "감천문화마을",
+    "description": "알록달록한 마을",
+    "lat": 35.0975,
+    "lng": 129.0107,
+    "category": "culture"
+  },
+  {
+    "id": "p-dae-1",
+    "regionCode": "DAE",
+    "name": "동성로",
+    "description": "대구의 번화가",
+    "lat": 35.8694,
+    "lng": 128.5938,
+    "category": "city"
+  },
+  {
+    "id": "p-icn-1",
+    "regionCode": "ICN",
+    "name": "월미도",
+    "description": "인천 바다 전망",
+    "lat": 37.4664,
+    "lng": 126.5972,
+    "category": "sea"
+  },
+  {
+    "id": "p-gwj-1",
+    "regionCode": "GWJ",
+    "name": "무등산",
+    "description": "광주의 상징",
+    "lat": 35.1347,
+    "lng": 126.9883,
+    "category": "mountain"
+  },
+  {
+    "id": "p-djn-1",
+    "regionCode": "DJN",
+    "name": "엑스포과학공원",
+    "description": "과학 테마파크",
+    "lat": 36.3745,
+    "lng": 127.3728,
+    "category": "science"
+  },
+  {
+    "id": "p-uls-1",
+    "regionCode": "ULS",
+    "name": "대왕암공원",
+    "description": "울산 해안 절경",
+    "lat": 35.4928,
+    "lng": 129.4342,
+    "category": "park"
+  },
+  {
+    "id": "p-sjg-1",
+    "regionCode": "SJG",
+    "name": "세종호수공원",
+    "description": "세종의 중심 공원",
+    "lat": 36.504,
+    "lng": 127.2495,
+    "category": "park"
+  },
+  {
+    "id": "p-ggd-1",
+    "regionCode": "GGD",
+    "name": "수원화성",
+    "description": "유네스코 세계유산",
+    "lat": 37.286,
+    "lng": 127.0117,
+    "category": "heritage"
+  },
+  {
+    "id": "p-gwn-1",
+    "regionCode": "GWN",
+    "name": "설악산",
+    "description": "강원 대표 산",
+    "lat": 38.1195,
+    "lng": 128.4655,
+    "category": "mountain"
+  },
+  {
+    "id": "p-ncb-1",
+    "regionCode": "NCB",
+    "name": "속리산",
+    "description": "국립공원",
+    "lat": 36.543,
+    "lng": 127.8728,
+    "category": "mountain"
+  },
+  {
+    "id": "p-scb-1",
+    "regionCode": "SCB",
+    "name": "공주",
+    "description": "백제 역사 도시",
+    "lat": 36.4465,
+    "lng": 127.119,
+    "category": "heritage"
+  },
+  {
+    "id": "p-njb-1",
+    "regionCode": "NJB",
+    "name": "전주한옥마을",
+    "description": "전통 한옥 거리",
+    "lat": 35.8154,
+    "lng": 127.153,
+    "category": "culture"
+  },
+  {
+    "id": "p-sjb-1",
+    "regionCode": "SJB",
+    "name": "순천만",
+    "description": "갈대 습지",
+    "lat": 34.8868,
+    "lng": 127.5278,
+    "category": "nature"
+  },
+  {
+    "id": "p-ngb-1",
+    "regionCode": "NGB",
+    "name": "경주",
+    "description": "신라 천년의 고도",
+    "lat": 35.8562,
+    "lng": 129.2247,
+    "category": "heritage"
+  },
+  {
+    "id": "p-sgb-1",
+    "regionCode": "SGB",
+    "name": "통영",
+    "description": "케이블카와 바다",
+    "lat": 34.8467,
+    "lng": 128.419,
+    "category": "sea"
+  },
+  {
+    "id": "p-jej-1",
+    "regionCode": "JEJ",
+    "name": "성산일출봉",
+    "description": "제주 UNESCO",
+    "lat": 33.4584,
+    "lng": 126.9425,
+    "category": "nature"
+  },
+  {
+    "id": "p-jej-2",
+    "regionCode": "JEJ",
+    "name": "한라산",
+    "description": "제주 최고봉",
+    "lat": 33.3617,
+    "lng": 126.5292,
+    "category": "mountain"
+  }
+]

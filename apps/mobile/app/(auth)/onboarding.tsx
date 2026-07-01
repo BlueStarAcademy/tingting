@@ -1,21 +1,23 @@
 import { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
 import { ProgressRing } from '@/components/ProgressRing';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const { profile, refresh } = useAuth();
+  const { t } = useLocale();
   const [name, setName] = useState(profile?.displayName ?? '');
   const [loading, setLoading] = useState(false);
 
   const finish = async () => {
-    if (!name.trim()) return Alert.alert('Error', 'Enter your name');
+    if (!name.trim()) return Alert.alert(t('common.alert'), t('auth.enterName'));
     setLoading(true);
     try {
       await api.completeOnboarding(name.trim());
@@ -28,20 +30,43 @@ export default function OnboardingScreen() {
 
   return (
     <GradientBackground>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.container}>
-        <Text style={styles.title}>Welcome!</Text>
-        <Text style={styles.sub}>Explore 17 regions across Korea and earn stars</Text>
-        <ProgressRing progress={0} label="Nation" />
-        <TextInput style={styles.input} placeholder="Your display name" placeholderTextColor={theme.colors.textMuted} value={name} onChangeText={setName} />
-        <PremiumButton title="Start Exploring" onPress={finish} loading={loading} />
+        <Text style={styles.title}>{t('auth.welcome')}</Text>
+        <Text style={styles.sub}>{t('auth.onboardingSub')}</Text>
+        <ProgressRing progress={0} label={t('auth.nation')} />
+        <TextInput
+          style={styles.input}
+          placeholder={t('auth.yourName')}
+          placeholderTextColor={theme.colors.textMuted}
+          value={name}
+          onChangeText={setName}
+        />
+        <PremiumButton title={t('auth.startExploring')} onPress={finish} loading={loading} />
       </View>
+      </ScrollView>
     </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: theme.spacing.lg, gap: theme.spacing.lg },
-  title: { fontSize: 32, fontWeight: '800', color: '#fff' },
-  sub: { color: 'rgba(255,255,255,0.85)', textAlign: 'center', fontSize: 15 },
-  input: { width: '100%', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: theme.radius.md, padding: 14, color: theme.colors.text, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
+  container: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: theme.spacing.lg, gap: theme.spacing.lg },
+  title: { fontSize: 32, fontWeight: '800', color: theme.colors.primaryDark },
+  sub: { color: theme.colors.textMuted, textAlign: 'center', fontSize: 15 },
+  input: {
+    width: '100%',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    padding: 14,
+    color: theme.colors.text,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
 });

@@ -1,14 +1,18 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { PremiumButton } from '@/components/PremiumButton';
+import { TabPage } from '@/components/TabPage';
 import { api } from '@/lib/api';
 import { getCurrentCoords } from '@/lib/location';
 import type { Quest } from '@tingting/shared';
+import { useLocale } from '@/hooks/useLocale';
+import { useAuth } from '@/hooks/useAuth';
 import { theme } from '@/constants/theme';
 
 export default function QuestScreen() {
+  const { t } = useLocale();
+  const { refresh } = useAuth();
   const [quests, setQuests] = useState<Quest[]>([]);
 
   const load = async () => setQuests(await api.getQuests());
@@ -18,38 +22,39 @@ export default function QuestScreen() {
     try {
       const coords = await getCurrentCoords();
       const result = await api.completeQuest(quest.id, coords.lat, coords.lng);
-      Alert.alert('Quest Complete!', '+' + result.reward + ' stars (total: ' + result.stars + ')');
+      Alert.alert(
+        t('quest.completeTitle'),
+        t('quest.completeMessage', { reward: result.reward, total: result.stars })
+      );
+      await refresh();
       load();
     } catch (e: unknown) {
-      Alert.alert('Quest failed', e instanceof Error ? e.message : 'Unknown error');
+      Alert.alert(t('quest.failed'), e instanceof Error ? e.message : t('auth.unknownError'));
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>GPS Quests</Text>
-        <Text style={styles.sub}>Visit locations to verify and earn stars</Text>
-        {quests.map((q) => (
-          <View key={q.id} style={styles.card}>
-            <Text style={styles.name}>{q.title}</Text>
-            <Text style={styles.desc}>{q.description}</Text>
-            <Text style={styles.reward}>Reward: {q.rewardStars} stars</Text>
-            {q.completed ? (
-              <Text style={styles.done}>Completed</Text>
-            ) : (
-              <PremiumButton title="Verify GPS" onPress={() => verify(q)} />
-            )}
-          </View>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
+    <TabPage contentContainerStyle={styles.scroll}>
+      <Text style={styles.title}>{t('quest.title')}</Text>
+      <Text style={styles.sub}>{t('quest.sub')}</Text>
+      {quests.map((q) => (
+        <View key={q.id} style={styles.card}>
+          <Text style={styles.name}>{q.title}</Text>
+          <Text style={styles.desc}>{q.description}</Text>
+          <Text style={styles.reward}>{t('quest.reward', { count: q.rewardStars })}</Text>
+          {q.completed ? (
+            <Text style={styles.done}>{t('quest.completed')}</Text>
+          ) : (
+            <PremiumButton title={t('quest.verify')} onPress={() => verify(q)} />
+          )}
+        </View>
+      ))}
+    </TabPage>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.background },
-  scroll: { padding: theme.spacing.lg, gap: theme.spacing.md },
+  scroll: { padding: 0, gap: theme.spacing.md },
   title: { color: theme.colors.text, fontSize: 26, fontWeight: '800' },
   sub: { color: theme.colors.textMuted, marginBottom: theme.spacing.md },
   card: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.md, padding: theme.spacing.md, gap: theme.spacing.sm },

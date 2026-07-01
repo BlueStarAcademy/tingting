@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, Alert, Switch, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { ScreenHeader } from '@/components/ScreenHeader';
+import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
 import type { Visit } from '@tingting/shared';
@@ -15,11 +14,14 @@ import {
   isAssetUnlocked,
   type EditorAsset,
 } from '@/lib/editor-assets';
+import { useLocale } from '@/hooks/useLocale';
+import { pickPhoto } from '@/lib/pick-photo';
 import { theme } from '@/constants/theme';
 
 export default function EditorScreen() {
   const { visitId } = useLocalSearchParams<{ visitId: string }>();
   const router = useRouter();
+  const { t } = useLocale();
   const [visit, setVisit] = useState<Visit | null>(null);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [watermark, setWatermark] = useState(true);
@@ -55,7 +57,7 @@ export default function EditorScreen() {
       setPreviewUri(result.uri);
       setActiveFilter(asset.name);
     } catch (e: unknown) {
-      Alert.alert('오류', e instanceof Error ? e.message : '필터 적용 실패');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('editor.filterFailed'));
     } finally {
       setLoading(false);
     }
@@ -73,11 +75,11 @@ export default function EditorScreen() {
 
   const promptUnlock = (asset: EditorAsset) => {
     Alert.alert(
-      '스타로 해금',
-      `"${asset.name}"을(를) ✦ ${asset.starCost} 스타로 해금할까요?`,
+      t('editor.unlockTitle'),
+      t('editor.unlockMessage', { name: asset.name, cost: asset.starCost }),
       [
-        { text: '취소', style: 'cancel' },
-        { text: '해금', onPress: () => unlockAsset(asset) },
+        { text: t('header.cancel'), style: 'cancel' },
+        { text: t('editor.unlock'), onPress: () => unlockAsset(asset) },
       ]
     );
   };
@@ -86,9 +88,9 @@ export default function EditorScreen() {
     try {
       await api.unlockEditorAsset(asset.id, asset.starCost);
       setUnlockedIds((prev) => [...prev, asset.id]);
-      Alert.alert('해금 완료', `"${asset.name}"을(를) 사용할 수 있습니다`);
+      Alert.alert(t('editor.unlockDone'), t('editor.unlockDoneMessage', { name: asset.name }));
     } catch (e: unknown) {
-      Alert.alert('오류', e instanceof Error ? e.message : '스타가 부족합니다');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
     }
   };
 
@@ -106,7 +108,7 @@ export default function EditorScreen() {
       setActiveFilter(label);
       Alert.alert(label, 'AI 효과가 적용되었습니다 (클라이언트 미리보기)');
     } catch (e: unknown) {
-      Alert.alert('오류', e instanceof Error ? e.message : '실패');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
     } finally {
       setLoading(false);
     }
@@ -124,9 +126,9 @@ export default function EditorScreen() {
       );
       setPreviewUri(result.uri);
       setActiveFilter(AI_EFFECTS.sky.label);
-      Alert.alert('하늘리터치', '하늘 효과가 적용되었습니다');
+      Alert.alert(AI_EFFECTS.sky.label, '하늘 효과가 적용되었습니다');
     } catch (e: unknown) {
-      Alert.alert('오류', e instanceof Error ? e.message : '실패');
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
     } finally {
       setLoading(false);
     }
@@ -135,8 +137,55 @@ export default function EditorScreen() {
   const save = async () => {
     if (!visit || !previewUri) return;
     await api.updateVisit(visit.id, { editedPhotoUri: previewUri, filter: activeFilter ?? undefined });
-    Alert.alert('저장됨', '사진이 업데이트되었습니다');
+    Alert.alert(t('editor.saved'), t('editor.savedMessage'));
     router.back();
+  };
+
+  const replacePhoto = async () => {
+    if (!visit) return;
+    const photoUri = await pickPhoto({
+      upload: t('visits.replacePhoto'),
+      fromLibrary: t('visits.fromLibrary'),
+      fromCamera: t('visits.fromCamera'),
+      cancel: t('header.cancel'),
+      libraryPermissionTitle: t('visits.permissionTitle'),
+      libraryPermissionMessage: t('visits.permissionMessage'),
+      cameraPermissionTitle: t('visits.cameraPermissionTitle'),
+      cameraPermissionMessage: t('visits.cameraPermissionMessage'),
+    });
+    if (!photoUri) return;
+    setLoading(true);
+    try {
+      const updated = await api.replaceVisitPhoto(visit.id, photoUri);
+      setVisit(updated);
+      setPreviewUri(photoUri);
+      setActiveFilter(null);
+      setActiveStickers([]);
+      Alert.alert(t('editor.saved'), t('editor.photoReplaced'));
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteVisit = () => {
+    if (!visit) return;
+    Alert.alert(t('visits.delete'), t('visits.deleteConfirm'), [
+      { text: t('header.cancel'), style: 'cancel' },
+      {
+        text: t('visits.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteVisit(visit.id);
+            router.back();
+          } catch (e: unknown) {
+            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+          }
+        },
+      },
+    ]);
   };
 
   if (!visit || !previewUri) return null;
@@ -145,9 +194,7 @@ export default function EditorScreen() {
   const stickers = getAssetsByType('sticker');
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <ScreenHeader title="사진 꾸미기" showBack />
+    <AppScreen title={t('editor.title')} showBack contentStyle={styles.scroll}>
         <View style={styles.previewWrap}>
           <Image source={{ uri: previewUri }} style={styles.preview} />
           {activeStickers.map((id) => {
@@ -162,11 +209,11 @@ export default function EditorScreen() {
           {watermark ? <Text style={styles.watermark}>TingTing</Text> : null}
         </View>
         <View style={styles.row}>
-          <Text style={styles.label}>워터마크</Text>
+          <Text style={styles.label}>{t('editor.watermark')}</Text>
           <Switch value={watermark} onValueChange={setWatermark} />
         </View>
 
-        <Text style={styles.section}>필터</Text>
+        <Text style={styles.section}>{t('editor.filters')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.assetRow}>
           {filters.map((asset) => {
             const unlocked = isAssetUnlocked(asset, unlockedIds);
@@ -184,7 +231,7 @@ export default function EditorScreen() {
           })}
         </ScrollView>
 
-        <Text style={styles.section}>스티커</Text>
+        <Text style={styles.section}>{t('editor.stickers')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.assetRow}>
           {stickers.map((asset) => {
             const unlocked = isAssetUnlocked(asset, unlockedIds);
@@ -203,18 +250,18 @@ export default function EditorScreen() {
           })}
         </ScrollView>
 
-        <Text style={styles.section}>TingTing AI</Text>
+        <Text style={styles.section}>{t('editor.ai')}</Text>
         <PremiumButton title={AI_EFFECTS.bbosyap.label + ' (AI)'} onPress={() => applyBrightness(AI_EFFECTS.bbosyap.label, 'bbosyap')} loading={loading} />
         <PremiumButton title={AI_EFFECTS.sky.label + ' (AI)'} onPress={applySkyTint} loading={loading} variant="outline" />
-        <PremiumButton title="저장" onPress={save} />
-      </ScrollView>
-    </SafeAreaView>
+        <PremiumButton title={t('editor.save')} onPress={save} />
+        <PremiumButton title={t('visits.replacePhoto')} onPress={replacePhoto} loading={loading} variant="outline" />
+        <PremiumButton title={t('editor.deleteVisit')} onPress={deleteVisit} variant="outline" />
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.background },
-  scroll: { padding: theme.spacing.lg, gap: theme.spacing.sm },
+  scroll: { gap: theme.spacing.sm },
   previewWrap: { position: 'relative' },
   preview: { width: '100%', height: 280, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface },
   stickerOverlay: { position: 'absolute', bottom: 24, right: 24, fontSize: 36 },

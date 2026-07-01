@@ -20,8 +20,8 @@
   {
     "id": "p-bus-1",
     "regionCode": "BUS",
-    "name": "해운대",
-    "description": "부산 대표 해변",
+    "name": "부산 해운대",
+    "description": "부산 대표 해변 · 국내 최고의 바다 휴양지",
     "lat": 35.1587,
     "lng": 129.1604,
     "category": "beach"
@@ -29,8 +29,8 @@
   {
     "id": "p-bus-2",
     "regionCode": "BUS",
-    "name": "감천문화마을",
-    "description": "알록달록한 마을",
+    "name": "부산 감천문화마을",
+    "description": "부산의 알록달록 예술 마을",
     "lat": 35.0975,
     "lng": 129.0107,
     "category": "culture"

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   AuthSession,
   Group,
+  GroupChatMessage,
   HomeDashboard,
   Place,
   PlaceRecommendation,
@@ -36,6 +37,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
   return data as T;
@@ -99,6 +101,38 @@ export const httpApi = {
     return profile;
   },
 
+  async updateProfile(patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday'>>): Promise<UserProfile> {
+    const { profile } = await request<{ profile: UserProfile }>('/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    return profile;
+  },
+
+  async changeDisplayName(displayName: string): Promise<{ profile: UserProfile; cost: number }> {
+    return request('/profile/display-name', {
+      method: 'POST',
+      body: JSON.stringify({ displayName }),
+    });
+  },
+
+  async unlockGroupSlot(): Promise<UserProfile> {
+    const { profile } = await request<{ profile: UserProfile }>('/profile/unlock-group-slot', { method: 'POST' });
+    return profile;
+  },
+
+  async completeMbtiTest(mbti: string): Promise<{ profile: UserProfile; reward: number }> {
+    return request('/profile/mbti', { method: 'POST', body: JSON.stringify({ mbti }) });
+  },
+
+  async retakeMbtiTest(mbti: string): Promise<UserProfile> {
+    const { profile } = await request<{ profile: UserProfile }>('/profile/mbti/retake', {
+      method: 'POST',
+      body: JSON.stringify({ mbti }),
+    });
+    return profile;
+  },
+
   async getHomeDashboard(): Promise<HomeDashboard> {
     return request<HomeDashboard>('/dashboard');
   },
@@ -107,8 +141,8 @@ export const httpApi = {
     return request<Group[]>('/groups');
   },
 
-  async createGroup(name: string, description?: string): Promise<{ group: Group; cost: number }> {
-    return request('/groups', { method: 'POST', body: JSON.stringify({ name, description }) });
+  async createGroup(name: string, description?: string, slotIndex?: number): Promise<{ group: Group; cost: number }> {
+    return request('/groups', { method: 'POST', body: JSON.stringify({ name, description, slotIndex }) });
   },
 
   async getGroup(id: string): Promise<Group | null> {
@@ -119,9 +153,47 @@ export const httpApi = {
     }
   },
 
+  async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
+    return request(`/groups/${groupId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+  },
+
+  async updateGroup(groupId: string, patch: { name?: string; description?: string }): Promise<Group> {
+    return request<Group>(`/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+  },
+
+  async removeGroupMember(groupId: string, memberId: string): Promise<Group> {
+    return request<Group>(`/groups/${groupId}/members/${memberId}`, { method: 'DELETE' });
+  },
+
+  async leaveGroup(groupId: string): Promise<void> {
+    await request(`/groups/${groupId}/leave`, { method: 'POST' });
+  },
+
+  async getGroupChatMessages(groupId: string): Promise<GroupChatMessage[]> {
+    return request<GroupChatMessage[]>(`/groups/${groupId}/chat`);
+  },
+
+  async sendGroupChatMessage(groupId: string, text: string): Promise<GroupChatMessage> {
+    return request<GroupChatMessage>(`/groups/${groupId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+  },
+
+  async getGroupVisits(groupId: string): Promise<Visit[]> {
+    return request<Visit[]>(`/groups/${groupId}/visits`);
+  },
+
   async getPlaces(regionCode?: string): Promise<Place[]> {
     const q = regionCode ? `?region=${encodeURIComponent(regionCode)}` : '';
     return request<Place[]>(`/places${q}`);
+  },
+
+  async getRecommendedPlaces(limit = 6): Promise<Place[]> {
+    return request<Place[]>(`/places/recommended?limit=${limit}`);
   },
 
   async getPlace(id: string): Promise<Place | null> {
@@ -159,8 +231,20 @@ export const httpApi = {
         editedPhotoUri: patch.editedPhotoUri,
         filter: patch.filter,
         note: patch.note,
+        photoUri: patch.photoUri,
       }),
     });
+  },
+
+  async replaceVisitPhoto(id: string, photoUri: string): Promise<Visit> {
+    return request<Visit>(`/visits/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ photoUri }),
+    });
+  },
+
+  async deleteVisit(id: string): Promise<void> {
+    await request(`/visits/${id}`, { method: 'DELETE' });
   },
 
   async getQuests(): Promise<Quest[]> {

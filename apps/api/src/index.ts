@@ -13,6 +13,8 @@ import {
   QUEST_REWARD_DEFAULT,
   REGIONS,
   SHOP_ITEMS,
+  FREE_GROUP_MEMBER_COUNT,
+  getGroupMemberInviteCost,
 } from '@tingting/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -360,17 +362,58 @@ app.post('/visits', authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 app.patch('/visits/:id', authMiddleware, async (req: AuthedRequest, res) => {
-  const { editedPhotoUri, filter, note } = req.body as Record<string, unknown>;
+  const { editedPhotoUri, filter, note, photoUri } = req.body as Record<string, unknown>;
+  const userId = req.user!.userId;
+  const visitId = req.params.id;
+
+  if (photoUri) {
+    const { rows } = await pool.query(
+      `UPDATE visits SET photo_uri = $1, edited_photo_uri = NULL, filter = NULL, note = COALESCE($2, note)
+       WHERE id = $3 AND user_id = $4 RETURNING *`,
+      [photoUri, note ?? null, visitId, userId]
+    );
+    if (!rows[0]) {
+      res.status(404).json({ error: 'Visit not found' });
+      return;
+    }
+    res.json(mapVisit(rows[0]));
+    return;
+  }
+
   const { rows } = await pool.query(
     `UPDATE visits SET edited_photo_uri = COALESCE($1, edited_photo_uri), filter = COALESCE($2, filter), note = COALESCE($3, note)
      WHERE id = $4 AND user_id = $5 RETURNING *`,
-    [editedPhotoUri ?? null, filter ?? null, note ?? null, req.params.id, req.user!.userId]
+    [editedPhotoUri ?? null, filter ?? null, note ?? null, visitId, userId]
   );
   if (!rows[0]) {
     res.status(404).json({ error: 'Visit not found' });
     return;
   }
   res.json(mapVisit(rows[0]));
+});
+
+app.delete('/visits/:id', authMiddleware, async (req: AuthedRequest, res) => {
+  const userId = req.user!.userId;
+  const visitId = req.params.id;
+  const deleted = await pool.query('DELETE FROM visits WHERE id = $1 AND user_id = $2 RETURNING place_id', [
+    visitId,
+    userId,
+  ]);
+  if (!deleted.rows[0]) {
+    res.status(404).json({ error: 'Visit not found' });
+    return;
+  }
+
+  const remaining = await pool.query(
+    `SELECT DISTINCT p.region_code FROM visits v
+     JOIN places p ON p.id = v.place_id
+     WHERE v.user_id = $1`,
+    [userId]
+  );
+  const regions = remaining.rows.map((r) => r.region_code);
+  await pool.query('UPDATE users SET visited_regions = $1 WHERE id = $2', [regions, userId]);
+
+  res.status(204).send();
 });
 
 // --- Quests (generated from places) ---

@@ -1,10 +1,13 @@
 import type {
   AuthSession,
   Group,
+  GroupChatMessage,
   HomeDashboard,
+  PedometerDayState,
   Place,
   PlaceRecommendation,
   Quest,
+  RankingEntry,
   ShopItem,
   UserProfile,
   Visit,
@@ -18,7 +21,7 @@ export { isSupabaseConfigured, isHttpApiConfigured };
 
 export const api = {
   async getSession(): Promise<AuthSession | null> {
-    if (isHttpApiConfigured) return httpApi.getSession();
+    if (isHttpApiConfigured()) return httpApi.getSession();
     if (!isSupabaseConfigured) return localStore.getSession();
     const sb = getSupabase()!;
     const { data } = await sb.auth.getSession();
@@ -27,7 +30,7 @@ export const api = {
   },
 
   async signIn(email: string, password: string): Promise<AuthSession> {
-    if (isHttpApiConfigured) return httpApi.signIn(email, password);
+    if (isHttpApiConfigured()) return httpApi.signIn(email, password);
     if (!isSupabaseConfigured) return localStore.signIn(email, password);
     const sb = getSupabase()!;
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -36,7 +39,7 @@ export const api = {
   },
 
   async signUp(email: string, password: string, displayName: string): Promise<AuthSession> {
-    if (isHttpApiConfigured) return httpApi.signUp(email, password, displayName);
+    if (isHttpApiConfigured()) return httpApi.signUp(email, password, displayName);
     if (!isSupabaseConfigured) return localStore.signUp(email, password, displayName);
     const sb = getSupabase()!;
     const { data, error } = await sb.auth.signUp({ email, password });
@@ -46,18 +49,18 @@ export const api = {
   },
 
   async signInDemo(): Promise<AuthSession> {
-    if (isHttpApiConfigured) return httpApi.signInDemo();
+    if (isHttpApiConfigured()) return httpApi.signInDemo();
     return localStore.signInDemo();
   },
 
   async signOut(): Promise<void> {
-    if (isHttpApiConfigured) return httpApi.signOut();
+    if (isHttpApiConfigured()) return httpApi.signOut();
     if (!isSupabaseConfigured) return localStore.signOut();
     await getSupabase()!.auth.signOut();
   },
 
   async getProfile(): Promise<UserProfile | null> {
-    if (isHttpApiConfigured) return httpApi.getProfile();
+    if (isHttpApiConfigured()) return httpApi.getProfile();
     if (!isSupabaseConfigured) return localStore.getProfile();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -74,8 +77,38 @@ export const api = {
     };
   },
 
+  async updateProfile(patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday'>>): Promise<UserProfile> {
+    if (isHttpApiConfigured()) return httpApi.updateProfile(patch);
+    if (!isSupabaseConfigured) return localStore.updateProfile(patch);
+    return localStore.updateProfile(patch);
+  },
+
+  async changeDisplayName(displayName: string): Promise<{ profile: UserProfile; cost: number }> {
+    if (isHttpApiConfigured()) return httpApi.changeDisplayName(displayName);
+    if (!isSupabaseConfigured) return localStore.changeDisplayName(displayName);
+    return localStore.changeDisplayName(displayName);
+  },
+
+  async unlockGroupSlot(): Promise<UserProfile> {
+    if (isHttpApiConfigured()) return httpApi.unlockGroupSlot();
+    if (!isSupabaseConfigured) return localStore.unlockGroupSlot();
+    return localStore.unlockGroupSlot();
+  },
+
+  async completeMbtiTest(mbti: string): Promise<{ profile: UserProfile; reward: number }> {
+    if (isHttpApiConfigured()) return httpApi.completeMbtiTest(mbti);
+    if (!isSupabaseConfigured) return localStore.completeMbtiTest(mbti);
+    return localStore.completeMbtiTest(mbti);
+  },
+
+  async retakeMbtiTest(mbti: string): Promise<UserProfile> {
+    if (isHttpApiConfigured()) return httpApi.retakeMbtiTest(mbti);
+    if (!isSupabaseConfigured) return localStore.retakeMbtiTest(mbti);
+    return localStore.retakeMbtiTest(mbti);
+  },
+
   async completeOnboarding(displayName: string): Promise<UserProfile> {
-    if (isHttpApiConfigured) return httpApi.completeOnboarding(displayName);
+    if (isHttpApiConfigured()) return httpApi.completeOnboarding(displayName);
     if (!isSupabaseConfigured) return localStore.completeOnboarding(displayName);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -84,7 +117,7 @@ export const api = {
   },
 
   async getHomeDashboard(): Promise<HomeDashboard> {
-    if (isHttpApiConfigured) return httpApi.getHomeDashboard();
+    if (isHttpApiConfigured()) return httpApi.getHomeDashboard();
     if (!isSupabaseConfigured) return localStore.getHomeDashboard();
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('get_home_dashboard');
@@ -108,15 +141,15 @@ export const api = {
   },
 
   async getGroups(): Promise<Group[]> {
-    if (isHttpApiConfigured) return httpApi.getGroups();
+    if (isHttpApiConfigured()) return httpApi.getGroups();
     if (!isSupabaseConfigured) return localStore.getGroups();
     const dash = await this.getHomeDashboard();
     return dash.groups;
   },
 
-  async createGroup(name: string, description?: string): Promise<{ group: Group; cost: number }> {
-    if (isHttpApiConfigured) return httpApi.createGroup(name, description);
-    if (!isSupabaseConfigured) return localStore.createGroup(name, description);
+  async createGroup(name: string, description?: string, slotIndex?: number): Promise<{ group: Group; cost: number }> {
+    if (isHttpApiConfigured()) return httpApi.createGroup(name, description, slotIndex);
+    if (!isSupabaseConfigured) return localStore.createGroup(name, description, slotIndex);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('create_group', { p_name: name, p_description: description });
     if (error) throw error;
@@ -125,13 +158,51 @@ export const api = {
   },
 
   async getGroup(id: string): Promise<Group | null> {
-    if (isHttpApiConfigured) return httpApi.getGroup(id);
+    if (isHttpApiConfigured()) return httpApi.getGroup(id);
     if (!isSupabaseConfigured) return localStore.getGroup(id);
     return localStore.getGroup(id);
   },
 
+  async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
+    if (isHttpApiConfigured()) return httpApi.inviteGroupMember(groupId, phone);
+    if (!isSupabaseConfigured) return localStore.inviteGroupMember(groupId, phone);
+    return localStore.inviteGroupMember(groupId, phone);
+  },
+
+  async updateGroup(groupId: string, patch: { name?: string; description?: string }): Promise<Group> {
+    if (isHttpApiConfigured()) return httpApi.updateGroup(groupId, patch);
+    return localStore.updateGroup(groupId, patch);
+  },
+
+  async removeGroupMember(groupId: string, memberId: string): Promise<Group> {
+    if (isHttpApiConfigured()) return httpApi.removeGroupMember(groupId, memberId);
+    return localStore.removeGroupMember(groupId, memberId);
+  },
+
+  async leaveGroup(groupId: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.leaveGroup(groupId);
+    return localStore.leaveGroup(groupId);
+  },
+
+  async getGroupChatMessages(groupId: string): Promise<GroupChatMessage[]> {
+    if (isHttpApiConfigured()) return httpApi.getGroupChatMessages(groupId);
+    return localStore.getGroupChatMessages(groupId);
+  },
+
+  async sendGroupChatMessage(groupId: string, text: string): Promise<GroupChatMessage> {
+    if (isHttpApiConfigured()) return httpApi.sendGroupChatMessage(groupId, text);
+    return localStore.sendGroupChatMessage(groupId, text);
+  },
+
+  async getGroupVisits(groupId: string): Promise<Visit[]> {
+    if (isHttpApiConfigured()) return httpApi.getGroupVisits(groupId);
+    if (!isSupabaseConfigured) return localStore.getGroupVisits(groupId);
+    const visits = await this.getVisits();
+    return visits.filter((v) => v.groupId === groupId);
+  },
+
   async getPlaces(regionCode?: string): Promise<Place[]> {
-    if (isHttpApiConfigured) return httpApi.getPlaces(regionCode);
+    if (isHttpApiConfigured()) return httpApi.getPlaces(regionCode);
     if (!isSupabaseConfigured) return localStore.getPlaces(regionCode);
     const sb = getSupabase()!;
     let q = sb.from('places').select('*');
@@ -140,8 +211,14 @@ export const api = {
     return (data ?? []).map(mapPlace);
   },
 
+  async getRecommendedPlaces(limit = 6): Promise<Place[]> {
+    if (isHttpApiConfigured()) return httpApi.getRecommendedPlaces(limit);
+    if (!isSupabaseConfigured) return localStore.getRecommendedPlaces(limit);
+    return localStore.getRecommendedPlaces(limit);
+  },
+
   async getPlace(id: string): Promise<Place | null> {
-    if (isHttpApiConfigured) return httpApi.getPlace(id);
+    if (isHttpApiConfigured()) return httpApi.getPlace(id);
     if (!isSupabaseConfigured) return localStore.getPlace(id);
     const sb = getSupabase()!;
     const { data } = await sb.from('places').select('*').eq('id', id).single();
@@ -149,7 +226,7 @@ export const api = {
   },
 
   async getVisits(): Promise<Visit[]> {
-    if (isHttpApiConfigured) return httpApi.getVisits();
+    if (isHttpApiConfigured()) return httpApi.getVisits();
     if (!isSupabaseConfigured) return localStore.getVisits();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -158,14 +235,14 @@ export const api = {
   },
 
   async getVisit(id: string): Promise<Visit | null> {
-    if (isHttpApiConfigured) return httpApi.getVisit(id);
+    if (isHttpApiConfigured()) return httpApi.getVisit(id);
     if (!isSupabaseConfigured) return localStore.getVisit(id);
     const visits = await this.getVisits();
     return visits.find((v) => v.id === id) ?? null;
   },
 
   async createVisit(input: Parameters<typeof localStore.createVisit>[0]): Promise<Visit> {
-    if (isHttpApiConfigured) return httpApi.createVisit(input);
+    if (isHttpApiConfigured()) return httpApi.createVisit(input);
     if (!isSupabaseConfigured) return localStore.createVisit(input);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -183,26 +260,47 @@ export const api = {
   },
 
   async updateVisit(id: string, patch: Partial<Visit>): Promise<Visit> {
-    if (isHttpApiConfigured) return httpApi.updateVisit(id, patch);
+    if (isHttpApiConfigured()) return httpApi.updateVisit(id, patch);
     if (!isSupabaseConfigured) return localStore.updateVisit(id, patch);
     const sb = getSupabase()!;
-    const { data, error } = await sb.from('visits').update({
+    const body: Record<string, unknown> = {
       edited_photo_uri: patch.editedPhotoUri,
       filter: patch.filter,
       note: patch.note,
-    }).eq('id', id).select().single();
+    };
+    if (patch.photoUri) {
+      body.photo_uri = patch.photoUri;
+      body.edited_photo_uri = null;
+      body.filter = null;
+    }
+    const { data, error } = await sb.from('visits').update(body).eq('id', id).select().single();
     if (error) throw error;
     return mapVisit(data);
   },
 
+  async replaceVisitPhoto(id: string, photoUri: string): Promise<Visit> {
+    if (isHttpApiConfigured()) return httpApi.replaceVisitPhoto(id, photoUri);
+    if (!isSupabaseConfigured) return localStore.replaceVisitPhoto(id, photoUri);
+    return this.updateVisit(id, { photoUri });
+  },
+
+  async deleteVisit(id: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.deleteVisit(id);
+    if (!isSupabaseConfigured) return localStore.deleteVisit(id);
+    const sb = getSupabase()!;
+    const session = await this.getSession();
+    const { error } = await sb.from('visits').delete().eq('id', id).eq('user_id', session!.userId);
+    if (error) throw error;
+  },
+
   async getQuests(): Promise<Quest[]> {
-    if (isHttpApiConfigured) return httpApi.getQuests();
+    if (isHttpApiConfigured()) return httpApi.getQuests();
     if (!isSupabaseConfigured) return localStore.getQuests();
     return localStore.getQuests();
   },
 
   async completeQuest(questId: string, lat: number, lng: number): Promise<{ reward: number; stars: number }> {
-    if (isHttpApiConfigured) return httpApi.completeQuest(questId, lat, lng);
+    if (isHttpApiConfigured()) return httpApi.completeQuest(questId, lat, lng);
     if (!isSupabaseConfigured) return localStore.completeQuest(questId, lat, lng);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('complete_quest', { p_quest_id: questId, p_lat: lat, p_lng: lng });
@@ -211,7 +309,7 @@ export const api = {
   },
 
   async spendStars(amount: number, reason: string): Promise<number> {
-    if (isHttpApiConfigured) return httpApi.spendStars(amount, reason);
+    if (isHttpApiConfigured()) return httpApi.spendStars(amount, reason);
     if (!isSupabaseConfigured) return localStore.spendStars(amount, reason);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('spend_stars', { p_amount: amount, p_reason: reason });
@@ -220,7 +318,7 @@ export const api = {
   },
 
   async useAiFeature(feature: string): Promise<{ cost: number; stars: number }> {
-    if (isHttpApiConfigured) return httpApi.useAiFeature(feature);
+    if (isHttpApiConfigured()) return httpApi.useAiFeature(feature);
     if (!isSupabaseConfigured) return localStore.useAiFeature(feature);
     const sb = getSupabase()!;
     const { data, error } = await sb.rpc('use_ai_feature', { p_feature: feature });
@@ -229,7 +327,7 @@ export const api = {
   },
 
   async getRecommendations(placeId: string): Promise<PlaceRecommendation[]> {
-    if (isHttpApiConfigured) return httpApi.getRecommendations(placeId);
+    if (isHttpApiConfigured()) return httpApi.getRecommendations(placeId);
     if (!isSupabaseConfigured) return localStore.getRecommendations(placeId);
     const sb = getSupabase()!;
     const { data } = await sb.from('place_recommendations').select('*').eq('place_id', placeId);
@@ -244,7 +342,7 @@ export const api = {
   },
 
   async addRecommendation(placeId: string, text: string, rating: number): Promise<PlaceRecommendation> {
-    if (isHttpApiConfigured) return httpApi.addRecommendation(placeId, text, rating);
+    if (isHttpApiConfigured()) return httpApi.addRecommendation(placeId, text, rating);
     if (!isSupabaseConfigured) return localStore.addRecommendation(placeId, text, rating);
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -259,12 +357,12 @@ export const api = {
   },
 
   getShopItems(): ShopItem[] {
-    if (isHttpApiConfigured) return SHOP_ITEMS;
+    if (isHttpApiConfigured()) return SHOP_ITEMS;
     return localStore.getShopItems();
   },
 
   async getUnlockedEditorAssets(): Promise<string[]> {
-    if (isHttpApiConfigured) return httpApi.getUnlockedEditorAssets();
+    if (isHttpApiConfigured()) return httpApi.getUnlockedEditorAssets();
     if (!isSupabaseConfigured) return localStore.getUnlockedEditorAssets();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -273,13 +371,49 @@ export const api = {
   },
 
   async unlockEditorAsset(assetId: string, cost: number): Promise<string[]> {
-    if (isHttpApiConfigured) return httpApi.unlockEditorAsset(assetId, cost);
+    if (isHttpApiConfigured()) return httpApi.unlockEditorAsset(assetId, cost);
     if (!isSupabaseConfigured) return localStore.unlockEditorAsset(assetId, cost);
     const sb = getSupabase()!;
     const { error } = await sb.rpc('spend_stars', { p_amount: cost, p_reason: 'editor_asset:' + assetId });
     if (error) throw error;
     await sb.from('user_editor_unlocks').insert({ asset_id: assetId });
     return this.getUnlockedEditorAssets();
+  },
+
+  async getPedometerState() {
+    return localStore.getPedometerState();
+  },
+
+  async syncPedometerSteps(rawSteps: number) {
+    return localStore.syncPedometerSteps(rawSteps);
+  },
+
+  async spinStepRoulette(milestone: number) {
+    return localStore.spinStepRoulette(milestone);
+  },
+
+  async setStepTimezone(timezone: string) {
+    return localStore.setStepTimezone(timezone);
+  },
+
+  async getRankings(type: 'stars' | 'visits' | 'gallery'): Promise<RankingEntry[]> {
+    return localStore.getRankings(type);
+  },
+
+  async changePassword(current: string, next: string): Promise<void> {
+    return localStore.changePassword(current, next);
+  },
+
+  async redeemCoupon(code: string) {
+    return localStore.redeemCoupon(code);
+  },
+
+  async submitCustomerInquiry(message: string): Promise<void> {
+    return localStore.submitCustomerInquiry(message);
+  },
+
+  async deleteAccount(): Promise<void> {
+    return localStore.deleteAccount();
   },
 };
 

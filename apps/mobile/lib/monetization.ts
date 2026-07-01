@@ -82,15 +82,15 @@ export async function getOfferings(): Promise<MonetizationOfferings> {
 }
 
 export async function purchasePlus(_planId: SubscriptionPlanId): Promise<{ success: boolean; message: string }> {
-  return { success: false, message: 'Coming Soon — RevenueCat 연동 예정' };
+  return { success: false, message: '출시 예정 — RevenueCat 연동 예정' };
 }
 
 export async function purchaseStarPack(_packId: string): Promise<{ success: boolean; message: string }> {
-  return { success: false, message: 'Coming Soon — 스타 IAP 출시 예정' };
+  return { success: false, message: '출시 예정 — 스타 IAP 출시 예정' };
 }
 
 export async function restorePurchases(): Promise<{ success: boolean; message: string }> {
-  return { success: false, message: 'Coming Soon' };
+  return { success: false, message: '출시 예정' };
 }
 
 export function hasPlusEntitlement(_entitlements?: Record<string, unknown>): boolean {

@@ -21,7 +21,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginRight: theme.spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(129,140,248,0.3)',
+    borderColor: theme.colors.borderStrong,
   },
   img: { width: '100%', height: '100%' },
 });

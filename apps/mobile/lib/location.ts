@@ -13,7 +13,7 @@ export async function requestLocationPermission(): Promise<boolean> {
 
 export async function getCurrentCoords(): Promise<Coords> {
   const granted = await requestLocationPermission();
-  if (!granted) throw new Error('Location permission denied');
+  if (!granted) throw new Error('위치 권한이 거부되었습니다');
   const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
   return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
 }

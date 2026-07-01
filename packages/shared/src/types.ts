@@ -1,3 +1,14 @@
+export interface GroupChatMessage {
+  id: string;
+  groupId: string;
+  userId: string;
+  displayName: string;
+  text: string;
+  createdAt: string;
+}
+
+export type RegionMenuCategory = 'food' | 'stay' | 'play' | 'sight' | 'event';
+
 export interface Region {
   code: string;
   name: string;
@@ -16,13 +27,23 @@ export interface Place {
   imageUrl?: string;
 }
 
+export interface GroupMember {
+  id: string;
+  displayName: string;
+  phone?: string;
+  photoUri?: string;
+  isOwner?: boolean;
+}
+
 export interface Group {
   id: string;
   name: string;
   description?: string;
   ownerId: string;
   memberIds: string[];
+  members?: GroupMember[];
   createdAt: string;
+  slotIndex?: number;
 }
 
 export interface Visit {
@@ -46,6 +67,19 @@ export interface UserProfile {
   stars: number;
   onboardingComplete: boolean;
   visitedRegions: string[];
+  photoUri?: string;
+  birthday?: string;
+  mbti?: string;
+  mbtiTestCompleted?: boolean;
+  phone?: string;
+  /** 닉네임 변경 횟수 (첫 변경 무료) */
+  displayNameChangeCount?: number;
+  /** 만보기 타임존 (IANA) */
+  stepTimezone?: string;
+  /** 타임존 변경 잠금 해제 시각 */
+  stepTimezoneLockedUntil?: string;
+  /** 해금된 여행 그룹 슬롯 수 (1~6, 첫 슬롯 기본 해금) */
+  unlockedGroupSlots?: number;
 }
 
 export interface Quest {
@@ -84,6 +118,21 @@ export interface HomeDashboard {
   regionProgress: { code: string; visited: boolean }[];
   totalRegions: number;
   visitedCount: number;
+}
+
+export interface PedometerDayState {
+  dayKey: string;
+  baselineSteps: number;
+  dailySteps: number;
+  rouletteUsed: number;
+  claimedMilestones: number[];
+}
+
+export interface RankingEntry {
+  id: string;
+  displayName: string;
+  value: number;
+  rank: number;
 }
 
 export interface AuthSession {

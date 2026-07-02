@@ -47,8 +47,21 @@ export interface Group {
   slotIndex?: number;
   /** 해금된 구성원 슬롯 수 (방장 포함, 기본 2) */
   unlockedMemberSlots?: number;
-  /** 해금된 갤러리 슬롯 수 (기본 10) */
+  /** 해금된 갤러리 슬롯 수 (레거시·스타 구매용, 지역별 슬롯은 퀘스트 완료로 해금) */
   unlockedGallerySlots?: number;
+}
+
+/** 그룹 여행 일정 (지역별) */
+export interface GroupSchedule {
+  id: string;
+  groupId: string;
+  regionCode: string;
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface Visit {
@@ -63,6 +76,23 @@ export interface Visit {
   lat?: number;
   lng?: number;
   filter?: string;
+  /** 추천 피드에 공개 여부 */
+  isPublic?: boolean;
+}
+
+/** 다른 유저가 공개한 여행 체험 후기 */
+export interface PublicExperiencePost {
+  id: string;
+  userId: string;
+  displayName: string;
+  userPhotoUri?: string;
+  placeId: string;
+  placeName: string;
+  regionCode: string;
+  photoUri: string;
+  note?: string;
+  visitedAt: string;
+  recommendCount?: number;
 }
 
 export interface UserProfile {
@@ -85,6 +115,31 @@ export interface UserProfile {
   stepTimezoneLockedUntil?: string;
   /** 해금된 여행 그룹 슬롯 수 (1~6, 첫 슬롯 기본 해금) */
   unlockedGroupSlots?: number;
+  /** 전화번호 인증 완료 여부 */
+  phoneVerified?: boolean;
+  /** 전화번호 초대 검색 거부 */
+  blockPhoneInvite?: boolean;
+  /** 프로필 상세(생년월일·MBTI 등) 공개 여부 */
+  profilePublic?: boolean;
+}
+
+export type MailboxMessageType = 'notice' | 'notification' | 'group_invite';
+
+export type GroupInviteStatus = 'pending' | 'accepted' | 'declined';
+
+export interface MailboxMessage {
+  id: string;
+  userId: string;
+  type: MailboxMessageType;
+  title: string;
+  body: string;
+  createdAt: string;
+  readAt?: string;
+  groupId?: string;
+  groupName?: string;
+  inviterId?: string;
+  inviterName?: string;
+  inviteStatus?: GroupInviteStatus;
 }
 
 export interface Quest {
@@ -111,6 +166,32 @@ export interface ShopItem {
   description: string;
   cost: number;
   type: 'ai_effect' | 'group_slot' | 'boost';
+}
+
+/** 사진 편집 기능 이용권 기간 */
+export type FeaturePassTier = 'day1' | 'day7' | 'day30' | 'permanent';
+
+export interface FeaturePass {
+  featureId: string;
+  tier: FeaturePassTier;
+  purchasedAt: string;
+  /** null = 영구 */
+  expiresAt: string | null;
+}
+
+export type EditorFeatureCategory = 'filter' | 'sticker' | 'frame' | 'ai' | 'adjust' | 'effect';
+
+export interface EditorFeature {
+  id: string;
+  category: EditorFeatureCategory;
+  name: { ko: string; en: string };
+  description?: { ko: string; en: string };
+  free?: boolean;
+  previewColor?: string;
+  emoji?: string;
+  regionCode?: string;
+  /** photo-effects.ts 매핑 키 */
+  effectKey?: string;
 }
 
 export interface PlaceRecommendation {

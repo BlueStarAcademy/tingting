@@ -12,15 +12,20 @@ import {
   INITIAL_STARS,
   QUEST_REWARD_DEFAULT,
   REGIONS,
-  SHOP_ITEMS,
+  AI_FEATURE_COSTS,
+  FEATURE_PASS_COSTS,
+  buildFeaturePass,
+  mergeFeaturePass,
+  FEATURE_PASS_TIERS,
   FREE_GROUP_MEMBER_COUNT,
   getGroupMemberInviteCost,
   pickRecommendedPlaces,
   REGION_MAIN_STATIONS,
   buildGroupStationQuestId,
   GROUP_STATION_QUEST_GALLERY_REWARD,
+  SEED_PUBLIC_EXPERIENCE_POSTS,
 } from '@tingting/shared';
-import type { GroupChatMessage, Quest } from '@tingting/shared';
+import type { GroupChatMessage, Quest, FeaturePass, FeaturePassTier } from '@tingting/shared';
 import type { Place } from '@tingting/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -423,9 +428,10 @@ app.delete('/groups/:id/chat/:messageId', authMiddleware, async (req: AuthedRequ
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
-  await pool.query('UPDATE group_chat_messages SET deleted_at = now(), text = $1 WHERE id = $2', [
-    '삭제된 메세지입니다.',
+  await pool.query('DELETE FROM group_chat_messages WHERE id = $1 AND group_id = $2 AND user_id = $3', [
     messageId,
+    groupId,
+    userId,
   ]);
   res.status(204).send();
 });
@@ -526,6 +532,10 @@ app.get('/places/:id', async (req, res) => {
     return;
   }
   res.json(mapPlace(rows[0]));
+});
+
+app.get('/feed/experiences', async (_req, res) => {
+  res.json(SEED_PUBLIC_EXPERIENCE_POSTS);
 });
 
 // --- Visits ---
@@ -702,8 +712,7 @@ app.post('/stars/spend', authMiddleware, async (req: AuthedRequest, res) => {
 
 app.post('/ai/use', authMiddleware, async (req: AuthedRequest, res) => {
   const { feature } = req.body as { feature?: string };
-  const item = SHOP_ITEMS.find((s) => s.id.includes(feature ?? '') || s.name.includes(feature ?? ''));
-  const cost = item?.cost ?? 20;
+  const cost = AI_FEATURE_COSTS[feature ?? ''] ?? 20;
   const userId = req.user!.userId;
   const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
   if (rows[0].stars < cost) {
@@ -773,7 +782,50 @@ app.post('/editor/unlock', authMiddleware, async (req: AuthedRequest, res) => {
   res.json(rows.map((r) => r.asset_id));
 });
 
-app.get('/shop/items', (_req, res) => res.json(SHOP_ITEMS));
+const featurePassStore = new Map<string, FeaturePass[]>();
+
+app.get('/editor/passes', authMiddleware, (req: AuthedRequest, res) => {
+  res.json(featurePassStore.get(req.user!.userId) ?? []);
+});
+
+app.post('/editor/passes', authMiddleware, async (req: AuthedRequest, res) => {
+  const { featureId, tier } = req.body as { featureId?: string; tier?: FeaturePassTier };
+  if (!featureId || !tier || !FEATURE_PASS_TIERS.includes(tier)) {
+    res.status(400).json({ error: 'featureId and tier required' });
+    return;
+  }
+  const userId = req.user!.userId;
+  const cost = FEATURE_PASS_COSTS[tier];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    if (rows[0].stars < cost) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'Insufficient stars' });
+      return;
+    }
+    await client.query('UPDATE users SET stars = stars - $1 WHERE id = $2', [cost, userId]);
+    await client.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+      userId,
+      -cost,
+      `feature_pass:${featureId}:${tier}`,
+    ]);
+    await client.query('COMMIT');
+    const existing = featurePassStore.get(userId) ?? [];
+    const pass = buildFeaturePass(existing, featureId, tier);
+    featurePassStore.set(userId, mergeFeaturePass(existing, pass));
+    const updated = await pool.query('SELECT stars FROM users WHERE id = $1', [userId]);
+    res.json({ pass, stars: updated.rows[0].stars });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Purchase failed' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/shop/items', (_req, res) => res.json([]));
 
 function mapPlace(row: Record<string, unknown>): Place {
   return {

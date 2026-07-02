@@ -37,7 +37,8 @@ export default function TabsLayout() {
           <Tabs.Screen name="home" options={{ title: 'Home' }} />
           <Tabs.Screen name="steps" options={{ title: 'Steps' }} />
           <Tabs.Screen name="minigames" options={{ title: 'Games' }} />
-          <Tabs.Screen name="ranking" options={{ title: 'Ranking' }} />
+          <Tabs.Screen name="recommend" options={{ title: 'Recommend' }} />
+          <Tabs.Screen name="photos" options={{ title: 'Photos' }} />
           <Tabs.Screen name="shop" options={{ title: 'Shop' }} />
           <Tabs.Screen name="map" options={{ href: null }} />
           <Tabs.Screen name="visits" options={{ href: null }} />

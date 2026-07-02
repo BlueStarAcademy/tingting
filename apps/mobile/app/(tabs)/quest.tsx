@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarRewardModal } from '@/components/StarRewardModal';
 import { TabPage } from '@/components/TabPage';
 import { api } from '@/lib/api';
 import { getCurrentCoords } from '@/lib/location';
@@ -14,6 +15,7 @@ export default function QuestScreen() {
   const { t } = useLocale();
   const { refresh } = useAuth();
   const [quests, setQuests] = useState<Quest[]>([]);
+  const [rewardModal, setRewardModal] = useState<{ reward: number; total: number } | null>(null);
 
   const load = async () => setQuests(await api.getQuests());
   useFocusEffect(useCallback(() => { load(); }, []));
@@ -22,10 +24,7 @@ export default function QuestScreen() {
     try {
       const coords = await getCurrentCoords();
       const result = await api.completeQuest(quest.id, coords.lat, coords.lng);
-      Alert.alert(
-        t('quest.completeTitle'),
-        t('quest.completeMessage', { reward: result.reward, total: result.stars })
-      );
+      setRewardModal({ reward: result.reward, total: result.stars });
       await refresh();
       load();
     } catch (e: unknown) {
@@ -49,6 +48,15 @@ export default function QuestScreen() {
           )}
         </View>
       ))}
+
+      <StarRewardModal
+        visible={rewardModal !== null}
+        amount={rewardModal?.reward ?? 0}
+        totalStars={rewardModal?.total}
+        title={t('quest.completeTitle')}
+        subtitle={t('reward.questMessage', { amount: rewardModal?.reward ?? 0 })}
+        onClose={() => setRewardModal(null)}
+      />
     </TabPage>
   );
 }

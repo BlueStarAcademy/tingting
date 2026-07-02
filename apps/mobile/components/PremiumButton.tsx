@@ -1,72 +1,76 @@
-import { Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { shadow } from '@/lib/ui';
+import { Text, StyleSheet, ActivityIndicator, View, type StyleProp, type ViewStyle } from 'react-native';
+import { PremiumPressable } from '@/components/PremiumPressable';
+import { type PremiumSize, type PremiumVariant } from '@/lib/premium-pressable-styles';
 import { theme } from '@/constants/theme';
 
 interface Props {
   title: string;
   onPress: () => void;
   loading?: boolean;
-  variant?: 'primary' | 'outline';
+  disabled?: boolean;
+  variant?: PremiumVariant;
+  size?: PremiumSize;
+  compact?: boolean;
+  style?: StyleProp<ViewStyle>;
+  fullWidth?: boolean;
 }
 
-export function PremiumButton({ title, onPress, loading, variant = 'primary' }: Props) {
-  if (variant === 'outline') {
-    return (
-      <Pressable
-        style={({ pressed }) => [styles.outline, pressed && styles.pressed]}
-        onPress={onPress}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color={theme.colors.primaryLight} />
-        ) : (
-          <Text style={styles.outlineText}>{title}</Text>
-        )}
-      </Pressable>
-    );
-  }
+export function PremiumButton({
+  title,
+  onPress,
+  loading,
+  disabled,
+  variant = 'primary',
+  size = 'md',
+  compact,
+  style,
+  fullWidth = true,
+}: Props) {
+  const isDisabled = loading || disabled;
+  const isPrimary = variant === 'primary' || variant === 'danger';
 
   return (
-    <Pressable
+    <PremiumPressable
       onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [styles.wrap, shadow('md'), pressed && styles.pressed]}
+      disabled={isDisabled}
+      variant={variant}
+      size={size}
+      compact={compact}
+      fullWidth={fullWidth}
+      style={style}
+      accessibilityLabel={title}
     >
-      <LinearGradient
-        colors={[theme.colors.primaryDark, theme.colors.primary, theme.colors.primaryLight]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.btn}
-      >
+      <View style={styles.content}>
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={isPrimary ? '#fff' : theme.colors.primaryDark} />
         ) : (
-          <Text style={styles.text}>{title}</Text>
+          <Text style={[styles.text, !isPrimary && styles.textOutline, variant === 'danger' && styles.textPrimary]}>
+            {title}
+          </Text>
         )}
-      </LinearGradient>
-    </Pressable>
+      </View>
+    </PremiumPressable>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignSelf: 'stretch', borderRadius: theme.radius.md, overflow: 'hidden' },
-  btn: { paddingVertical: 15, alignItems: 'center', borderRadius: theme.radius.md },
+  content: {
+    minHeight: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   text: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  outline: {
-    alignSelf: 'stretch',
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: theme.radius.md,
-    borderWidth: 1.5,
-    borderColor: theme.colors.tint.border,
-    backgroundColor: theme.colors.tint.soft,
+  textOutline: {
+    color: theme.colors.primaryDark,
+    fontWeight: '600',
   },
-  outlineText: { color: theme.colors.primaryDark, fontSize: 16, fontWeight: '600' },
-  pressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  textPrimary: {
+    color: '#fff',
+    fontWeight: '700',
+  },
 });

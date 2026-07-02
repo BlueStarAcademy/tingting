@@ -1,12 +1,14 @@
-import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, type Href } from 'expo-router';
+import { View, Text, StyleSheet, Alert } from 'react-native';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StarChip } from '@/components/StarChip';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
-import { glassSurface, iconButton } from '@/lib/ui';
+import { api } from '@/lib/api';
+import { safeBack } from '@/lib/navigation';
 import { theme } from '@/constants/theme';
 
 interface AppHeaderProps {
@@ -22,8 +24,23 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
   const contentWidth = useContentWidth();
   const { profile, signOut } = useAuth();
   const { t } = useLocale();
+  const [unreadCount, setUnreadCount] = useState(0);
   const narrow = contentWidth < 380;
   const label = title ?? t('appName');
+
+  const loadUnread = useCallback(async () => {
+    if (!profile) {
+      setUnreadCount(0);
+      return;
+    }
+    setUnreadCount(await api.getUnreadMailboxCount());
+  }, [profile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUnread();
+    }, [loadUnread])
+  );
 
   const handleLogout = () => {
     Alert.alert(t('header.logout'), t('header.logoutConfirm'), [
@@ -40,12 +57,14 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
   };
 
   return (
-    <View style={[styles.container, glassSurface(), { paddingTop: insets.top, width: contentWidth, maxWidth: contentWidth }]}>
+    <View style={[styles.container, styles.headerShell, { paddingTop: insets.top, width: contentWidth, maxWidth: contentWidth }]}>
       <View style={styles.row}>
         {showBack ? (
-          <Pressable onPress={() => router.back()} style={iconButton()} accessibilityLabel={t('common.back')}>
-            <Ionicons name="arrow-back" size={20} color={theme.colors.text} />
-          </Pressable>
+          <PremiumIconButton
+            icon="arrow-back"
+            onPress={() => safeBack(router)}
+            accessibilityLabel={t('common.back')}
+          />
         ) : null}
 
         {!narrow || showBack ? (
@@ -54,9 +73,13 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
               {label}
             </Text>
             {onEditTitle ? (
-              <Pressable style={styles.titleEditBtn} onPress={onEditTitle} hitSlop={8}>
-                <Ionicons name="pencil" size={13} color={theme.colors.primaryLight} />
-              </Pressable>
+              <PremiumIconButton
+                icon="pencil"
+                size="sm"
+                onPress={onEditTitle}
+                color={theme.colors.primaryLight}
+                accessibilityLabel={t('group.editPhoto')}
+              />
             ) : null}
           </View>
         ) : (
@@ -72,16 +95,22 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
                 onPress={() => router.push('/(tabs)/shop' as Href)}
               />
             ) : null}
-            <Pressable
+            <PremiumIconButton
+              icon="mail-outline"
+              onPress={() => router.push('/mailbox' as Href)}
+              badge={unreadCount}
+              accessibilityLabel={t('header.mailbox')}
+            />
+            <PremiumIconButton
+              icon="settings-outline"
               onPress={() => router.push('/settings' as Href)}
-              style={iconButton()}
               accessibilityLabel={t('header.settings')}
-            >
-              <Ionicons name="settings-outline" size={18} color={theme.colors.text} />
-            </Pressable>
-            <Pressable onPress={handleLogout} style={iconButton()} accessibilityLabel={t('header.logout')}>
-              <Ionicons name="log-out-outline" size={18} color={theme.colors.text} />
-            </Pressable>
+            />
+            <PremiumIconButton
+              icon="log-out-outline"
+              onPress={handleLogout}
+              accessibilityLabel={t('header.logout')}
+            />
           </View>
         ) : (
           <View style={styles.iconSpacer} />
@@ -94,8 +123,12 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
 const styles = StyleSheet.create({
   container: {
     alignSelf: 'center',
-    backgroundColor: theme.colors.headerBg,
     zIndex: 10,
+  },
+  headerShell: {
+    backgroundColor: theme.colors.headerBg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
   },
   row: {
     flexDirection: 'row',
@@ -116,21 +149,10 @@ const styles = StyleSheet.create({
   title: {
     flexShrink: 1,
     minWidth: 0,
-    color: theme.colors.text,
+    color: theme.colors.primaryDark,
     fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  titleEditBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: theme.colors.tint.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   titleSpacer: { flex: 1, minWidth: 0 },
   actions: {

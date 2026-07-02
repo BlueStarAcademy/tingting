@@ -1,16 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  Platform,
-  Pressable,
-  PanResponder,
-  useWindowDimensions,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
+import { View, StyleSheet, Platform, PanResponder, useWindowDimensions } from 'react-native';
 import type { Region } from '@tingting/shared';
 import type { Place } from '@tingting/shared';
 import { KoreaSvgMap } from '@/components/KoreaSvgMap';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
 import type { MapPin } from '@/lib/korea-map-coords';
 import { latLngToSvg } from '@/lib/korea-map-coords';
 import { TravelProgressBar } from '@/components/TravelProgressBar';
@@ -25,6 +18,7 @@ const DEFAULT_MAX_ZOOM = 8;
 const DEFAULT_ZOOM_STEP = 0.5;
 const VIEWPORT_HEIGHT_RATIO = 0.52;
 const TAP_SLOP = 8;
+const PIN_HIT_RADIUS = 28;
 
 type Props = {
   visitedRegionCodes?: string[];
@@ -46,6 +40,8 @@ type Props = {
   /** Zoom map and show pin at this place */
   focusPlace?: Place | null;
   focusZoom?: number;
+  /** Fired when the user taps the place pin on the map */
+  onPinPress?: () => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -71,6 +67,7 @@ export function ScrollableKoreaMap({
   viewportHeightRatio = VIEWPORT_HEIGHT_RATIO,
   focusPlace,
   focusZoom = 5.5,
+  onPinPress,
 }: Props) {
   const { t } = useLocale();
   const { height: windowHeight } = useWindowDimensions();
@@ -96,6 +93,8 @@ export function ScrollableKoreaMap({
   const offsetRef = useRef(offset);
   const panStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
   const didPan = useRef(false);
+  const focusedPlaceIdRef = useRef<string | null>(null);
+  const didInitialCenterRef = useRef(false);
 
   const centerOffset = useCallback(() => {
     const x = clamp((viewportW - mapSize) / 2, bounds.minX, bounds.maxX);
@@ -105,11 +104,12 @@ export function ScrollableKoreaMap({
     setOffset(next);
   }, [viewportW, viewportH, mapSize, bounds]);
 
-  useEffect(() => {
-    if (focusPlace) {
+  const focusOnPlace = useCallback(
+    (place: Place) => {
+      if (viewportW <= 0 || viewportH <= 0) return;
       const targetZoom = Math.min(maxZoom, Math.max(minZoom, focusZoom));
       const nextMapSize = Math.round(viewportW * targetZoom);
-      const { x, y } = latLngToSvg(focusPlace.lat, focusPlace.lng);
+      const { x, y } = latLngToSvg(place.lat, place.lng, place.regionCode);
       const pinX = (x / 1000) * nextMapSize;
       const pinY = (y / 1000) * nextMapSize;
       const nextBounds = {
@@ -125,14 +125,66 @@ export function ScrollableKoreaMap({
       setZoom(targetZoom);
       offsetRef.current = nextOffset;
       setOffset(nextOffset);
+    },
+    [viewportW, viewportH, focusZoom, minZoom, maxZoom],
+  );
+
+  useLayoutEffect(() => {
+    if (viewportW <= 0 || viewportH <= 0) return;
+
+    if (focusPlace) {
+      if (focusedPlaceIdRef.current !== focusPlace.id) {
+        focusedPlaceIdRef.current = focusPlace.id;
+        focusOnPlace(focusPlace);
+      }
       return;
     }
-    centerOffset();
-  }, [focusPlace?.id, viewportW, viewportH, focusZoom, minZoom, maxZoom]);
 
-  const pins: MapPin[] = focusPlace
-    ? [{ ...latLngToSvg(focusPlace.lat, focusPlace.lng), label: focusPlace.name }]
-    : [];
+    if (focusedPlaceIdRef.current !== null) {
+      focusedPlaceIdRef.current = null;
+      setZoom(initialZoom);
+      centerOffset();
+      return;
+    }
+
+    if (!didInitialCenterRef.current) {
+      didInitialCenterRef.current = true;
+      centerOffset();
+    }
+  }, [focusPlace, focusOnPlace, initialZoom, centerOffset, viewportW, viewportH]);
+
+  const pins: MapPin[] = useMemo(
+    () =>
+      focusPlace
+        ? [
+            {
+              ...latLngToSvg(focusPlace.lat, focusPlace.lng, focusPlace.regionCode),
+              label: focusPlace.name,
+            },
+          ]
+        : [],
+    [focusPlace],
+  );
+
+  const onPinPressRef = useRef(onPinPress);
+  const onRegionPressRef = useRef(onRegionPress);
+  useEffect(() => {
+    onPinPressRef.current = onPinPress;
+    onRegionPressRef.current = onRegionPress;
+  }, [onPinPress, onRegionPress]);
+
+  const isTapOnPin = useCallback(
+    (mapX: number, mapY: number) => {
+      if (pins.length === 0) return false;
+      const pin = pins[0];
+      const pinMapX = (pin.x / 1000) * mapSize;
+      const pinMapY = (pin.y / 1000) * mapSize;
+      const dx = mapX - pinMapX;
+      const dy = mapY - pinMapY;
+      return dx * dx + dy * dy <= PIN_HIT_RADIUS * PIN_HIT_RADIUS;
+    },
+    [pins, mapSize],
+  );
 
   const changeZoom = (delta: number) => {
     const next = Math.min(maxZoom, Math.max(minZoom, Math.round((zoom + delta) * 2) / 2));
@@ -162,7 +214,7 @@ export function ScrollableKoreaMap({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+        onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: () => {
           didPan.current = false;
           panStart.current = {
@@ -184,10 +236,16 @@ export function ScrollableKoreaMap({
           setOffset(next);
         },
         onPanResponderRelease: (evt) => {
-          if (didPan.current || !interactive || !onRegionPress) return;
+          if (didPan.current || !interactive) return;
           const { locationX, locationY } = evt.nativeEvent;
           const mapX = locationX - offsetRef.current.x;
           const mapY = locationY - offsetRef.current.y;
+          if (isTapOnPin(mapX, mapY)) {
+            onPinPressRef.current?.();
+            return;
+          }
+          const onRegionPress = onRegionPressRef.current;
+          if (!onRegionPress) return;
           const region = findRegionAtPoint(mapX, mapY, mapSize);
           if (region) onRegionPress(region);
         },
@@ -195,7 +253,7 @@ export function ScrollableKoreaMap({
           didPan.current = false;
         },
       }),
-    [bounds, interactive, mapSize, onRegionPress],
+    [bounds, interactive, isTapOnPin, mapSize],
   );
 
   const canZoomIn = zoom < maxZoom;
@@ -205,6 +263,7 @@ export function ScrollableKoreaMap({
     <View style={[styles.viewport, { width: viewportW, height: viewportH }]}>
       <View style={styles.mapFrame} {...panResponder.panHandlers}>
         <View
+          pointerEvents="none"
           style={{
             width: mapSize,
             height: mapSize,
@@ -238,32 +297,24 @@ export function ScrollableKoreaMap({
 
       {showZoomControls ? (
         <View style={styles.zoomControls} pointerEvents="box-none">
-          <Pressable
-            style={[styles.zoomBtn, !canZoomIn && styles.zoomBtnDisabled]}
+          <PremiumIconButton
+            icon="add"
+            variant="soft"
+            size="md"
+            color={canZoomIn ? theme.colors.text : theme.colors.textMuted}
             onPress={() => changeZoom(zoomStep)}
             disabled={!canZoomIn}
-            accessibilityRole="button"
             accessibilityLabel={t('map.zoomIn')}
-          >
-            <Ionicons
-              name="add"
-              size={22}
-              color={canZoomIn ? theme.colors.text : theme.colors.textMuted}
-            />
-          </Pressable>
-          <Pressable
-            style={[styles.zoomBtn, !canZoomOut && styles.zoomBtnDisabled]}
+          />
+          <PremiumIconButton
+            icon="remove"
+            variant="soft"
+            size="md"
+            color={canZoomOut ? theme.colors.text : theme.colors.textMuted}
             onPress={() => changeZoom(-zoomStep)}
             disabled={!canZoomOut}
-            accessibilityRole="button"
             accessibilityLabel={t('map.zoomOut')}
-          >
-            <Ionicons
-              name="remove"
-              size={22}
-              color={canZoomOut ? theme.colors.text : theme.colors.textMuted}
-            />
-          </Pressable>
+          />
         </View>
       ) : null}
     </View>
@@ -313,28 +364,5 @@ const styles = StyleSheet.create({
     right: theme.spacing.sm,
     zIndex: 3,
     gap: theme.spacing.xs,
-  },
-  zoomBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.mapControlBg,
-    borderWidth: 1,
-    borderColor: theme.colors.mapFrameBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
-      },
-      android: { elevation: 4 },
-      default: {},
-    }),
-  },
-  zoomBtnDisabled: {
-    opacity: 0.45,
   },
 });

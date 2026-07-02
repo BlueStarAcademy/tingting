@@ -38,6 +38,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "react-native-maps",
       [
         "expo-location",
         {
@@ -47,8 +48,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "방문 기록을 위해 사진 접근이 필요합니다.",
+          "photosPermission": "방문 기록과 사진 편집을 위해 사진 접근이 필요합니다.",
           "cameraPermission": "방문 기록을 위해 카메라 접근이 필요합니다."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "편집한 사진을 갤러리에 저장하기 위해 접근이 필요합니다.",
+          "savePhotosPermission": "편집한 사진을 갤러리에 저장하기 위해 접근이 필요합니다."
         }
       ]
     ],

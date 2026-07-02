@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { AppHeader } from '@/components/AppHeader';
 
 /** @deprecated AppHeader 또는 AppScreen을 사용하세요 */

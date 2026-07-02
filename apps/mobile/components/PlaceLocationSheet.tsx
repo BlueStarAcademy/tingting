@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Place } from '@tingting/shared';
 import { getRegion } from '@tingting/shared';
 import { getPlaceImageUrl } from '@/lib/place-images';
 import { PremiumButton } from '@/components/PremiumButton';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
@@ -38,9 +39,13 @@ export function PlaceLocationSheet({ place, onClose, onViewDetail }: Props) {
             </Text>
           </View>
         </View>
-        <Pressable onPress={onClose} hitSlop={8} accessibilityLabel={t('header.cancel')}>
-          <Ionicons name="close" size={22} color={theme.colors.textMuted} />
-        </Pressable>
+        <PremiumIconButton
+          icon="close"
+          variant="ghost"
+          color={theme.colors.textMuted}
+          onPress={onClose}
+          accessibilityLabel={t('header.cancel')}
+        />
       </View>
 
       <View style={styles.locationBadge}>
@@ -66,7 +71,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: theme.radius.lg,
     borderTopRightRadius: theme.radius.lg,
     padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
     gap: theme.spacing.sm,

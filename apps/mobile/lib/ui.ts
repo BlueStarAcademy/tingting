@@ -4,20 +4,20 @@ import { theme } from '@/constants/theme';
 type ShadowLevel = 'sm' | 'md' | 'lg' | 'glow' | 'tab';
 
 export function shadow(level: ShadowLevel): ViewStyle {
-  const shadowBase = '#64748B';
+  const shadowBase = theme.colors.primaryDark;
   const presets: Record<ShadowLevel, ViewStyle> = {
     sm: {
       shadowColor: shadowBase,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.07,
+      shadowRadius: 10,
       elevation: 2,
     },
     md: {
       shadowColor: shadowBase,
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.1,
-      shadowRadius: 16,
+      shadowRadius: 18,
       elevation: 4,
     },
     lg: {
@@ -28,17 +28,17 @@ export function shadow(level: ShadowLevel): ViewStyle {
       elevation: 8,
     },
     glow: {
-      shadowColor: theme.colors.primaryLight,
+      shadowColor: theme.colors.primary,
       shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.2,
-      shadowRadius: 12,
+      shadowOpacity: 0.25,
+      shadowRadius: 14,
       elevation: 3,
     },
     tab: {
-      shadowColor: shadowBase,
+      shadowColor: theme.colors.primaryDark,
       shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 16,
+      shadowOpacity: 0.1,
+      shadowRadius: 20,
       elevation: 12,
     },
   };
@@ -59,6 +59,14 @@ export function cardSurface(): ViewStyle {
   };
 }
 
+export function accentCard(): ViewStyle {
+  return {
+    ...cardSurface(),
+    borderTopWidth: 3,
+    borderTopColor: theme.colors.primary,
+  };
+}
+
 export function glassSurface(): ViewStyle {
   return {
     backgroundColor: theme.colors.surfaceGlass,
@@ -76,7 +84,7 @@ export function iconButton(): ViewStyle {
     justifyContent: 'center',
     backgroundColor: theme.colors.tint.soft,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.tint.border,
   };
 }
 
@@ -107,7 +115,7 @@ export function inputSurface(): ViewStyle {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.tint.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
   };
@@ -120,6 +128,6 @@ export function tabPill(active: boolean): ViewStyle {
     borderRadius: theme.radius.full,
     backgroundColor: active ? theme.colors.tint.pillActive : 'transparent',
     borderWidth: active ? 1 : 0,
-    borderColor: active ? theme.colors.borderStrong : 'transparent',
+    borderColor: active ? theme.colors.tint.border : 'transparent',
   };
 }

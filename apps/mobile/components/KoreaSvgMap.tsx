@@ -27,7 +27,7 @@ import {
   regionStrokeWidth,
 } from '@/lib/korea-map-visual';
 import { theme } from '@/constants/theme';
-import type { MapPin } from '@/lib/korea-map-coords';
+import { mapPinPathD, type MapPin } from '@/lib/korea-map-coords';
 
 const REGION_BY_CODE = Object.fromEntries(REGIONS.map((r) => [r.code, r]));
 
@@ -35,16 +35,18 @@ export type { MapPin } from '@/lib/korea-map-coords';
 
 function renderMapPin(pin: MapPin, key: string) {
   const { x, y } = pin;
+  const cx = Math.round(x * 10) / 10;
+  const cy = Math.round((y - 1) * 10) / 10;
   return (
     <G key={key} pointerEvents="none">
       <Path
-        d={`M ${x} ${y - 16} C ${x - 11} ${y - 7} ${x - 11} ${y + 5} ${x} ${y + 12} C ${x + 11} ${y + 5} ${x + 11} ${y - 7} Z`}
+        d={mapPinPathD(x, y)}
         fill="#E11D48"
         stroke="#FFFFFF"
         strokeWidth={2}
         strokeLinejoin="round"
       />
-      <Circle cx={x} cy={y - 1} r={4} fill="#FFFFFF" />
+      <Circle cx={cx} cy={cy} r={4} fill="#FFFFFF" />
     </G>
   );
 }
@@ -152,7 +154,10 @@ export function KoreaSvgMap({
   const visited = new Set(visitedRegionCodes);
 
   return (
-    <View style={[frameless ? styles.frameless : styles.wrap, { width: mapWidth, height: mapHeight }]}>
+    <View
+      style={[frameless ? styles.frameless : styles.wrap, { width: mapWidth, height: mapHeight }]}
+      pointerEvents={interactive ? 'auto' : 'none'}
+    >
       <Svg width={mapWidth} height={mapHeight} viewBox={KOREA_MAP_VIEWBOX}>
         <Defs>
           <LinearGradient id="mapSea" x1="0" y1="0" x2="1000" y2="1000" gradientUnits="userSpaceOnUse">

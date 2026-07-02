@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { Modal, View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MBTI_QUESTIONS, calculateMbti } from '@/lib/mbti-quiz';
 import { useLocale } from '@/hooks/useLocale';
+import { AppModal } from '@/components/AppModal';
+import { PremiumButton } from '@/components/PremiumButton';
+import { PremiumTextButton } from '@/components/PremiumIconButton';
 import { theme } from '@/constants/theme';
 
 interface Props {
@@ -43,13 +46,18 @@ export function MbtiQuizModal({ visible, onClose, onComplete }: Props) {
   if (!question) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
+    <AppModal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={handleClose}
+      variant="fullscreen"
+      transparent={false}
+      dismissOnBackdrop={false}
+    >
       <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
           <Text style={styles.title}>{t('profile.mbtiQuiz')}</Text>
-          <Pressable onPress={handleClose}>
-            <Text style={styles.close}>{t('header.cancel')}</Text>
-          </Pressable>
+          <PremiumTextButton title={t('header.cancel')} onPress={handleClose} />
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progress}%` }]} />
@@ -59,15 +67,11 @@ export function MbtiQuizModal({ visible, onClose, onComplete }: Props) {
         </Text>
         <ScrollView contentContainerStyle={styles.body}>
           <Text style={styles.question}>{question.text}</Text>
-          <Pressable style={styles.option} onPress={() => choose('A')}>
-            <Text style={styles.optionText}>{question.optionA.label}</Text>
-          </Pressable>
-          <Pressable style={styles.option} onPress={() => choose('B')}>
-            <Text style={styles.optionText}>{question.optionB.label}</Text>
-          </Pressable>
+          <PremiumButton title={question.optionA.label} variant="outline" onPress={() => choose('A')} />
+          <PremiumButton title={question.optionB.label} variant="outline" onPress={() => choose('B')} />
         </ScrollView>
       </SafeAreaView>
-    </Modal>
+    </AppModal>
   );
 }
 
@@ -80,7 +84,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
   },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '800' },
-  close: { color: theme.colors.primaryLight, fontWeight: '600' },
   progressTrack: {
     height: 4,
     backgroundColor: theme.colors.surface,
@@ -92,12 +95,4 @@ const styles = StyleSheet.create({
   step: { color: theme.colors.textMuted, textAlign: 'center', marginTop: theme.spacing.sm },
   body: { padding: theme.spacing.lg, gap: theme.spacing.md },
   question: { color: theme.colors.text, fontSize: 20, fontWeight: '700', lineHeight: 28, marginBottom: theme.spacing.md },
-  option: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.surfaceLight,
-  },
-  optionText: { color: theme.colors.text, fontSize: 16, lineHeight: 22 },
 });

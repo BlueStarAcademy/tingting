@@ -1,25 +1,27 @@
 import { useEffect, useState } from 'react';
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
   TextInput,
-  Pressable,
   Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserProfile } from '@tingting/shared';
 import { getDisplayNameChangeCost } from '@tingting/shared';
 import { pickPhoto } from '@/lib/pick-photo';
 import { api } from '@/lib/api';
+import { clampNicknameInput, getNicknameLength, nicknameErrorMessage, validateNickname } from '@/lib/nickname';
 import { useLocale } from '@/hooks/useLocale';
+import { useBottomSheetLayout } from '@/hooks/useBottomSheetLayout';
 import { PremiumButton } from '@/components/PremiumButton';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
+import { AppModal } from '@/components/AppModal';
 import { theme } from '@/constants/theme';
 
 interface Props {
@@ -31,12 +33,19 @@ interface Props {
 
 export function ProfileEditModal({ visible, profile, onClose, onSaved }: Props) {
   const { t } = useLocale();
+  const { maxSheetHeight } = useBottomSheetLayout();
   const [name, setName] = useState(profile.displayName);
   const [photoUri, setPhotoUri] = useState(profile.photoUri ?? '');
-  const [loading, setLoading] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [nicknameLoading, setNicknameLoading] = useState(false);
   const nicknameCost = getDisplayNameChangeCost(profile.displayNameChangeCount ?? 0);
   const nameChanged = name.trim() !== profile.displayName;
   const photoChanged = photoUri !== (profile.photoUri ?? '');
+  const nicknameValid = validateNickname(name) === null;
+  const nicknameButtonTitle =
+    nicknameCost > 0
+      ? t('profile.nicknameChangeButtonPaid', { cost: nicknameCost })
+      : t('profile.nicknameChangeButtonFree');
 
   useEffect(() => {
     if (visible) {
@@ -65,122 +74,151 @@ export function ProfileEditModal({ visible, profile, onClose, onSaved }: Props) 
     if (uri) setPhotoUri(uri);
   };
 
-  const saveChanges = async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      Alert.alert(t('common.alert'), t('profile.nicknameRequired'));
-      return;
-    }
-    if (!nameChanged && !photoChanged) {
+  const savePhoto = async () => {
+    if (!photoChanged) {
       handleClose();
       return;
     }
+    setPhotoLoading(true);
+    try {
+      await api.updateProfile({ photoUri: photoUri || undefined });
+      Alert.alert(t('profile.editSaved'), t('profile.photoUpdated'));
+      onSaved();
+      handleClose();
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
 
-    const doSave = async () => {
-      setLoading(true);
+  const changeNickname = async () => {
+    const trimmed = name.trim();
+    const validationError = validateNickname(trimmed);
+    if (validationError) {
+      Alert.alert(t('common.alert'), nicknameErrorMessage(validationError, t));
+      return;
+    }
+    if (!nameChanged) return;
+
+    const doChange = async () => {
+      setNicknameLoading(true);
       try {
-        if (photoChanged) {
-          await api.updateProfile({ photoUri: photoUri || undefined });
-        }
-        if (nameChanged) {
-          const result = await api.changeDisplayName(trimmed);
-          if (result.cost > 0) {
-            Alert.alert(t('profile.nicknameChanged'), t('profile.nicknameChangedPaid', { cost: result.cost }));
-          } else if (!photoChanged) {
-            Alert.alert(t('profile.nicknameChanged'), t('profile.nicknameChangedFree'));
-          }
-        } else if (photoChanged) {
-          Alert.alert(t('profile.editSaved'), t('profile.photoUpdated'));
+        const result = await api.changeDisplayName(trimmed);
+        if (result.cost > 0) {
+          Alert.alert(t('profile.nicknameChanged'), t('profile.nicknameChangedPaid', { cost: result.cost }));
+        } else {
+          Alert.alert(t('profile.nicknameChanged'), t('profile.nicknameChangedFree'));
         }
         onSaved();
         handleClose();
       } catch (e: unknown) {
         Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
       } finally {
-        setLoading(false);
+        setNicknameLoading(false);
       }
     };
 
-    if (nameChanged && nicknameCost > 0) {
+    if (nicknameCost > 0) {
       Alert.alert(t('profile.nicknameChangeTitle'), t('profile.nicknameChangeMessage', { cost: nicknameCost }), [
         { text: t('header.cancel'), style: 'cancel' },
-        { text: t('common.continue'), onPress: doSave },
+        { text: t('common.continue'), onPress: doChange },
       ]);
     } else {
-      await doSave();
+      await doChange();
     }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+    <AppModal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView
-        style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.container, { maxHeight: maxSheetHeight }]}
       >
-        <Pressable style={styles.backdrop} onPress={handleClose} />
-        <SafeAreaView edges={['bottom']} style={styles.sheet}>
-          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{t('profile.editTitle')}</Text>
-              <Pressable onPress={handleClose} hitSlop={12}>
-                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
-              </Pressable>
-            </View>
-
-            <Pressable style={styles.photoArea} onPress={pickNewPhoto}>
-              {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.photo} />
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <Ionicons name="camera" size={32} color={theme.colors.textMuted} />
-                </View>
-              )}
-              <View style={styles.photoBadge}>
-                <Ionicons name="camera" size={14} color="#fff" />
-              </View>
-            </Pressable>
-            <Text style={styles.photoHint}>{t('profile.changePhoto')}</Text>
-
-            <Text style={styles.label}>{t('auth.displayName')}</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder={t('auth.displayName')}
-              placeholderTextColor={theme.colors.textMuted}
-              maxLength={20}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>{t('profile.editTitle')}</Text>
+            <PremiumIconButton
+              icon="close"
+              onPress={handleClose}
+              variant="soft"
+              color={theme.colors.textMuted}
+              accessibilityLabel={t('header.cancel')}
             />
-            {nameChanged ? (
-              nicknameCost > 0 ? (
-                <Text style={styles.cost}>✦ {nicknameCost}</Text>
-              ) : (
-                <Text style={styles.free}>{t('profile.nicknameFirstFree')}</Text>
-              )
-            ) : null}
+          </View>
 
-            <PremiumButton title={t('common.save')} onPress={saveChanges} loading={loading} />
-          </ScrollView>
-        </SafeAreaView>
+          <Pressable style={styles.photoArea} onPress={pickNewPhoto}>
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.photo} />
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <Ionicons name="camera" size={32} color={theme.colors.textMuted} />
+              </View>
+            )}
+            <View style={styles.photoBadge}>
+              <Ionicons name="camera" size={14} color="#fff" />
+            </View>
+          </Pressable>
+          <Text style={styles.photoHint}>{t('profile.changePhoto')}</Text>
+          <PremiumButton
+            title={t('profile.savePhoto')}
+            onPress={savePhoto}
+            loading={photoLoading}
+            variant="outline"
+          />
+
+          <View style={styles.divider} />
+
+          <Text style={styles.label}>{t('auth.displayName')}</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={(text) => setName(clampNicknameInput(text))}
+            placeholder={t('auth.displayName')}
+            placeholderTextColor={theme.colors.textMuted}
+          />
+          <Text style={styles.hint}>
+            {t('profile.nicknameLengthHint', { count: getNicknameLength(name) })}
+          </Text>
+
+          <PremiumButton
+            title={nicknameButtonTitle}
+            onPress={changeNickname}
+            loading={nicknameLoading}
+            disabled={!nameChanged || !nicknameValid}
+            variant="outline"
+          />
+          {!nameChanged || !nicknameValid ? (
+            <Text style={styles.helper}>
+              {!nameChanged ? t('profile.nicknameUnchanged') : t('profile.nicknameInvalidHint')}
+            </Text>
+          ) : null}
+        </ScrollView>
       </KeyboardAvoidingView>
-    </Modal>
+    </AppModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
+  container: {
+    flexShrink: 1,
     backgroundColor: theme.colors.background,
-    borderTopLeftRadius: theme.radius.lg,
-    borderTopRightRadius: theme.radius.lg,
+  },
+  content: {
     padding: theme.spacing.lg,
-    maxHeight: '85%',
+    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.xl,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
   },
   title: { color: theme.colors.text, fontSize: 18, fontWeight: '700' },
   photoArea: { alignSelf: 'center', marginBottom: theme.spacing.xs },
@@ -213,7 +251,12 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.surfaceLight,
+    marginVertical: theme.spacing.md,
   },
   label: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600', marginBottom: 4 },
   input: {
@@ -226,6 +269,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.surfaceLight,
     marginBottom: theme.spacing.xs,
   },
-  cost: { color: theme.colors.star, fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: theme.spacing.sm },
-  free: { color: theme.colors.success, fontSize: 14, fontWeight: '600', textAlign: 'center', marginBottom: theme.spacing.sm },
+  hint: { color: theme.colors.textMuted, fontSize: 12, marginBottom: theme.spacing.sm },
+  helper: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: theme.spacing.xs },
 });

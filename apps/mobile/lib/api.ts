@@ -2,20 +2,25 @@ import type {
   AuthSession,
   Group,
   GroupChatMessage,
+  GroupSchedule,
   HomeDashboard,
+  MailboxMessage,
   PedometerDayState,
   Place,
   PlaceRecommendation,
   Quest,
   RankingEntry,
+  PublicExperiencePost,
   ShopItem,
   UserProfile,
   Visit,
+  FeaturePass,
+  FeaturePassTier,
 } from '@tingting/shared';
-import { SHOP_ITEMS } from '@tingting/shared';
 import { getSupabase, isSupabaseConfigured } from './supabase';
 import { httpApi, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
+import type { MinigameId } from '@/lib/minigames/stages';
 
 export { isSupabaseConfigured, isHttpApiConfigured };
 
@@ -77,7 +82,9 @@ export const api = {
     };
   },
 
-  async updateProfile(patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday'>>): Promise<UserProfile> {
+  async updateProfile(
+    patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday' | 'profilePublic'>>
+  ): Promise<UserProfile> {
     if (isHttpApiConfigured()) return httpApi.updateProfile(patch);
     if (!isSupabaseConfigured) return localStore.updateProfile(patch);
     return localStore.updateProfile(patch);
@@ -175,10 +182,50 @@ export const api = {
     return localStore.unlockGroupGallerySlots(groupId);
   },
 
-  async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
+  async inviteGroupMember(groupId: string, phone: string): Promise<{ cost: number }> {
     if (isHttpApiConfigured()) return httpApi.inviteGroupMember(groupId, phone);
     if (!isSupabaseConfigured) return localStore.inviteGroupMember(groupId, phone);
     return localStore.inviteGroupMember(groupId, phone);
+  },
+
+  async searchUserByPhone(phone: string) {
+    if (isHttpApiConfigured()) return httpApi.searchUserByPhone(phone);
+    return localStore.searchUserByPhone(phone);
+  },
+
+  async sendPhoneVerificationCode(phone: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.sendPhoneVerificationCode(phone);
+    return localStore.sendPhoneVerificationCode(phone);
+  },
+
+  async verifyPhone(phone: string, code: string): Promise<UserProfile> {
+    if (isHttpApiConfigured()) return httpApi.verifyPhone(phone, code);
+    return localStore.verifyPhone(phone, code);
+  },
+
+  async updatePhoneInviteSettings(blockPhoneInvite: boolean): Promise<UserProfile> {
+    if (isHttpApiConfigured()) return httpApi.updatePhoneInviteSettings(blockPhoneInvite);
+    return localStore.updatePhoneInviteSettings(blockPhoneInvite);
+  },
+
+  async getMailboxMessages(): Promise<MailboxMessage[]> {
+    if (isHttpApiConfigured()) return httpApi.getMailboxMessages();
+    return localStore.getMailboxMessages();
+  },
+
+  async getUnreadMailboxCount(): Promise<number> {
+    if (isHttpApiConfigured()) return httpApi.getUnreadMailboxCount();
+    return localStore.getUnreadMailboxCount();
+  },
+
+  async markMailboxMessageRead(messageId: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.markMailboxMessageRead(messageId);
+    return localStore.markMailboxMessageRead(messageId);
+  },
+
+  async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
+    if (isHttpApiConfigured()) return httpApi.respondToGroupInvite(messageId, accept);
+    return localStore.respondToGroupInvite(messageId, accept);
   },
 
   async updateGroup(groupId: string, patch: { name?: string; description?: string }): Promise<Group> {
@@ -348,6 +395,27 @@ export const api = {
     return localStore.skipGroupStationQuestPurchase(groupId, questId);
   },
 
+  async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
+    if (isHttpApiConfigured()) return httpApi.getGroupSchedules(groupId);
+    return localStore.getGroupSchedules(groupId);
+  },
+
+  async createGroupSchedule(input: {
+    groupId: string;
+    regionCode: string;
+    title: string;
+    date: string;
+    note?: string;
+  }): Promise<GroupSchedule> {
+    if (isHttpApiConfigured()) return httpApi.createGroupSchedule(input);
+    return localStore.createGroupSchedule(input);
+  },
+
+  async deleteGroupSchedule(scheduleId: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.deleteGroupSchedule(scheduleId);
+    return localStore.deleteGroupSchedule(scheduleId);
+  },
+
   async spendStars(amount: number, reason: string): Promise<number> {
     if (isHttpApiConfigured()) return httpApi.spendStars(amount, reason);
     if (!isSupabaseConfigured) return localStore.spendStars(amount, reason);
@@ -397,8 +465,20 @@ export const api = {
   },
 
   getShopItems(): ShopItem[] {
-    if (isHttpApiConfigured()) return SHOP_ITEMS;
-    return localStore.getShopItems();
+    return [];
+  },
+
+  async getFeaturePasses(): Promise<FeaturePass[]> {
+    if (isHttpApiConfigured()) return httpApi.getFeaturePasses();
+    return localStore.getFeaturePasses();
+  },
+
+  async purchaseFeaturePass(
+    featureId: string,
+    tier: FeaturePassTier,
+  ): Promise<{ pass: FeaturePass; stars: number }> {
+    if (isHttpApiConfigured()) return httpApi.purchaseFeaturePass(featureId, tier);
+    return localStore.purchaseFeaturePass(featureId, tier);
   },
 
   async getUnlockedEditorAssets(): Promise<string[]> {
@@ -432,12 +512,42 @@ export const api = {
     return localStore.spinStepRoulette(milestone);
   },
 
+  async getMinigameProgress() {
+    return localStore.getMinigameProgress();
+  },
+
+  async getMinigameDailyState() {
+    return localStore.getMinigameDailyState();
+  },
+
+  async claimMinigameStageClear(gameId: MinigameId, stage: number) {
+    return localStore.claimMinigameStageClear(gameId, stage);
+  },
+
   async setStepTimezone(timezone: string) {
     return localStore.setStepTimezone(timezone);
   },
 
   async getRankings(type: 'stars' | 'visits' | 'gallery'): Promise<RankingEntry[]> {
     return localStore.getRankings(type);
+  },
+
+  async getPublicFeed(): Promise<PublicExperiencePost[]> {
+    const feed = isHttpApiConfigured() ? await httpApi.getPublicFeed() : await localStore.getPublicFeed();
+    return localStore.applyFeedRecommendCounts(feed);
+  },
+
+  async getFeedLikedPostIds(): Promise<string[]> {
+    return localStore.getFeedLikedPostIds();
+  },
+
+  async toggleFeedRecommend(postId: string, postUserId: string): Promise<{ count: number; liked: boolean }> {
+    return localStore.toggleFeedRecommend(postId, postUserId);
+  },
+
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    if (isHttpApiConfigured()) return httpApi.getUserProfile(userId);
+    return localStore.getUserProfile(userId);
   },
 
   async changePassword(current: string, next: string): Promise<void> {

@@ -55,5 +55,5 @@ const styles = StyleSheet.create({
   },
   content: { paddingHorizontal: theme.spacing.sm, gap: 6, paddingVertical: 4 },
   tabText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '600' },
-  tabTextActive: { color: theme.colors.primaryDark, fontWeight: '800' },
+  tabTextActive: { color: theme.colors.primary, fontWeight: '800' },
 });

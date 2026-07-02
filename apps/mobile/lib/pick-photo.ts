@@ -20,6 +20,21 @@ async function pickFromLibrary(): Promise<string | null> {
   return result.assets[0].uri;
 }
 
+/** 갤러리에서 사진 1장 선택 (앨범 전용) */
+export async function pickGalleryPhoto(labels: {
+  permissionTitle: string;
+  permissionMessage: string;
+}): Promise<string | null> {
+  const uri = await pickFromLibrary();
+  if (uri === null) {
+    const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(labels.permissionTitle, labels.permissionMessage);
+    }
+  }
+  return uri;
+}
+
 async function pickFromCamera(): Promise<string | null> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) return null;

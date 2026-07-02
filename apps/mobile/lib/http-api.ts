@@ -4,14 +4,21 @@ import type {
   AuthSession,
   Group,
   GroupChatMessage,
+  GroupSchedule,
   HomeDashboard,
+  MailboxMessage,
   Place,
   PlaceRecommendation,
+  PublicExperiencePost,
   Quest,
   ShopItem,
   UserProfile,
   Visit,
+  FeaturePass,
+  FeaturePassTier,
 } from '@tingting/shared';
+import { filterPlacesByRegion, mergePlacesWithBundled } from '@/lib/places-data';
+import { SEED_PUBLIC_EXPERIENCE_POSTS } from '@/lib/public-feed-seed';
 
 const TOKEN_KEY = '@tingting/api-token';
 const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
@@ -94,6 +101,14 @@ export const httpApi = {
     }
   },
 
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    try {
+      return await request<UserProfile>(`/users/${userId}/profile`);
+    } catch {
+      return null;
+    }
+  },
+
   async completeOnboarding(displayName: string): Promise<UserProfile> {
     const { profile } = await request<{ profile: UserProfile }>('/auth/onboarding', {
       method: 'POST',
@@ -102,7 +117,9 @@ export const httpApi = {
     return profile;
   },
 
-  async updateProfile(patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday'>>): Promise<UserProfile> {
+  async updateProfile(
+    patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday' | 'profilePublic'>>
+  ): Promise<UserProfile> {
     const { profile } = await request<{ profile: UserProfile }>('/profile', {
       method: 'PATCH',
       body: JSON.stringify(patch),
@@ -154,10 +171,64 @@ export const httpApi = {
     }
   },
 
-  async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
+  async inviteGroupMember(groupId: string, phone: string): Promise<{ cost: number }> {
     return request(`/groups/${groupId}/invite`, {
       method: 'POST',
       body: JSON.stringify({ phone }),
+    });
+  },
+
+  async searchUserByPhone(phone: string): Promise<{ userId: string; displayName: string; phone: string } | null> {
+    try {
+      return await request(`/users/search-by-phone?phone=${encodeURIComponent(phone)}`);
+    } catch {
+      return null;
+    }
+  },
+
+  async sendPhoneVerificationCode(phone: string): Promise<void> {
+    await request('/users/phone/send-code', { method: 'POST', body: JSON.stringify({ phone }) });
+  },
+
+  async verifyPhone(phone: string, code: string): Promise<UserProfile> {
+    return request<UserProfile>('/users/phone/verify', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
+    });
+  },
+
+  async updatePhoneInviteSettings(blockPhoneInvite: boolean): Promise<UserProfile> {
+    return request<UserProfile>('/users/phone/invite-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ blockPhoneInvite }),
+    });
+  },
+
+  async getMailboxMessages(): Promise<MailboxMessage[]> {
+    try {
+      return await request<MailboxMessage[]>('/mailbox');
+    } catch {
+      return [];
+    }
+  },
+
+  async getUnreadMailboxCount(): Promise<number> {
+    try {
+      const { count } = await request<{ count: number }>('/mailbox/unread-count');
+      return count;
+    } catch {
+      return 0;
+    }
+  },
+
+  async markMailboxMessageRead(messageId: string): Promise<void> {
+    await request(`/mailbox/${messageId}/read`, { method: 'POST' });
+  },
+
+  async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
+    return request<Group | null>(`/mailbox/${messageId}/invite-response`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
     });
   },
 
@@ -183,7 +254,8 @@ export const httpApi = {
 
   async getGroupChatMessages(groupId: string): Promise<GroupChatMessage[]> {
     try {
-      return await request<GroupChatMessage[]>(`/groups/${groupId}/chat`);
+      const rows = await request<GroupChatMessage[]>(`/groups/${groupId}/chat`);
+      return rows.filter((message) => !message.deletedAt);
     } catch {
       return [];
     }
@@ -209,8 +281,14 @@ export const httpApi = {
   },
 
   async getPlaces(regionCode?: string): Promise<Place[]> {
-    const q = regionCode ? `?region=${encodeURIComponent(regionCode)}` : '';
-    return request<Place[]>(`/places${q}`);
+    let remote: Place[] = [];
+    try {
+      remote = await request<Place[]>('/places');
+    } catch {
+      /* fall back to bundled seed */
+    }
+    const merged = mergePlacesWithBundled(remote.length > 0 ? remote : []);
+    return filterPlacesByRegion(merged, regionCode);
   },
 
   async getRecommendedPlaces(limit = 6): Promise<Place[]> {
@@ -226,7 +304,7 @@ export const httpApi = {
     try {
       return await request<Place>(`/places/${id}`);
     } catch {
-      return null;
+      return mergePlacesWithBundled([]).find((p) => p.id === id) ?? null;
     }
   },
 
@@ -313,6 +391,27 @@ export const httpApi = {
     });
   },
 
+  async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
+    return request<GroupSchedule[]>(`/groups/${groupId}/schedules`);
+  },
+
+  async createGroupSchedule(input: {
+    groupId: string;
+    regionCode: string;
+    title: string;
+    date: string;
+    note?: string;
+  }): Promise<GroupSchedule> {
+    return request<GroupSchedule>(`/groups/${input.groupId}/schedules`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async deleteGroupSchedule(scheduleId: string): Promise<void> {
+    await request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' });
+  },
+
   async spendStars(amount: number, reason: string): Promise<number> {
     const { stars } = await request<{ stars: number }>('/stars/spend', {
       method: 'POST',
@@ -344,6 +443,20 @@ export const httpApi = {
     return request<ShopItem[]>('/shop/items');
   },
 
+  async getFeaturePasses(): Promise<FeaturePass[]> {
+    return request<FeaturePass[]>('/editor/passes');
+  },
+
+  async purchaseFeaturePass(
+    featureId: string,
+    tier: FeaturePassTier,
+  ): Promise<{ pass: FeaturePass; stars: number }> {
+    return request('/editor/passes', {
+      method: 'POST',
+      body: JSON.stringify({ featureId, tier }),
+    });
+  },
+
   async getUnlockedEditorAssets(): Promise<string[]> {
     return request<string[]>('/editor/unlocks');
   },
@@ -353,5 +466,13 @@ export const httpApi = {
       method: 'POST',
       body: JSON.stringify({ assetId, cost }),
     });
+  },
+
+  async getPublicFeed(): Promise<PublicExperiencePost[]> {
+    try {
+      return await request<PublicExperiencePost[]>('/feed/experiences');
+    } catch {
+      return SEED_PUBLIC_EXPERIENCE_POSTS;
+    }
   },
 };

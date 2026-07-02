@@ -24,27 +24,56 @@ const CALIBRATION = [
   return { ...c, sx: label?.cx ?? 500, sy: label?.cy ?? 500 };
 });
 
+const LNG_SCALE = 22;
+const LAT_SCALE = 28;
+
 export type SvgPoint = { x: number; y: number };
 export type MapPin = SvgPoint & { label?: string };
 
-/** Map WGS84 coordinates to SVG viewBox (0–1000) using inverse-distance weighting */
-export function latLngToSvg(lat: number, lng: number): SvgPoint {
-  let wx = 0;
-  let wy = 0;
-  let w = 0;
+function roundSvg(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Valid SVG path for map pin marker (web DOM requires complete cubic segments). */
+export function mapPinPathD(x: number, y: number): string {
+  const px = roundSvg(x);
+  const py = roundSvg(y);
+  const top = roundSvg(py - 16);
+  const bottom = roundSvg(py + 12);
+  return [
+    `M ${px} ${top}`,
+    `C ${roundSvg(px - 11)} ${roundSvg(py - 7)} ${roundSvg(px - 11)} ${roundSvg(py + 5)} ${px} ${bottom}`,
+    `C ${roundSvg(px + 11)} ${roundSvg(py + 5)} ${roundSvg(px + 11)} ${roundSvg(py - 7)} ${px} ${top}`,
+    'Z',
+  ].join(' ');
+}
+
+function clampSvg(value: number): number {
+  return Math.max(20, Math.min(980, value));
+}
+
+function anchorFromRegionCode(regionCode?: string) {
+  if (!regionCode) return undefined;
+  return CALIBRATION.find((p) => p.code === regionCode);
+}
+
+function nearestAnchor(lat: number, lng: number) {
+  let nearest = CALIBRATION[0];
+  let best = Infinity;
   for (const p of CALIBRATION) {
-    const d = Math.sqrt((lat - p.lat) ** 2 + (lng - p.lng) ** 2) + 0.02;
-    const weight = 1 / (d * d);
-    wx += p.sx * weight;
-    wy += p.sy * weight;
-    w += weight;
+    const d = (lat - p.lat) ** 2 + (lng - p.lng) ** 2;
+    if (d < best) {
+      best = d;
+      nearest = p;
+    }
   }
-  const x = wx / w;
-  const y = wy / w;
-  const fineX = x + (lng - CALIBRATION.reduce((s, p) => s + p.lng, 0) / CALIBRATION.length) * 18;
-  const fineY = y - (lat - CALIBRATION.reduce((s, p) => s + p.lat, 0) / CALIBRATION.length) * 22;
-  return {
-    x: Math.max(20, Math.min(980, fineX)),
-    y: Math.max(20, Math.min(980, fineY)),
-  };
+  return nearest;
+}
+
+/** Map WGS84 coordinates to SVG viewBox (0–1000) using region-anchored offsets */
+export function latLngToSvg(lat: number, lng: number, regionCode?: string): SvgPoint {
+  const anchor = anchorFromRegionCode(regionCode) ?? nearestAnchor(lat, lng);
+  const x = anchor.sx + (lng - anchor.lng) * LNG_SCALE;
+  const y = anchor.sy - (lat - anchor.lat) * LAT_SCALE;
+  return { x: clampSvg(x), y: clampSvg(y) };
 }

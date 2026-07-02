@@ -26,11 +26,20 @@ declare module 'react-native-svg' {
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
+    strokeLinecap?: string;
+    strokeDasharray?: string | number;
+    strokeDashoffset?: string | number;
+    rotation?: number;
+    origin?: string;
+    opacity?: number;
   }
 
   export interface GProps {
     children?: ReactNode;
     pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
+    transform?: string;
+    rotation?: number;
+    origin?: string;
   }
 
   export interface TextProps {

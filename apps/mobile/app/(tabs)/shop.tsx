@@ -1,20 +1,28 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { TabPage } from '@/components/TabPage';
-import { PageHeader } from '@/components/PageHeader';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarChip } from '@/components/StarChip';
 import { cardSurface, tabPill } from '@/lib/ui';
-import { api } from '@/lib/api';
-import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 type ShopTab = 'stars' | 'packages' | 'subscription';
 
+type ShopProduct = {
+  id: string;
+  name?: string;
+  starAmount?: number;
+  desc?: string;
+  actionTitle: string;
+  onPress: () => void;
+};
+
 const STAR_PRODUCTS = [
-  { id: 's100', name: '✦ 100', price: '₩1,100', desc: '스타 100개' },
-  { id: 's500', name: '✦ 500', price: '₩4,900', desc: '스타 500개 (+50 보너스)' },
-  { id: 's1000', name: '✦ 1,000', price: '₩8,900', desc: '스타 1,000개 (+150 보너스)' },
+  { id: 's100', amount: 100, price: '₩1,100', desc: '' },
+  { id: 's200', amount: 250, price: '₩2,200', desc: '+50 보너스' },
+  { id: 's500', amount: 650, price: '₩5,500', desc: '+150 보너스' },
+  { id: 's1000', amount: 1500, price: '₩9,900', desc: '+500 보너스' },
 ];
 
 const PACKAGES = [
@@ -29,9 +37,7 @@ const SUBS = [
 
 export default function ShopTabScreen() {
   const { t } = useLocale();
-  const { refresh } = useAuth();
   const [tab, setTab] = useState<ShopTab>('stars');
-  const items = api.getShopItems();
 
   const tabs: { id: ShopTab; label: string }[] = [
     { id: 'stars', label: t('shop.tabStars') },
@@ -41,19 +47,36 @@ export default function ShopTabScreen() {
 
   const comingSoon = () => Alert.alert(t('shop.comingSoonTitle'), t('shop.comingSoonMessage'));
 
-  const buyItem = async (id: string, name: string, cost: number) => {
-    try {
-      await api.spendStars(cost, 'shop_' + id);
-      await refresh();
-      Alert.alert(t('shop.purchased'), t('shop.unlocked', { name }));
-    } catch (e: unknown) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
-    }
-  };
+  const renderProductCard = (product: ShopProduct, fullWidth = false) => (
+    <View key={product.id} style={[styles.card, fullWidth && styles.cardFull, cardSurface()]}>
+      {product.starAmount != null ? (
+        <StarChip stars={product.starAmount} />
+      ) : (
+        <Text style={[styles.name, fullWidth && styles.nameFull]} numberOfLines={fullWidth ? 2 : 1}>
+          {product.name}
+        </Text>
+      )}
+      {product.desc ? (
+        <Text style={[styles.desc, fullWidth && styles.descFull]} numberOfLines={fullWidth ? undefined : 3}>
+          {product.desc}
+        </Text>
+      ) : (
+        <View style={styles.descSpacer} />
+      )}
+      <PremiumButton
+        title={product.actionTitle}
+        onPress={product.onPress}
+        size={fullWidth ? 'md' : 'sm'}
+      />
+    </View>
+  );
+
+  const renderProductGrid = (products: ShopProduct[], fullWidth = false) => (
+    <View style={styles.grid}>{products.map((product) => renderProductCard(product, fullWidth))}</View>
+  );
 
   return (
     <TabPage contentContainerStyle={styles.page}>
-      <PageHeader title={t('shop.title')} subtitle={t('shop.sub')} />
       <View style={styles.tabRow}>
         {tabs.map((item) => (
           <Pressable
@@ -66,47 +89,42 @@ export default function ShopTabScreen() {
         ))}
       </View>
 
-      {tab === 'stars' ? (
-        <>
-          {STAR_PRODUCTS.map((p) => (
-            <View key={p.id} style={[styles.card, cardSurface()]}>
-              <Text style={styles.name}>{p.name}</Text>
-              <Text style={styles.desc}>{p.desc}</Text>
-              <PremiumButton title={p.price} onPress={comingSoon} />
-            </View>
-          ))}
-          <Text style={styles.section}>{t('shop.itemsSection')}</Text>
-          {items.map((item) => (
-            <View key={item.id} style={[styles.card, cardSurface()]}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.desc}>{item.description}</Text>
-              <PremiumButton
-                title={t('shop.buy', { cost: item.cost })}
-                onPress={() => buyItem(item.id, item.name, item.cost)}
-              />
-            </View>
-          ))}
-        </>
-      ) : null}
+      {tab === 'stars'
+        ? renderProductGrid(
+            STAR_PRODUCTS.map((p) => ({
+              id: p.id,
+              starAmount: p.amount,
+              desc: p.desc,
+              actionTitle: p.price,
+              onPress: comingSoon,
+            })),
+          )
+        : null}
 
       {tab === 'packages'
-        ? PACKAGES.map((p) => (
-            <View key={p.id} style={[styles.card, cardSurface()]}>
-              <Text style={styles.name}>{p.name}</Text>
-              <Text style={styles.desc}>{p.desc}</Text>
-              <PremiumButton title={p.price} onPress={comingSoon} />
-            </View>
-          ))
+        ? renderProductGrid(
+            PACKAGES.map((p) => ({
+              id: p.id,
+              name: p.name,
+              desc: p.desc,
+              actionTitle: p.price,
+              onPress: comingSoon,
+            })),
+            true,
+          )
         : null}
 
       {tab === 'subscription'
-        ? SUBS.map((p) => (
-            <View key={p.id} style={[styles.card, cardSurface()]}>
-              <Text style={styles.name}>{p.name}</Text>
-              <Text style={styles.desc}>{p.desc}</Text>
-              <PremiumButton title={t('shop.subscribe')} onPress={comingSoon} />
-            </View>
-          ))
+        ? renderProductGrid(
+            SUBS.map((p) => ({
+              id: p.id,
+              name: p.name,
+              desc: p.desc,
+              actionTitle: t('shop.subscribe'),
+              onPress: comingSoon,
+            })),
+            true,
+          )
         : null}
     </TabPage>
   );
@@ -118,12 +136,29 @@ const styles = StyleSheet.create({
   tabItem: { flex: 1, alignItems: 'center' },
   tabText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '600' },
   tabTextActive: { color: theme.colors.primaryLight, fontWeight: '800' },
-  section: { color: theme.colors.textMuted, fontSize: 14, marginTop: theme.spacing.sm, fontWeight: '600' },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
   card: {
+    width: '48%',
+    flexGrow: 1,
+    flexBasis: '48%',
     padding: theme.spacing.md,
     gap: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
+    minHeight: 148,
+    justifyContent: 'space-between',
   },
-  name: { color: theme.colors.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 },
-  desc: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
+  cardFull: {
+    width: '100%',
+    flexBasis: '100%',
+    flexGrow: 0,
+    minHeight: undefined,
+  },
+  name: { color: theme.colors.text, fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  nameFull: { fontSize: 18 },
+  descSpacer: { flex: 1 },
+  desc: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
+  descFull: { fontSize: 14, lineHeight: 20 },
 });

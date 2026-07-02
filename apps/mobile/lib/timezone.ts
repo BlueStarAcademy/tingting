@@ -1,3 +1,9 @@
+export function getTimezoneShortLabel(timeZone: string): string {
+  const opt = TIMEZONE_OPTIONS.find((o) => o.id === timeZone);
+  if (!opt) return timeZone;
+  return opt.label.replace(/ \(/, '(');
+}
+
 /** 주요 타임존 목록 (IANA) */
 export const TIMEZONE_OPTIONS = [
   { id: 'Asia/Seoul', label: 'KST (서울)' },

@@ -14,6 +14,7 @@ import { theme } from '@/constants/theme';
 
 interface Props {
   groupId: string;
+  regionCode: string;
   quests: Quest[];
   onUpdated: () => void;
 }
@@ -35,8 +36,12 @@ function QuestReward({ quest }: { quest: Quest }) {
   return <Text style={styles.starReward}>✦ {quest.rewardStars}</Text>;
 }
 
-export function GroupQuestTab({ groupId, quests, onUpdated }: Props) {
+export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props) {
   const { t } = useLocale();
+
+  const displayQuests = quests.filter(
+    (q) => q.isStationQuest && q.regionCode === regionCode
+  );
 
   const verify = async (quest: Quest) => {
     try {
@@ -87,17 +92,14 @@ export function GroupQuestTab({ groupId, quests, onUpdated }: Props) {
     }
   };
 
-  const stationQuests = quests.filter((q) => q.isStationQuest);
-  const otherQuests = quests.filter((q) => !q.isStationQuest);
-
   return (
     <View style={styles.wrap}>
       <Text style={styles.sub}>{t('group.questSub')}</Text>
-      {quests.length === 0 ? (
+      {displayQuests.length === 0 ? (
         <Text style={styles.empty}>{t('group.questEmpty')}</Text>
       ) : (
         <>
-          {stationQuests.map((q, index) => (
+          {displayQuests.map((q, index) => (
             <View
               key={q.id}
               style={[styles.card, index === 0 && !q.completed ? styles.featuredCard : null]}
@@ -134,20 +136,6 @@ export function GroupQuestTab({ groupId, quests, onUpdated }: Props) {
                   />
                 </View>
               ) : null}
-            </View>
-          ))}
-          {otherQuests.map((q) => (
-            <View key={q.id} style={styles.card}>
-              <Text style={styles.name}>{q.title}</Text>
-              <Text style={styles.desc}>{q.description}</Text>
-              <View style={styles.footer}>
-                <QuestReward quest={q} />
-                {q.completed ? (
-                  <Text style={styles.done}>{t('quest.completed')}</Text>
-                ) : (
-                  <Text style={styles.pending}>{t('group.questPending')}</Text>
-                )}
-              </View>
             </View>
           ))}
         </>

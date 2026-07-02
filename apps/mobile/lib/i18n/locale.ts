@@ -1,6 +1,11 @@
 import { Platform, NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Locale, LocalePreference } from './translations';
+import {
+  getIntlTag,
+  isSupportedLocale,
+  matchDeviceLocaleTag,
+} from './locales';
 
 const STORAGE_KEY = '@tingting/locale-preference';
 
@@ -16,7 +21,7 @@ export function getDeviceLocale(): Locale {
     tag = NativeModules.I18nManager?.localeIdentifier ?? 'ko';
   }
 
-  return tag.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+  return matchDeviceLocaleTag(tag);
 }
 
 export function resolveLocale(preference: LocalePreference): Locale {
@@ -26,7 +31,8 @@ export function resolveLocale(preference: LocalePreference): Locale {
 
 export async function loadLocalePreference(): Promise<LocalePreference> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  if (raw === 'ko' || raw === 'en' || raw === 'system') return raw;
+  if (raw === 'system') return 'system';
+  if (raw && isSupportedLocale(raw)) return raw;
   return 'system';
 }
 
@@ -36,5 +42,7 @@ export async function saveLocalePreference(preference: LocalePreference): Promis
 
 export function formatDate(locale: Locale, date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US');
+  return d.toLocaleDateString(getIntlTag(locale));
 }
+
+export { LOCALE_CODES, getIntlTag, prefersEnglishContent } from './locales';

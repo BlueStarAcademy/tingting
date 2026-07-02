@@ -1,26 +1,42 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert, Pressable, Platform, Modal } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Alert, Pressable, Platform, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { AppModal } from '@/components/AppModal';
+import { StepRouletteModal } from '@/components/StepRouletteModal';
 import { Pedometer } from '@/lib/pedometer';
 import { useFocusEffect } from 'expo-router';
-import { PageHeader } from '@/components/PageHeader';
 import { TabPage } from '@/components/TabPage';
-import { PremiumButton } from '@/components/PremiumButton';
+import { StepsProgressRing } from '@/components/StepsProgressRing';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
-import { TIMEZONE_OPTIONS, canChangeTimezone, getDayStartInTimezone, DEFAULT_TIMEZONE } from '@/lib/timezone';
+import {
+  countAvailableRouletteSpins,
+  countClaimedMilestones,
+  findNextRouletteMilestone,
+  getNextStepTarget,
+  MAX_DAILY_ROULETTE,
+} from '@/lib/step-roulette';
+import {
+  TIMEZONE_OPTIONS,
+  canChangeTimezone,
+  getDayStartInTimezone,
+  getTimezoneShortLabel,
+  DEFAULT_TIMEZONE,
+} from '@/lib/timezone';
 import type { PedometerDayState } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
 export default function StepsScreen() {
   const { t } = useLocale();
-  const { refresh } = useAuth();
+  const { session, refresh } = useAuth();
   const [state, setState] = useState<(PedometerDayState & { timezone: string; timezoneLockedUntil?: string }) | null>(null);
   const [available, setAvailable] = useState(false);
   const [rouletteOpen, setRouletteOpen] = useState(false);
-  const [rouletteResult, setRouletteResult] = useState<number | null>(null);
   const [pendingMilestone, setPendingMilestone] = useState(0);
   const [tzOpen, setTzOpen] = useState(false);
+
+  const isDemo = session?.isDemo ?? false;
 
   const load = async () => {
     setState(await api.getPedometerState());
@@ -66,28 +82,52 @@ export default function StepsScreen() {
     return () => sub?.remove();
   }, []);
 
-  const milestones = [1, 2, 3, 4, 5];
   const dailySteps = state?.dailySteps ?? 0;
+  const claimed = state?.claimedMilestones ?? [];
+  const rouletteUsed = state?.rouletteUsed ?? 0;
+  const tzShortLabel = getTimezoneShortLabel(state?.timezone ?? DEFAULT_TIMEZONE);
+  const tzLocked = !canChangeTimezone(state?.timezoneLockedUntil);
 
-  const openRoulette = (m: number) => {
-    setPendingMilestone(m);
-    setRouletteResult(null);
+  const availableSpins = useMemo(
+    () => countAvailableRouletteSpins(dailySteps, claimed, rouletteUsed, isDemo),
+    [claimed, dailySteps, isDemo, rouletteUsed],
+  );
+  const nextMilestone = useMemo(
+    () => findNextRouletteMilestone(dailySteps, claimed, isDemo),
+    [claimed, dailySteps, isDemo],
+  );
+  const nextTarget = useMemo(() => getNextStepTarget(dailySteps, claimed), [claimed, dailySteps]);
+  const claimedCount = countClaimedMilestones(state);
+  const canSpin = availableSpins > 0 && nextMilestone !== null;
+
+  const openRoulette = () => {
+    if (!canSpin || !nextMilestone) return;
+    setPendingMilestone(nextMilestone);
     setRouletteOpen(true);
   };
 
-  const spin = async () => {
-    try {
-      const result = await api.spinStepRoulette(pendingMilestone);
-      setRouletteResult(result.reward);
-      await refresh();
-      await load();
-    } catch (e: unknown) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('steps.failed'));
-      setRouletteOpen(false);
+  const handleRouletteContinue = async () => {
+    const fresh = await api.getPedometerState();
+    setState(fresh);
+    await refresh();
+
+    const spins = countAvailableRouletteSpins(
+      fresh.dailySteps,
+      fresh.claimedMilestones,
+      fresh.rouletteUsed,
+      isDemo,
+    );
+    const next = findNextRouletteMilestone(fresh.dailySteps, fresh.claimedMilestones, isDemo);
+    if (spins > 0 && next) {
+      setPendingMilestone(next);
+      return true;
     }
+    setRouletteOpen(false);
+    return false;
   };
 
   const changeTz = async (tz: string) => {
+    if (tzLocked) return;
     try {
       await api.setStepTimezone(tz);
       setTzOpen(false);
@@ -98,140 +138,213 @@ export default function StepsScreen() {
     }
   };
 
-  const tzLabel = TIMEZONE_OPTIONS.find((o) => o.id === state?.timezone)?.label ?? state?.timezone;
-  const tzLocked = !canChangeTimezone(state?.timezoneLockedUntil);
-
   return (
     <TabPage contentContainerStyle={styles.page}>
-      <PageHeader title={t('steps.title')} subtitle={t('steps.sub')} />
-
-      <View style={styles.counter}>
-        <Text style={styles.steps}>{dailySteps.toLocaleString()}</Text>
-        <Text style={styles.unit}>{t('steps.stepsUnit')}</Text>
+      <View style={styles.headerRow}>
+        <Pressable style={styles.tzButton} onPress={() => setTzOpen(true)}>
+          <Text style={styles.tzButtonText}>{t('steps.timezoneButton', { label: tzShortLabel })}</Text>
+        </Pressable>
       </View>
+
+      <StepsProgressRing steps={dailySteps} stepsLabel={t('steps.stepsUnit')} />
 
       {!available ? <Text style={styles.warn}>{t('steps.unavailable')}</Text> : null}
 
-      <Pressable style={styles.tzRow} onPress={() => !tzLocked && setTzOpen(true)} disabled={tzLocked}>
-        <Text style={styles.tzLabel}>{t('steps.timezone')}: {tzLabel}</Text>
-        {tzLocked ? (
-          <Text style={styles.tzLock}>{t('steps.timezoneLocked')}</Text>
-        ) : (
-          <Text style={styles.tzChange}>{t('steps.timezoneChange')}</Text>
-        )}
+      <Pressable
+        style={({ pressed }) => [
+          styles.rouletteCard,
+          canSpin && styles.rouletteCardReady,
+          canSpin && pressed && styles.rouletteCardPressed,
+          !canSpin && styles.rouletteCardDisabled,
+        ]}
+        onPress={openRoulette}
+        disabled={!canSpin}
+      >
+        <View style={[styles.rouletteIconWrap, canSpin && styles.rouletteIconWrapReady]}>
+          <Ionicons name="gift" size={24} color={canSpin ? theme.colors.star : theme.colors.textSubtle} />
+          {availableSpins > 0 ? (
+            <View style={styles.rouletteBadge}>
+              <Text style={styles.rouletteBadgeText}>{availableSpins}</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.rouletteBody}>
+          <Text style={styles.rouletteTitle}>{t('steps.rouletteTitle')}</Text>
+          <Text style={styles.rouletteSub}>
+            {canSpin
+              ? t('steps.rouletteAvailable', { count: availableSpins })
+              : claimedCount >= MAX_DAILY_ROULETTE || rouletteUsed >= MAX_DAILY_ROULETTE
+                ? t('steps.rouletteAllDone')
+                : nextTarget
+                  ? t('steps.rouletteUntilNext', {
+                      target: nextTarget.target.toLocaleString(),
+                      remain: nextTarget.remain.toLocaleString(),
+                    })
+                  : t('steps.rouletteHint')}
+          </Text>
+          <Text style={styles.rouletteMeta}>
+            {t('steps.rouletteProgress', { done: claimedCount, total: MAX_DAILY_ROULETTE })}
+          </Text>
+        </View>
+        <Ionicons
+          name={canSpin ? 'chevron-forward' : 'lock-closed'}
+          size={18}
+          color={canSpin ? theme.colors.primaryLight : theme.colors.textSubtle}
+        />
       </Pressable>
 
-      <Text style={styles.section}>{t('steps.rouletteTitle')}</Text>
-      <View style={styles.milestones}>
-        {milestones.map((m) => {
-          const reached = dailySteps >= m * 1000;
-          const claimed = state?.claimedMilestones.includes(m);
-          const canSpin = reached && !claimed && (state?.rouletteUsed ?? 0) < 5;
-          return (
-            <Pressable
-              key={m}
-              style={[styles.milestone, reached && styles.milestoneOn, claimed && styles.milestoneDone]}
-              onPress={() => canSpin && openRoulette(m)}
-              disabled={!canSpin}
-            >
-              <Text style={styles.milestoneNum}>{m * 1000}</Text>
-              <Text style={styles.milestoneSub}>
-                {claimed ? '✓' : canSpin ? t('steps.spin') : t('steps.locked')}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={styles.hint}>{t('steps.rouletteHint')}</Text>
-
-      <Modal visible={tzOpen} transparent animationType="fade" onRequestClose={() => setTzOpen(false)}>
-        <Pressable style={styles.modalBg} onPress={() => setTzOpen(false)} />
+      <AppModal visible={tzOpen} animationType="fade" onRequestClose={() => setTzOpen(false)} variant="center">
         <View style={styles.modalSheet}>
           <Text style={styles.modalTitle}>{t('steps.timezonePick')}</Text>
-          {TIMEZONE_OPTIONS.map((o) => (
-            <Pressable key={o.id} style={styles.tzOpt} onPress={() => changeTz(o.id)}>
-              <Text style={styles.tzOptText}>{o.label}</Text>
-            </Pressable>
-          ))}
+          <Text style={styles.modalHint}>{t('steps.timezoneChangeLockHint')}</Text>
+          <ScrollView style={styles.tzList} showsVerticalScrollIndicator={false}>
+            {TIMEZONE_OPTIONS.map((o) => {
+              const active = o.id === state?.timezone;
+              const disabled = tzLocked && !active;
+              return (
+                <Pressable
+                  key={o.id}
+                  style={[styles.tzOpt, active && styles.tzOptActive, disabled && styles.tzOptDisabled]}
+                  onPress={() => changeTz(o.id)}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.tzOptText, active && styles.tzOptTextActive]}>
+                    {getTimezoneShortLabel(o.id)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
-      </Modal>
+      </AppModal>
 
-      <Modal visible={rouletteOpen} transparent animationType="slide" onRequestClose={() => setRouletteOpen(false)}>
-        <View style={styles.rouletteWrap}>
-          <Text style={styles.rouletteTitle}>{t('steps.rouletteSpin')}</Text>
-          {rouletteResult === null ? (
-            <>
-              <Text style={styles.rouletteDesc}>{t('steps.rouletteDesc', { steps: pendingMilestone * 1000 })}</Text>
-              <PremiumButton title={t('steps.spinNow')} onPress={spin} />
-            </>
-          ) : (
-            <>
-              <Text style={styles.rouletteReward}>✦ {rouletteResult}</Text>
-              <PremiumButton title={t('common.continue')} onPress={() => setRouletteOpen(false)} />
-            </>
-          )}
-        </View>
-      </Modal>
+      <StepRouletteModal
+        visible={rouletteOpen}
+        milestone={pendingMilestone}
+        remainingSpins={availableSpins}
+        onClose={() => setRouletteOpen(false)}
+        onComplete={async () => {
+          await refresh();
+          await load();
+        }}
+        onContinueAfterWin={handleRouletteContinue}
+      />
     </TabPage>
   );
 }
 
 const styles = StyleSheet.create({
   page: { padding: 0, gap: theme.spacing.md },
-  counter: { alignItems: 'center', paddingVertical: theme.spacing.lg },
-  steps: { color: theme.colors.primaryDark, fontSize: 48, fontWeight: '900' },
-  unit: { color: theme.colors.textMuted, fontSize: 16 },
-  warn: { color: theme.colors.star, textAlign: 'center' },
-  tzRow: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: theme.spacing.sm,
+  },
+  tzButton: {
+    flexShrink: 0,
     backgroundColor: theme.colors.surfaceElevated,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  tzLabel: { color: theme.colors.text, fontWeight: '600' },
-  tzChange: { color: theme.colors.primaryLight, marginTop: 4, fontSize: 13 },
-  tzLock: { color: theme.colors.textMuted, marginTop: 4, fontSize: 12 },
-  section: { color: theme.colors.text, fontSize: 18, fontWeight: '700' },
-  milestones: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  milestone: {
-    width: '30%',
-    flexGrow: 1,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.sm,
+  tzButtonText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
+  warn: { color: theme.colors.star, textAlign: 'center' },
+  rouletteCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    opacity: 0.5,
-    borderWidth: 1,
-    borderColor: theme.colors.surfaceLight,
-  },
-  milestoneOn: { opacity: 1, borderColor: theme.colors.primaryLight },
-  milestoneDone: { opacity: 0.7, backgroundColor: theme.colors.successSoft },
-  milestoneNum: { color: theme.colors.text, fontWeight: '800', fontSize: 16 },
-  milestoneSub: { color: theme.colors.textMuted, fontSize: 11, marginTop: 4 },
-  hint: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },
-  modalBg: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
-  modalSheet: {
-    position: 'absolute',
-    bottom: 80,
-    left: 16,
-    right: 16,
-    backgroundColor: theme.colors.background,
+    gap: theme.spacing.md,
     borderRadius: theme.radius.lg,
     padding: theme.spacing.md,
-    maxHeight: '50%',
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
   },
-  modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '700', marginBottom: theme.spacing.sm },
-  tzOpt: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.surfaceLight },
-  tzOptText: { color: theme.colors.text, fontSize: 15 },
-  rouletteWrap: {
-    flex: 1,
-    justifyContent: 'center',
+  rouletteCardReady: {
+    borderColor: theme.colors.star,
+    backgroundColor: theme.colors.starGlow,
+  },
+  rouletteCardPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
+  },
+  rouletteCardDisabled: {
+    opacity: 0.88,
+  },
+  rouletteIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceLight,
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    padding: theme.spacing.lg,
+    justifyContent: 'center',
   },
-  rouletteTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: theme.spacing.md },
-  rouletteDesc: { color: '#fff', textAlign: 'center', marginBottom: theme.spacing.lg },
-  rouletteReward: { color: theme.colors.star, fontSize: 48, fontWeight: '900', marginBottom: theme.spacing.lg },
+  rouletteIconWrapReady: {
+    backgroundColor: 'rgba(232,168,48,0.18)',
+  },
+  rouletteBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: theme.colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: theme.colors.surfaceElevated,
+  },
+  rouletteBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  rouletteBody: {
+    flex: 1,
+    gap: 2,
+  },
+  rouletteTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  rouletteSub: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  rouletteMeta: {
+    color: theme.colors.textSubtle,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  modalSheet: {
+    padding: theme.spacing.md,
+    maxHeight: 420,
+    minWidth: 280,
+  },
+  modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '700' },
+  modalHint: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  tzList: { maxHeight: 300 },
+  tzOpt: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.surfaceLight,
+  },
+  tzOptActive: { backgroundColor: theme.colors.tint.soft },
+  tzOptDisabled: { opacity: 0.45 },
+  tzOptText: { color: theme.colors.text, fontSize: 15 },
+  tzOptTextActive: { color: theme.colors.primaryDark, fontWeight: '700' },
 });

@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import type { Place } from '@tingting/shared';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
+import { prefersEnglishContent } from '@/lib/i18n/locales';
 import { theme } from '@/constants/theme';
 
 export default function RegionScreen() {
@@ -26,7 +27,7 @@ export default function RegionScreen() {
   );
 
   const visited = profile?.visitedRegions.includes(code);
-  const regionLabel = locale === 'en' && region?.nameEn ? region.nameEn : region?.name;
+  const regionLabel = prefersEnglishContent(locale) && region?.nameEn ? region.nameEn : region?.name;
 
   return (
     <AppScreen title={regionLabel ?? code} showBack>

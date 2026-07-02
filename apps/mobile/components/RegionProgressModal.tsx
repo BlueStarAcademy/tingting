@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
 import type { Region } from '@tingting/shared';
 import { TravelProgressBar } from '@/components/TravelProgressBar';
 import { PremiumButton } from '@/components/PremiumButton';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
+import { AppModal } from '@/components/AppModal';
 import { useLocale } from '@/hooks/useLocale';
+import { prefersEnglishContent } from '@/lib/i18n/locales';
 import { theme } from '@/constants/theme';
 
 interface Props {
@@ -31,20 +33,23 @@ export function RegionProgressModal({
 
   if (!region) return null;
 
-  const regionLabel = locale === 'en' && region.nameEn ? region.nameEn : region.name;
+  const regionLabel = prefersEnglishContent(locale) && region.nameEn ? region.nameEn : region.name;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+    <AppModal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.sheet}>
         <View style={styles.sheetHeader}>
           <View style={styles.titleRow}>
             <View style={[styles.dot, { backgroundColor: region.color }]} />
             <Text style={styles.sheetTitle}>{regionLabel}</Text>
           </View>
-          <Pressable onPress={onClose} hitSlop={8}>
-            <Ionicons name="close" size={24} color={theme.colors.textMuted} />
-          </Pressable>
+          <PremiumIconButton
+            icon="close"
+            onPress={onClose}
+            variant="soft"
+            color={theme.colors.textMuted}
+            accessibilityLabel={t('header.cancel')}
+          />
         </View>
 
         {locale === 'ko' && region.nameEn ? (
@@ -66,17 +71,12 @@ export function RegionProgressModal({
 
         <PremiumButton title={t('map.viewRegionPlaces')} onPress={onViewPlaces} />
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: theme.colors.background,
     borderTopLeftRadius: theme.radius.lg,
     borderTopRightRadius: theme.radius.lg,

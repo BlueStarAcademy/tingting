@@ -17,5 +17,8 @@
   },
   "devDependencies": {
     "serve": "^14.2.4"
+  },
+  "dependencies": {
+    "expo-router": "~56.2.11"
   }
 }

@@ -1,10 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MBTI_TEST_REWARD,
+  MINIGAME_DAILY_STAR_CAP,
+  MINIGAME_STAGE_STAR_REWARD,
+  MINIGAME_MAX_STAGE,
   getGroupSlotUnlockCost,
   getGroupMemberSlotUnlockCost,
   getGallerySlotUnlockCost,
   getDisplayNameChangeCost,
+  validateNickname,
   MAX_GROUP_SLOTS,
   MAX_GROUP_MEMBER_SLOTS,
   FREE_GROUP_MEMBER_COUNT,
@@ -14,7 +18,9 @@ import {
   GPS_QUEST_RADIUS_METERS,
   INITIAL_STARS,
   DEMO_EMAIL,
-  SHOP_ITEMS,
+  buildFeaturePass,
+  mergeFeaturePass,
+  FEATURE_PASS_COSTS,
   REGIONS,
   REGION_MAIN_STATIONS,
   buildGroupStationQuestId,
@@ -26,22 +32,36 @@ import type {
   Group,
   GroupChatMessage,
   GroupMember,
+  GroupSchedule,
   HomeDashboard,
+  MailboxMessage,
   PedometerDayState,
   Place,
   PlaceRecommendation,
   Quest,
   RankingEntry,
+  PublicExperiencePost,
   UserProfile,
   Visit,
+  FeaturePass,
+  FeaturePassTier,
 } from '@tingting/shared';
 import { isValidPhone, normalizePhone } from '@/lib/phone';
+import type { MinigameId } from '@/lib/minigames/stages';
+import {
+  EMPTY_MINIGAME_PROGRESS,
+  type MinigameDailyState,
+  type MinigameProgress,
+} from '@/lib/minigames/progress';
+import { getCurrentStage } from '@/lib/minigames/stages';
 import {
   DEFAULT_TIMEZONE,
   canChangeTimezone,
   getDayKey,
   timezoneLockExpiry,
 } from '@/lib/timezone';
+import PLACES_JSON from '@/constants/places.json';
+import { SEED_PUBLIC_EXPERIENCE_POSTS } from '@/lib/public-feed-seed';
 
 const KEYS = {
   session: '@tingting/session',
@@ -53,12 +73,50 @@ const KEYS = {
   recommendations: '@tingting/recommendations',
   places: '@tingting/places',
   editorUnlocks: '@tingting/editorUnlocks',
+  featurePasses: '@tingting/featurePasses',
   phoneDirectory: '@tingting/phoneDirectory',
   groupChats: '@tingting/groupChats',
   groupQuestCompletions: '@tingting/groupQuestCompletions',
+  groupSchedules: '@tingting/groupSchedules',
   pedometer: '@tingting/pedometer',
   accountPassword: '@tingting/accountPassword',
+  mailbox: '@tingting/mailbox',
+  searchableUsers: '@tingting/searchableUsers',
+  phoneVerification: '@tingting/phoneVerification',
+  userProfiles: '@tingting/userProfiles',
+  feedRecommendations: '@tingting/feedRecommendations',
+  minigameProgress: '@tingting/minigame-progress',
+  minigameDaily: '@tingting/minigame-daily',
 };
+
+interface FeedRecommendStore {
+  counts: Record<string, number>;
+  likes: Record<string, string[]>;
+}
+
+function getBaseRecommendCount(postId: string): number {
+  const seed = SEED_PUBLIC_EXPERIENCE_POSTS.find((post) => post.id === postId);
+  return seed?.recommendCount ?? 0;
+}
+
+async function readFeedRecommendStore(): Promise<FeedRecommendStore> {
+  return readJson<FeedRecommendStore>(KEYS.feedRecommendations, { counts: {}, likes: {} });
+}
+
+interface SearchableUser {
+  userId: string;
+  displayName: string;
+  phone: string;
+  phoneVerified: boolean;
+  blockPhoneInvite: boolean;
+  photoUri?: string;
+}
+
+interface PhoneVerificationPending {
+  phone: string;
+  code: string;
+  expiresAt: string;
+}
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
   const raw = await AsyncStorage.getItem(key);
@@ -77,8 +135,6 @@ async function writeJson<T>(key: string, value: T): Promise<void> {
 function uid(): string {
   return 'local-' + Math.random().toString(36).slice(2, 11);
 }
-
-import PLACES_JSON from '@/constants/places.json';
 
 const DEFAULT_PLACES: Place[] = PLACES_JSON as Place[];
 
@@ -167,6 +223,135 @@ function normalizeProfile(profile: UserProfile, groups: Group[]): UserProfile {
     unlockedGroupSlots: unlocked,
     mbtiTestCompleted: profile.mbtiTestCompleted ?? false,
     displayNameChangeCount: profile.displayNameChangeCount ?? 0,
+    phoneVerified: profile.phoneVerified ?? false,
+    blockPhoneInvite: profile.blockPhoneInvite ?? false,
+    profilePublic: profile.profilePublic ?? true,
+  };
+}
+
+async function readMailbox(): Promise<MailboxMessage[]> {
+  return readJson<MailboxMessage[]>(KEYS.mailbox, []);
+}
+
+async function writeMailbox(messages: MailboxMessage[]): Promise<void> {
+  await writeJson(KEYS.mailbox, messages);
+}
+
+async function readSearchableUsers(): Promise<SearchableUser[]> {
+  return readJson<SearchableUser[]>(KEYS.searchableUsers, []);
+}
+
+async function syncSearchableUser(profile: UserProfile): Promise<void> {
+  const users = await readSearchableUsers();
+  const idx = users.findIndex((u) => u.userId === profile.id);
+  if (!profile.phone || !profile.phoneVerified) {
+    if (idx >= 0) {
+      users.splice(idx, 1);
+      await writeJson(KEYS.searchableUsers, users);
+    }
+    return;
+  }
+  const entry: SearchableUser = {
+    userId: profile.id,
+    displayName: profile.displayName,
+    phone: normalizePhone(profile.phone),
+    phoneVerified: true,
+    blockPhoneInvite: profile.blockPhoneInvite ?? false,
+    photoUri: profile.photoUri,
+  };
+  if (idx >= 0) users[idx] = entry;
+  else users.push(entry);
+  await writeJson(KEYS.searchableUsers, users);
+}
+
+async function ensureWelcomeMailbox(userId: string): Promise<void> {
+  const all = await readMailbox();
+  const welcomeId = `welcome-${userId}`;
+  if (all.some((m) => m.id === welcomeId)) return;
+  all.unshift({
+    id: welcomeId,
+    userId,
+    type: 'notice',
+    title: 'TingTing에 오신 것을 환영합니다',
+    body: '전국 여행 기록, 그룹 여행, 퀘스트 등 다양한 기능을 이용해 보세요. 우편함에서 공지와 초대를 확인할 수 있습니다.',
+    createdAt: new Date().toISOString(),
+  });
+  await writeMailbox(all);
+}
+
+function assertValidNickname(name: string): void {
+  const err = validateNickname(name);
+  if (err === 'empty') throw new Error('닉네임을 입력해 주세요');
+  if (err === 'too_short') throw new Error('닉네임은 2자 이상 입력해 주세요');
+  if (err === 'too_long') throw new Error('닉네임은 8자 이하로 입력해 주세요');
+}
+
+async function pushMailboxMessage(message: MailboxMessage): Promise<void> {
+  const all = await readMailbox();
+  all.unshift(message);
+  await writeMailbox(all);
+}
+
+async function syncUserProfileRegistry(profile: UserProfile): Promise<void> {
+  const all = await readJson<Record<string, UserProfile>>(KEYS.userProfiles, {});
+  all[profile.id] = {
+    id: profile.id,
+    email: profile.email,
+    displayName: profile.displayName,
+    stars: profile.stars,
+    onboardingComplete: profile.onboardingComplete,
+    visitedRegions: profile.visitedRegions,
+    photoUri: profile.photoUri,
+    birthday: profile.birthday,
+    mbti: profile.mbti,
+    mbtiTestCompleted: profile.mbtiTestCompleted,
+    phone: profile.phoneVerified ? profile.phone : undefined,
+    profilePublic: profile.profilePublic ?? true,
+  };
+  await writeJson(KEYS.userProfiles, all);
+}
+
+const DEMO_USER_PROFILES: Record<string, UserProfile> = {
+  'user-kim': {
+    id: 'user-kim',
+    email: 'kim@demo.local',
+    displayName: '김민수',
+    stars: 120,
+    onboardingComplete: true,
+    visitedRegions: ['SEO', 'BUS'],
+    mbti: 'ENFP',
+    mbtiTestCompleted: true,
+    birthday: '1994-07-12',
+    phone: '01012345678',
+    phoneVerified: true,
+    profilePublic: true,
+  },
+  'user-lee': {
+    id: 'user-lee',
+    email: 'lee@demo.local',
+    displayName: '이서연',
+    stars: 85,
+    onboardingComplete: true,
+    visitedRegions: ['JEJ', 'GWN'],
+    mbti: 'INTJ',
+    mbtiTestCompleted: true,
+    birthday: '1996-11-03',
+    phone: '01098765432',
+    phoneVerified: true,
+    profilePublic: true,
+  },
+};
+
+function sanitizePublicProfile(profile: UserProfile): UserProfile {
+  if (profile.profilePublic !== false) return profile;
+  return {
+    ...profile,
+    birthday: undefined,
+    mbti: undefined,
+    mbtiTestCompleted: false,
+    email: '',
+    phone: undefined,
+    profilePublic: false,
   };
 }
 
@@ -174,7 +359,7 @@ function normalizeGroup(group: Group): Group {
   return {
     ...group,
     unlockedMemberSlots: group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT,
-    unlockedGallerySlots: group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS,
+    unlockedGallerySlots: group.unlockedGallerySlots ?? 0,
   };
 }
 
@@ -217,9 +402,16 @@ export const localStore = {
   },
 
   async signIn(email: string, _password: string): Promise<AuthSession> {
+    const existing = await readJson<UserProfile | null>(KEYS.profile, null);
+    if (existing && existing.email === email) {
+      const session: AuthSession = { userId: existing.id, email, isDemo: false };
+      await writeJson(KEYS.session, session);
+      return session;
+    }
+
     const session: AuthSession = { userId: uid(), email, isDemo: false };
     await writeJson(KEYS.session, session);
-    let profile = await readJson<UserProfile | null>(KEYS.profile, null);
+    let profile = existing;
     if (!profile) {
       profile = {
         id: session.userId,
@@ -235,11 +427,13 @@ export const localStore = {
   },
 
   async signUp(email: string, password: string, displayName: string): Promise<AuthSession> {
+    const trimmed = displayName.trim();
+    assertValidNickname(trimmed);
     const session: AuthSession = { userId: uid(), email, isDemo: false };
     const profile: UserProfile = {
       id: session.userId,
       email,
-      displayName,
+      displayName: trimmed,
       stars: INITIAL_STARS,
       onboardingComplete: false,
       visitedRegions: [],
@@ -266,6 +460,24 @@ export const localStore = {
       { id: 'user-kim', displayName: '김민수', phone: '01012345678' },
       { id: 'user-lee', displayName: '이서연', phone: '01098765432' },
     ]);
+    await writeJson(KEYS.searchableUsers, [
+      {
+        userId: 'user-kim',
+        displayName: '김민수',
+        phone: '01012345678',
+        phoneVerified: true,
+        blockPhoneInvite: false,
+      },
+      {
+        userId: 'user-lee',
+        displayName: '이서연',
+        phone: '01098765432',
+        phoneVerified: true,
+        blockPhoneInvite: false,
+      },
+    ]);
+    await writeJson(KEYS.userProfiles, DEMO_USER_PROFILES);
+    await ensureWelcomeMailbox(session.userId);
     return session;
   },
 
@@ -285,17 +497,40 @@ export const localStore = {
       await writeJson(KEYS.groups, migrated);
     }
     const normalized = normalizeProfile(profile, migrated.filter((g) => g.ownerId === profile!.id));
-    if (normalized.unlockedGroupSlots !== profile.unlockedGroupSlots || normalized.displayName !== profile.displayName) {
+    const needsSave =
+      normalized.unlockedGroupSlots !== profile.unlockedGroupSlots ||
+      normalized.displayName !== profile.displayName ||
+      normalized.phoneVerified !== profile.phoneVerified ||
+      normalized.blockPhoneInvite !== profile.blockPhoneInvite ||
+      normalized.profilePublic !== profile.profilePublic;
+    if (needsSave) {
       await writeJson(KEYS.profile, normalized);
+      profile = normalized;
+    } else {
+      profile = normalized;
     }
-    return normalized;
+    await ensureWelcomeMailbox(profile.id);
+    await syncUserProfileRegistry(profile);
+    return profile;
   },
 
-  async updateProfile(patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday'>>): Promise<UserProfile> {
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    const profile = await this.getProfile();
+    if (profile?.id === userId) return profile;
+
+    const all = await readJson<Record<string, UserProfile>>(KEYS.userProfiles, {});
+    const found = all[userId] ?? DEMO_USER_PROFILES[userId] ?? null;
+    return found ? sanitizePublicProfile(found) : null;
+  },
+
+  async updateProfile(
+    patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday' | 'profilePublic'>>
+  ): Promise<UserProfile> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
     const updated = { ...profile, ...patch };
     await writeJson(KEYS.profile, updated);
+    await syncUserProfileRegistry(updated);
     return updated;
   },
 
@@ -303,7 +538,7 @@ export const localStore = {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
     const trimmed = displayName.trim();
-    if (!trimmed) throw new Error('닉네임을 입력해 주세요');
+    assertValidNickname(trimmed);
     if (trimmed === profile.displayName) {
       return { profile, cost: 0 };
     }
@@ -327,6 +562,7 @@ export const localStore = {
       return members ? { ...g, members } : g;
     });
     await writeJson(KEYS.groups, synced);
+    await syncUserProfileRegistry(updated);
 
     return { profile: updated, cost };
   },
@@ -369,7 +605,9 @@ export const localStore = {
   async completeOnboarding(displayName: string): Promise<UserProfile> {
     const profile = await readJson<UserProfile | null>(KEYS.profile, null);
     if (!profile) throw new Error('프로필을 찾을 수 없습니다');
-    const updated = { ...profile, displayName, onboardingComplete: true };
+    const trimmed = displayName.trim();
+    assertValidNickname(trimmed);
+    const updated = { ...profile, displayName: trimmed, onboardingComplete: true };
     await writeJson(KEYS.profile, updated);
     return updated;
   },
@@ -435,7 +673,7 @@ export const localStore = {
       createdAt: new Date().toISOString(),
       slotIndex: targetSlot,
       unlockedMemberSlots: FREE_GROUP_MEMBER_COUNT,
-      unlockedGallerySlots: FREE_GALLERY_SLOTS,
+      unlockedGallerySlots: 0,
     };
     groups.unshift(group);
     await writeJson(KEYS.groups, groups);
@@ -456,7 +694,7 @@ export const localStore = {
     return migrated;
   },
 
-  async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
+  async inviteGroupMember(groupId: string, phone: string): Promise<{ cost: number }> {
     const session = await this.getSession();
     const profile = await this.getProfile();
     if (!session || !profile) throw new Error('로그인이 필요합니다');
@@ -464,47 +702,228 @@ export const localStore = {
     const normalized = normalizePhone(phone);
     if (!isValidPhone(normalized)) throw new Error('올바른 전화번호를 입력해 주세요');
 
+    const target = await this.searchUserByPhone(normalized);
+    if (!target) {
+      throw new Error('전화번호 인증을 완료하고 초대를 허용한 사용자만 검색됩니다');
+    }
+    if (target.userId === session.userId) throw new Error('본인은 초대할 수 없습니다');
+
     const groups = await readJson<Group[]>(KEYS.groups, []);
     const idx = groups.findIndex((g) => g.id === groupId);
     if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
 
-    let group = migrateGroupMembers(groups[idx], profile);
+    const group = migrateGroupMembers(groups[idx], profile);
     if (group.ownerId !== session.userId) throw new Error('방장만 초대할 수 있습니다');
 
     const members = group.members ?? [];
-    if (members.some((m) => m.phone && normalizePhone(m.phone) === normalized)) {
-      throw new Error('이미 초대된 번호입니다');
+    if (members.some((m) => m.id === target.userId || (m.phone && normalizePhone(m.phone) === normalized))) {
+      throw new Error('이미 그룹 구성원이거나 초대된 번호입니다');
     }
+
+    const mailbox = await readMailbox();
+    const pending = mailbox.find(
+      (m) =>
+        m.userId === target.userId &&
+        m.type === 'group_invite' &&
+        m.groupId === groupId &&
+        m.inviteStatus === 'pending'
+    );
+    if (pending) throw new Error('이미 초대장을 보냈습니다');
 
     const unlockedSlots = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
     if (members.length >= unlockedSlots) {
       throw new Error('구성원 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
     }
 
-    const cost = 0;
+    const inviteMessage: MailboxMessage = {
+      id: uid(),
+      userId: target.userId,
+      type: 'group_invite',
+      title: `${group.name} 그룹 초대`,
+      body: `${profile.displayName}님이 "${group.name}" 그룹에 초대했습니다. 수락하시겠습니까?`,
+      createdAt: new Date().toISOString(),
+      groupId,
+      groupName: group.name,
+      inviterId: session.userId,
+      inviterName: profile.displayName,
+      inviteStatus: 'pending',
+    };
+    await pushMailboxMessage(inviteMessage);
 
-    const directory = await readJson<GroupMember[]>(KEYS.phoneDirectory, []);
-    const known = directory.find((u) => u.phone && normalizePhone(u.phone) === normalized);
+    return { cost: 0 };
+  },
 
-    const memberId = known?.id ?? uid();
-    const newMember: GroupMember = {
-      id: memberId,
-      displayName: known?.displayName ?? `여행자 ${normalized.slice(-4)}`,
+  async searchUserByPhone(
+    phone: string
+  ): Promise<{ userId: string; displayName: string; phone: string } | null> {
+    const normalized = normalizePhone(phone);
+    if (!isValidPhone(normalized)) return null;
+    const users = await readSearchableUsers();
+    const found = users.find(
+      (u) => u.phoneVerified && !u.blockPhoneInvite && normalizePhone(u.phone) === normalized
+    );
+    if (!found) return null;
+    return { userId: found.userId, displayName: found.displayName, phone: found.phone };
+  },
+
+  async sendPhoneVerificationCode(phone: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const normalized = normalizePhone(phone);
+    if (!isValidPhone(normalized)) throw new Error('올바른 전화번호를 입력해 주세요');
+
+    const pending: PhoneVerificationPending = {
       phone: normalized,
-      photoUri: known?.photoUri,
-      isOwner: false,
+      code: DEMO_OTP,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     };
+    await writeJson(KEYS.phoneVerification, pending);
+  },
 
-    const updatedGroup: Group = {
-      ...group,
-      members: [...members, newMember],
-      memberIds: [...group.memberIds, memberId],
+  async verifyPhone(phone: string, code: string): Promise<UserProfile> {
+    const session = await this.getSession();
+    let profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const normalized = normalizePhone(phone);
+    if (!isValidPhone(normalized)) throw new Error('올바른 전화번호를 입력해 주세요');
+
+    const pending = await readJson<PhoneVerificationPending | null>(KEYS.phoneVerification, null);
+    if (!pending || pending.phone !== normalized) throw new Error('인증번호를 먼저 요청해 주세요');
+    if (new Date(pending.expiresAt) < new Date()) throw new Error('인증번호가 만료되었습니다');
+    if (code.trim() !== pending.code) throw new Error('인증번호가 올바르지 않습니다');
+
+    const users = await readSearchableUsers();
+    const taken = users.find(
+      (u) => u.userId !== session.userId && normalizePhone(u.phone) === normalized
+    );
+    if (taken) throw new Error('이미 다른 계정에 등록된 전화번호입니다');
+
+    profile = {
+      ...profile,
+      phone: normalized,
+      phoneVerified: true,
     };
+    await writeJson(KEYS.profile, profile);
+    await syncSearchableUser(profile);
+    await AsyncStorage.removeItem(KEYS.phoneVerification);
+    return profile;
+  },
 
-    groups[idx] = updatedGroup;
-    await writeJson(KEYS.groups, groups);
+  async updatePhoneInviteSettings(blockPhoneInvite: boolean): Promise<UserProfile> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    if (!profile.phoneVerified) throw new Error('전화번호 인증을 먼저 완료해 주세요');
 
-    return { group: updatedGroup, cost };
+    const updated = { ...profile, blockPhoneInvite };
+    await writeJson(KEYS.profile, updated);
+    await syncSearchableUser(updated);
+    return updated;
+  },
+
+  async getMailboxMessages(): Promise<MailboxMessage[]> {
+    const session = await this.getSession();
+    if (!session) return [];
+    const all = await readMailbox();
+    return all
+      .filter((m) => m.userId === session.userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  async getUnreadMailboxCount(): Promise<number> {
+    const messages = await this.getMailboxMessages();
+    return messages.filter((m) => !m.readAt).length;
+  },
+
+  async markMailboxMessageRead(messageId: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) return;
+    const all = await readMailbox();
+    const idx = all.findIndex((m) => m.id === messageId && m.userId === session.userId);
+    if (idx < 0 || all[idx].readAt) return;
+    all[idx] = { ...all[idx], readAt: new Date().toISOString() };
+    await writeMailbox(all);
+  },
+
+  async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const all = await readMailbox();
+    const msgIdx = all.findIndex(
+      (m) => m.id === messageId && m.userId === session.userId && m.type === 'group_invite'
+    );
+    if (msgIdx < 0) throw new Error('초대장을 찾을 수 없습니다');
+
+    const message = all[msgIdx];
+    if (message.inviteStatus !== 'pending') throw new Error('이미 처리된 초대입니다');
+    if (!message.groupId) throw new Error('잘못된 초대장입니다');
+
+    const groups = await readJson<Group[]>(KEYS.groups, []);
+    const groupIdx = groups.findIndex((g) => g.id === message.groupId);
+    if (groupIdx < 0) throw new Error('그룹을 찾을 수 없습니다');
+
+    let group = migrateGroupMembers(groups[groupIdx]);
+    const members = group.members ?? [];
+
+    if (accept) {
+      if (members.some((m) => m.id === session.userId)) {
+        all[msgIdx] = { ...message, inviteStatus: 'accepted', readAt: message.readAt ?? new Date().toISOString() };
+        await writeMailbox(all);
+        return group;
+      }
+
+      const unlockedSlots = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
+      if (members.length >= unlockedSlots) throw new Error('그룹 구성원 슬롯이 가득 찼습니다');
+
+      const newMember: GroupMember = {
+        id: session.userId,
+        displayName: profile.displayName,
+        phone: profile.phone,
+        photoUri: profile.photoUri,
+        isOwner: false,
+      };
+      group = {
+        ...group,
+        members: [...members, newMember],
+        memberIds: [...group.memberIds, session.userId],
+      };
+      groups[groupIdx] = group;
+      await writeJson(KEYS.groups, groups);
+
+      if (message.inviterId) {
+        await pushMailboxMessage({
+          id: uid(),
+          userId: message.inviterId,
+          type: 'notification',
+          title: '그룹 초대 수락',
+          body: `${profile.displayName}님이 "${group.name}" 그룹 초대를 수락했습니다.`,
+          createdAt: new Date().toISOString(),
+          groupId: group.id,
+          groupName: group.name,
+        });
+      }
+    } else if (message.inviterId) {
+      await pushMailboxMessage({
+        id: uid(),
+        userId: message.inviterId,
+        type: 'notification',
+        title: '그룹 초대 거절',
+        body: `${profile.displayName}님이 "${message.groupName ?? group.name}" 그룹 초대를 거절했습니다.`,
+        createdAt: new Date().toISOString(),
+        groupId: message.groupId,
+        groupName: message.groupName ?? group.name,
+      });
+    }
+
+    all[msgIdx] = {
+      ...message,
+      inviteStatus: accept ? 'accepted' : 'declined',
+      readAt: message.readAt ?? new Date().toISOString(),
+    };
+    await writeMailbox(all);
+    return accept ? group : null;
   },
 
   async unlockGroupMemberSlot(groupId: string): Promise<{ group: Group; cost: number }> {
@@ -629,7 +1048,7 @@ export const localStore = {
     const msg: GroupChatMessage = {
       id: uid(),
       groupId,
-      userId: session.userId,
+      userId: profile.id,
       displayName: profile.displayName,
       text: trimmed,
       createdAt: new Date().toISOString(),
@@ -644,19 +1063,16 @@ export const localStore = {
 
   async deleteGroupChatMessage(groupId: string, messageId: string): Promise<void> {
     const session = await this.getSession();
+    const profile = await this.getProfile();
     if (!session) throw new Error('로그인이 필요합니다');
+    const ownerIds = new Set([session.userId, profile?.id].filter(Boolean) as string[]);
     const all = await readJson<Record<string, GroupChatMessage[]>>(KEYS.groupChats, {});
     const list = all[groupId] ?? [];
     const idx = list.findIndex((m) => m.id === messageId);
     if (idx === -1) throw new Error('메시지를 찾을 수 없습니다');
     const msg = list[idx];
-    if (msg.userId !== session.userId) throw new Error('본인 메시지만 삭제할 수 있습니다');
-    if (msg.deletedAt) return;
-    list[idx] = {
-      ...msg,
-      text: '삭제된 메세지입니다.',
-      deletedAt: new Date().toISOString(),
-    };
+    if (!ownerIds.has(msg.userId)) throw new Error('본인 메시지만 삭제할 수 있습니다');
+    list.splice(idx, 1);
     all[groupId] = list;
     await writeJson(KEYS.groupChats, all);
   },
@@ -706,15 +1122,23 @@ export const localStore = {
     if (!place) throw new Error('장소를 찾을 수 없습니다');
 
     if (input.groupId) {
-      const groups = await readJson<Group[]>(KEYS.groups, []);
-      const group = groups.find((g) => g.id === input.groupId);
-      if (group) {
-        const visits = await readJson<Visit[]>(KEYS.visits, []);
-        const groupVisitCount = visits.filter((v) => v.groupId === input.groupId).length;
-        const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
-        if (groupVisitCount >= unlocked) {
-          throw new Error('갤러리 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
-        }
+      const visits = await readJson<Visit[]>(KEYS.visits, []);
+      const places = await ensurePlaces();
+      const groupQuests = await this.getGroupQuests(input.groupId);
+      const stationQuest = groupQuests.find(
+        (q) => q.isStationQuest && q.regionCode === place.regionCode
+      );
+      const regionVisitCount = visits.filter((v) => {
+        if (v.groupId !== input.groupId) return false;
+        const visitPlace = places.find((p) => p.id === v.placeId);
+        return visitPlace?.regionCode === place.regionCode;
+      }).length;
+      const regionUnlocked = stationQuest?.completed === true || regionVisitCount > 0;
+      if (!regionUnlocked) {
+        throw new Error('대표역 인증 후 갤러리에 사진을 추가할 수 있어요');
+      }
+      if (regionVisitCount >= GALLERY_SLOT_BATCH_SIZE) {
+        throw new Error('갤러리 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
       }
     }
 
@@ -887,16 +1311,58 @@ export const localStore = {
     if (completed.includes(questId)) throw new Error('이미 완료한 퀘스트입니다');
 
     const group = groups[idx];
-    const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
-    groups[idx] = {
-      ...group,
-      unlockedGallerySlots: unlocked + GROUP_STATION_QUEST_GALLERY_REWARD,
-    };
+    groups[idx] = group;
     await writeJson(KEYS.groups, groups);
     allCompletions[groupId] = [...completed, questId];
     await writeJson(KEYS.groupQuestCompletions, allCompletions);
 
     return { rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD };
+  },
+
+  async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
+    const all = await readJson<GroupSchedule[]>(KEYS.groupSchedules, []);
+    return all
+      .filter((s) => s.groupId === groupId)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+  },
+
+  async createGroupSchedule(input: {
+    groupId: string;
+    regionCode: string;
+    title: string;
+    date: string;
+    note?: string;
+  }): Promise<GroupSchedule> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const title = input.title.trim();
+    if (!title) throw new Error('일정 제목을 입력해 주세요');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error('올바른 날짜를 선택해 주세요');
+
+    const schedule: GroupSchedule = {
+      id: uid(),
+      groupId: input.groupId,
+      regionCode: input.regionCode,
+      title,
+      date: input.date,
+      note: input.note?.trim() || undefined,
+      createdBy: session.userId,
+      createdAt: new Date().toISOString(),
+    };
+    const all = await readJson<GroupSchedule[]>(KEYS.groupSchedules, []);
+    all.push(schedule);
+    await writeJson(KEYS.groupSchedules, all);
+    return schedule;
+  },
+
+  async deleteGroupSchedule(scheduleId: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const all = await readJson<GroupSchedule[]>(KEYS.groupSchedules, []);
+    const idx = all.findIndex((s) => s.id === scheduleId);
+    if (idx < 0) throw new Error('일정을 찾을 수 없습니다');
+    all.splice(idx, 1);
+    await writeJson(KEYS.groupSchedules, all);
   },
 
   async spendStars(amount: number, _reason: string): Promise<number> {
@@ -908,11 +1374,57 @@ export const localStore = {
     return stars;
   },
 
-  async useAiFeature(feature: string): Promise<{ cost: number; stars: number }> {
-    const item = SHOP_ITEMS.find((s) => s.id.includes(feature) || s.name.includes(feature));
-    const cost = item?.cost ?? 20;
-    const stars = await this.spendStars(cost, 'ai_' + feature);
-    return { cost, stars };
+  async useAiFeature(_feature: string): Promise<{ cost: number; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    return { cost: 0, stars: profile.stars };
+  },
+
+  async getFeaturePasses(): Promise<FeaturePass[]> {
+    const stored = await readJson<FeaturePass[]>(KEYS.featurePasses, []);
+    if (stored.length > 0) return stored;
+
+    const legacy = await readJson<string[]>(KEYS.editorUnlocks, []);
+    if (legacy.length === 0) return [];
+
+    const migrated: FeaturePass[] = legacy.map((featureId) => ({
+      featureId,
+      tier: 'permanent' as FeaturePassTier,
+      purchasedAt: new Date().toISOString(),
+      expiresAt: null,
+    }));
+    await writeJson(KEYS.featurePasses, migrated);
+    return migrated;
+  },
+
+  async purchaseFeaturePass(
+    featureId: string,
+    tier: FeaturePassTier,
+  ): Promise<{ pass: FeaturePass; stars: number }> {
+    const cost = FEATURE_PASS_COSTS[tier];
+    const existing = await this.getFeaturePasses();
+    const pass = buildFeaturePass(existing, featureId, tier);
+    const stars = await this.spendStars(cost, `feature_pass:${featureId}:${tier}`);
+    const next = mergeFeaturePass(existing, pass);
+    await writeJson(KEYS.featurePasses, next);
+    return { pass, stars };
+  },
+
+  /** @deprecated getFeaturePasses 사용 */
+  async getUnlockedEditorAssets(): Promise<string[]> {
+    const passes = await this.getFeaturePasses();
+    return passes
+      .filter((pass) => pass.expiresAt === null || new Date(pass.expiresAt).getTime() > Date.now())
+      .map((pass) => pass.featureId);
+  },
+
+  /** @deprecated purchaseFeaturePass 사용 */
+  async unlockEditorAsset(assetId: string, cost: number): Promise<string[]> {
+    await this.spendStars(cost, 'editor_asset:' + assetId);
+    const existing = await this.getFeaturePasses();
+    const pass = buildFeaturePass(existing, assetId, 'permanent');
+    await writeJson(KEYS.featurePasses, mergeFeaturePass(existing, pass));
+    return this.getUnlockedEditorAssets();
   },
 
   async getRecommendations(placeId: string): Promise<PlaceRecommendation[]> {
@@ -935,23 +1447,6 @@ export const localStore = {
     all.unshift(rec);
     await writeJson(KEYS.recommendations, all);
     return rec;
-  },
-
-  getShopItems() {
-    return SHOP_ITEMS;
-  },
-
-  async getUnlockedEditorAssets(): Promise<string[]> {
-    return readJson<string[]>(KEYS.editorUnlocks, []);
-  },
-
-  async unlockEditorAsset(assetId: string, cost: number): Promise<string[]> {
-    const unlocked = await readJson<string[]>(KEYS.editorUnlocks, []);
-    if (unlocked.includes(assetId)) return unlocked;
-    await this.spendStars(cost, 'editor_asset:' + assetId);
-    const next = [...unlocked, assetId];
-    await writeJson(KEYS.editorUnlocks, next);
-    return next;
   },
 
   async getPedometerState(): Promise<PedometerDayState & { timezone: string; timezoneLockedUntil?: string }> {
@@ -984,10 +1479,12 @@ export const localStore = {
   },
 
   async spinStepRoulette(milestone: number): Promise<{ reward: number; stars: number; state: PedometerDayState }> {
+    const session = await this.getSession();
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
     const full = await this.getPedometerState();
-    if (full.dailySteps < milestone * 1000) throw new Error('걸음 수가 부족합니다');
+    const isDemo = session?.isDemo ?? false;
+    if (!isDemo && full.dailySteps < milestone * 1000) throw new Error('걸음 수가 부족합니다');
     if (full.claimedMilestones.includes(milestone)) throw new Error('이미 보상을 받았습니다');
     if (full.rouletteUsed >= 5) throw new Error('오늘 룰렛 횟수를 모두 사용했습니다');
     if (milestone > 5) throw new Error('유효하지 않은 마일스톤입니다');
@@ -1025,6 +1522,163 @@ export const localStore = {
       claimedMilestones: [],
     });
     return updated;
+  },
+
+  async getMinigameProgress(): Promise<MinigameProgress> {
+    const stored = await readJson<MinigameProgress | null>(KEYS.minigameProgress, null);
+    if (!stored) return { ...EMPTY_MINIGAME_PROGRESS };
+    return {
+      match: { clearedStage: stored.match?.clearedStage ?? 0 },
+      quiz: { clearedStage: stored.quiz?.clearedStage ?? 0 },
+      tap: { clearedStage: stored.tap?.clearedStage ?? 0 },
+      memory: { clearedStage: stored.memory?.clearedStage ?? 0 },
+    };
+  },
+
+  async getMinigameDailyState(): Promise<MinigameDailyState> {
+    const profile = await this.getProfile();
+    const timezone = profile?.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    let state = await readJson<MinigameDailyState | null>(KEYS.minigameDaily, null);
+    if (!state || state.dayKey !== dayKey) {
+      state = { dayKey, starsEarnedToday: 0 };
+      await writeJson(KEYS.minigameDaily, state);
+    }
+    return state;
+  },
+
+  async claimMinigameStageClear(
+    gameId: MinigameId,
+    stage: number,
+  ): Promise<{
+    reward: number;
+    stars: number;
+    starsEarnedToday: number;
+    dailyCap: number;
+    clearedStage: number;
+  }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+
+    const progress = await this.getMinigameProgress();
+    const clearedStage = progress[gameId].clearedStage;
+    const expectedStage = getCurrentStage(clearedStage);
+    if (stage !== expectedStage) {
+      return {
+        reward: 0,
+        stars: profile.stars,
+        starsEarnedToday: (await this.getMinigameDailyState()).starsEarnedToday,
+        dailyCap: MINIGAME_DAILY_STAR_CAP,
+        clearedStage,
+      };
+    }
+
+    const daily = await this.getMinigameDailyState();
+    const remaining = Math.max(0, MINIGAME_DAILY_STAR_CAP - daily.starsEarnedToday);
+    const reward = Math.min(MINIGAME_STAGE_STAR_REWARD, remaining);
+    const nextClearedStage = Math.max(clearedStage, Math.min(stage, MINIGAME_MAX_STAGE));
+
+    progress[gameId] = { clearedStage: nextClearedStage };
+    await writeJson(KEYS.minigameProgress, progress);
+
+    const starsEarnedToday = daily.starsEarnedToday + reward;
+    await writeJson(KEYS.minigameDaily, { ...daily, starsEarnedToday });
+
+    const stars = profile.stars + reward;
+    await writeJson(KEYS.profile, { ...profile, stars });
+
+    return {
+      reward,
+      stars,
+      starsEarnedToday,
+      dailyCap: MINIGAME_DAILY_STAR_CAP,
+      clearedStage: nextClearedStage,
+    };
+  },
+
+  async getPublicFeed(): Promise<PublicExperiencePost[]> {
+    const profile = await this.getProfile();
+    const visits = await readJson<Visit[]>(KEYS.visits, []);
+    const places = await ensurePlaces();
+    const allProfiles = await readJson<Record<string, UserProfile>>(KEYS.userProfiles, {});
+
+    const fromVisits: PublicExperiencePost[] = visits
+      .filter((v) => v.isPublic && (v.editedPhotoUri ?? v.photoUri))
+      .map((v) => {
+        const place = places.find((p) => p.id === v.placeId);
+        const author = v.userId === profile?.id ? profile : allProfiles[v.userId] ?? DEMO_USER_PROFILES[v.userId];
+        return {
+          id: v.id,
+          userId: v.userId,
+          displayName: author?.displayName ?? '여행러',
+          userPhotoUri: author?.photoUri,
+          placeId: v.placeId,
+          placeName: place?.name ?? v.placeId,
+          regionCode: place?.regionCode ?? '',
+          photoUri: v.editedPhotoUri ?? v.photoUri,
+          note: v.note,
+          visitedAt: v.visitedAt,
+        };
+      });
+
+    const seedIds = new Set(fromVisits.map((p) => p.id));
+    const seed = SEED_PUBLIC_EXPERIENCE_POSTS.filter((p) => !seedIds.has(p.id)).map((p) => {
+      const author = allProfiles[p.userId] ?? DEMO_USER_PROFILES[p.userId];
+      return {
+        ...p,
+        userPhotoUri: author?.photoUri ?? p.userPhotoUri,
+      };
+    });
+
+    const excludeUserId = profile?.id;
+    const merged = [...fromVisits, ...seed.filter((p) => p.userId !== excludeUserId)];
+    merged.sort((a, b) => new Date(b.visitedAt).getTime() - new Date(a.visitedAt).getTime());
+    return merged;
+  },
+
+  async applyFeedRecommendCounts(posts: PublicExperiencePost[]): Promise<PublicExperiencePost[]> {
+    const store = await readFeedRecommendStore();
+    return posts.map((post) => ({
+      ...post,
+      recommendCount: store.counts[post.id] ?? post.recommendCount ?? getBaseRecommendCount(post.id),
+    }));
+  },
+
+  async getFeedLikedPostIds(): Promise<string[]> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    const userId = profile?.id ?? session?.userId;
+    if (!userId) return [];
+    const store = await readFeedRecommendStore();
+    return store.likes[userId] ?? [];
+  },
+
+  async toggleFeedRecommend(
+    postId: string,
+    postUserId: string,
+  ): Promise<{ count: number; liked: boolean }> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    const userId = profile?.id ?? session?.userId;
+    if (!userId) throw new Error('로그인이 필요합니다');
+    if (postUserId === userId) throw new Error('본인 게시물에는 추천할 수 없습니다');
+
+    const store = await readFeedRecommendStore();
+    const likedIds = store.likes[userId] ?? [];
+    const alreadyLiked = likedIds.includes(postId);
+    const currentCount =
+      store.counts[postId] ?? getBaseRecommendCount(postId);
+
+    if (alreadyLiked) {
+      store.likes[userId] = likedIds.filter((id) => id !== postId);
+      store.counts[postId] = Math.max(0, currentCount - 1);
+    } else {
+      store.likes[userId] = [...likedIds, postId];
+      store.counts[postId] = currentCount + 1;
+    }
+
+    await writeJson(KEYS.feedRecommendations, store);
+    return { count: store.counts[postId], liked: !alreadyLiked };
   },
 
   async getRankings(type: 'stars' | 'visits' | 'gallery'): Promise<RankingEntry[]> {

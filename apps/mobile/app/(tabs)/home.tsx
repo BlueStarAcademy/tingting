@@ -41,7 +41,7 @@ export default function HomeScreen() {
       <TabPage
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
-        <ProfileSection profile={dash.profile} onUpdated={load} />
+        <ProfileSection profile={dash.profile} onUpdated={load} embedded />
         <GroupSlotGrid profile={dash.profile} groups={dash.groups} onUpdated={load} />
         <RecommendedPlacesSection />
       </TabPage>

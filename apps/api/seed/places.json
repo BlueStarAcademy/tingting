@@ -1,0 +1,1035 @@
+[
+  {
+    "id": "p-seo-1",
+    "regionCode": "SEO",
+    "name": "경복궁",
+    "description": "조선 왕조의 법궁",
+    "lat": 37.5796,
+    "lng": 126.977,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1583417319070-4a1d3d9f5a6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-2",
+    "regionCode": "SEO",
+    "name": "남산타워",
+    "description": "서울의 랜드마크",
+    "lat": 37.5512,
+    "lng": 126.9882,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-1",
+    "regionCode": "BUS",
+    "name": "부산 해운대",
+    "description": "부산 대표 해변 · 국내 최고의 바다 휴양지",
+    "lat": 35.1587,
+    "lng": 129.1604,
+    "category": "beach",
+    "imageUrl": "https://images.unsplash.com/photo-1596436889106-58a3ee4c6b54?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-2",
+    "regionCode": "BUS",
+    "name": "부산 감천문화마을",
+    "description": "부산의 알록달록 예술 마을",
+    "lat": 35.0975,
+    "lng": 129.0107,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1559827260-dc66d52bef19?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-1",
+    "regionCode": "DAE",
+    "name": "동성로",
+    "description": "대구의 번화가",
+    "lat": 35.8694,
+    "lng": 128.5938,
+    "category": "city",
+    "imageUrl": "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-1",
+    "regionCode": "ICN",
+    "name": "월미도",
+    "description": "인천 바다 전망",
+    "lat": 37.4664,
+    "lng": 126.5972,
+    "category": "sea",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-1",
+    "regionCode": "GWJ",
+    "name": "무등산",
+    "description": "광주의 상징",
+    "lat": 35.1347,
+    "lng": 126.9883,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-1",
+    "regionCode": "DJN",
+    "name": "엑스포과학공원",
+    "description": "과학 테마파크",
+    "lat": 36.3745,
+    "lng": 127.3728,
+    "category": "science",
+    "imageUrl": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-1",
+    "regionCode": "ULS",
+    "name": "대왕암공원",
+    "description": "울산 해안 절경",
+    "lat": 35.4928,
+    "lng": 129.4342,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-1",
+    "regionCode": "SJG",
+    "name": "세종호수공원",
+    "description": "세종의 중심 공원",
+    "lat": 36.504,
+    "lng": 127.2495,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-1",
+    "regionCode": "GGD",
+    "name": "수원화성",
+    "description": "유네스코 세계유산",
+    "lat": 37.286,
+    "lng": 127.0117,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1517154421774-6aad56366d86?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-1",
+    "regionCode": "GWN",
+    "name": "설악산",
+    "description": "강원 대표 산",
+    "lat": 38.1195,
+    "lng": 128.4655,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-1",
+    "regionCode": "NCB",
+    "name": "속리산",
+    "description": "국립공원",
+    "lat": 36.543,
+    "lng": 127.8728,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1439066588041-2504cb8550a9?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-1",
+    "regionCode": "SCB",
+    "name": "공주",
+    "description": "백제 역사 도시",
+    "lat": 36.4465,
+    "lng": 127.119,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-1",
+    "regionCode": "NJB",
+    "name": "전주한옥마을",
+    "description": "전통 한옥 거리",
+    "lat": 35.8154,
+    "lng": 127.153,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1580894900169-8672efdd62da?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-1",
+    "regionCode": "SJB",
+    "name": "순천만",
+    "description": "갈대 습지",
+    "lat": 34.8868,
+    "lng": 127.5278,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-1",
+    "regionCode": "NGB",
+    "name": "경주",
+    "description": "신라 천년의 고도",
+    "lat": 35.8562,
+    "lng": 129.2247,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-1",
+    "regionCode": "SGB",
+    "name": "통영",
+    "description": "케이블카와 바다",
+    "lat": 34.8467,
+    "lng": 128.419,
+    "category": "sea",
+    "imageUrl": "https://images.unsplash.com/photo-1559827260-dc66d52bef19?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-1",
+    "regionCode": "JEJ",
+    "name": "성산일출봉",
+    "description": "제주 UNESCO",
+    "lat": 33.4584,
+    "lng": 126.9425,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1590523277543-a94d2e4ddb54?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-2",
+    "regionCode": "JEJ",
+    "name": "한라산",
+    "description": "제주 최고봉",
+    "lat": 33.3617,
+    "lng": 126.5292,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-food",
+    "regionCode": "SEO",
+    "lat": 37.5665,
+    "lng": 126.978,
+    "name": "을지로 골목식당",
+    "description": "을지로 전통 골목의 한식 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-stay",
+    "regionCode": "SEO",
+    "lat": 37.5745,
+    "lng": 126.984,
+    "name": "포시즌스 호텔 서울",
+    "description": "광화문 인근 럭셔리 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-event",
+    "regionCode": "SEO",
+    "lat": 37.5605,
+    "lng": 126.988,
+    "name": "서울 빛초롱 축제",
+    "description": "매년 가을 서울 전역 등불 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-play",
+    "regionCode": "SEO",
+    "lat": 37.5785,
+    "lng": 126.97,
+    "name": "한강공원",
+    "description": "자전거·피크닉·야경을 즐기는 서울 대표 공원",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-food",
+    "regionCode": "BUS",
+    "lat": 35.1796,
+    "lng": 129.0756,
+    "name": "할매집 돼지국밥",
+    "description": "부산 원조 돼지국밥 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1569055241982-45b0f5585467?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-stay",
+    "regionCode": "BUS",
+    "lat": 35.1876,
+    "lng": 129.0816,
+    "name": "파라다이스 호텔 부산",
+    "description": "해운대 해변 인근 5성급 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-event",
+    "regionCode": "BUS",
+    "lat": 35.1736,
+    "lng": 129.0856,
+    "name": "부산 불꽃축제",
+    "description": "광안리 해변 대형 불꽃쇼",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1533174072545-7a4b6d5c4d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-sight",
+    "regionCode": "BUS",
+    "lat": 35.1696,
+    "lng": 129.0696,
+    "name": "용두산공원",
+    "description": "부산항과 도심을 한눈에 보는 전망",
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-food",
+    "regionCode": "DAE",
+    "lat": 35.8714,
+    "lng": 128.6014,
+    "name": "동인동 찜갈비",
+    "description": "대구 대표 찜갈비 골목",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-stay",
+    "regionCode": "DAE",
+    "lat": 35.879400000000004,
+    "lng": 128.6074,
+    "name": "인터불고 호텔 대구",
+    "description": "동성로 중심 비즈니스 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-event",
+    "regionCode": "DAE",
+    "lat": 35.8654,
+    "lng": 128.6114,
+    "name": "치맥 페스티벌",
+    "description": "대구 치킨·맥주 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-sight",
+    "regionCode": "DAE",
+    "lat": 35.8614,
+    "lng": 128.5954,
+    "name": "83타워",
+    "description": "대구 시내 전망 타워",
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-food",
+    "regionCode": "ICN",
+    "lat": 37.4563,
+    "lng": 126.7052,
+    "name": "신포닭강정",
+    "description": "인천 차이나타운 닭강정 명물",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-stay",
+    "regionCode": "ICN",
+    "lat": 37.4643,
+    "lng": 126.7112,
+    "name": "송도 센트럴파크 호텔",
+    "description": "송도 국제도시 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1520250497591-112be2d99614?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-event",
+    "regionCode": "ICN",
+    "lat": 37.4503,
+    "lng": 126.71520000000001,
+    "name": "인천 펜타포트 락페스티벌",
+    "description": "송도 해변 대형 음악 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-play",
+    "regionCode": "ICN",
+    "lat": 37.4683,
+    "lng": 126.69720000000001,
+    "name": "월미바다열차",
+    "description": "월미도 해안 레일 체험",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-food",
+    "regionCode": "GWJ",
+    "lat": 35.1595,
+    "lng": 126.8526,
+    "name": "송정 떡갈비",
+    "description": "광주 대표 떡갈비 거리",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-stay",
+    "regionCode": "GWJ",
+    "lat": 35.167500000000004,
+    "lng": 126.8586,
+    "name": "라마다 플라자 광주",
+    "description": "무등산 인근 시내 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1564501049412-2566c978ccee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-event",
+    "regionCode": "GWJ",
+    "lat": 35.1535,
+    "lng": 126.8626,
+    "name": "광주 비엔날레",
+    "description": "국제 현대미술 전시 행사",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1506157785271-0d7858b9f57e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-play",
+    "regionCode": "GWJ",
+    "lat": 35.1715,
+    "lng": 126.8446,
+    "name": "무등산 케이블카",
+    "description": "광주 상징 산 케이블카",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-food",
+    "regionCode": "DJN",
+    "lat": 36.3504,
+    "lng": 127.3845,
+    "name": "성심당 튀김소보로",
+    "description": "대전 대표 베이커리",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-stay",
+    "regionCode": "DJN",
+    "lat": 36.3584,
+    "lng": 127.3905,
+    "name": "유성호텔",
+    "description": "유성온천 지구 숙박",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-event",
+    "regionCode": "DJN",
+    "lat": 36.3444,
+    "lng": 127.39450000000001,
+    "name": "대전 0시 축제",
+    "description": "대덕연구단지 야간 문화행사",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1459747510973-5cf035f67959?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-sight",
+    "regionCode": "DJN",
+    "lat": 36.3404,
+    "lng": 127.3785,
+    "name": "한밭수목원",
+    "description": "국내 최대 도심 수목원",
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-food",
+    "regionCode": "ULS",
+    "lat": 35.5384,
+    "lng": 129.3114,
+    "name": "울산 왕갈비",
+    "description": "울산 대표 소갈비 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1551218808-94e220e084d2?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-stay",
+    "regionCode": "ULS",
+    "lat": 35.546400000000006,
+    "lng": 129.3174,
+    "name": "울산 현대호텔",
+    "description": "태화강 인근 시내 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-event",
+    "regionCode": "ULS",
+    "lat": 35.5324,
+    "lng": 129.32139999999998,
+    "name": "울산 태화강 축제",
+    "description": "대나무숲 야간 공연",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-play",
+    "regionCode": "ULS",
+    "lat": 35.5504,
+    "lng": 129.30339999999998,
+    "name": "간절곶 일출",
+    "description": "한반도 최동단 일출 명소",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-food",
+    "regionCode": "SJG",
+    "lat": 36.48,
+    "lng": 127.289,
+    "name": "세종 전통시장 국밥",
+    "description": "세종 행정수도 전통시장 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1574484786402-934b77434b31?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-stay",
+    "regionCode": "SJG",
+    "lat": 36.488,
+    "lng": 127.295,
+    "name": "세종 Lake Hotel",
+    "description": "호수공원 인근 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1618773928123-c66b9ffde44d?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-event",
+    "regionCode": "SJG",
+    "lat": 36.474,
+    "lng": 127.299,
+    "name": "세종 문화예술제",
+    "description": "호수공원 야외 공연",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1540039158931-ceffa28af7a6?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-play",
+    "regionCode": "SJG",
+    "lat": 36.492,
+    "lng": 127.281,
+    "name": "세종호수공원 수상자전거",
+    "description": "인공호수 레저 체험",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-food",
+    "regionCode": "GGD",
+    "lat": 37.2636,
+    "lng": 127.0286,
+    "name": "수원 왕갈비통닭",
+    "description": "수원화성 인근 명물 치킨",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-stay",
+    "regionCode": "GGD",
+    "lat": 37.2716,
+    "lng": 127.0346,
+    "name": "라마다 수원",
+    "description": "수원 화성 인근 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1631049307264-da0ec8d70304?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-event",
+    "regionCode": "GGD",
+    "lat": 37.2576,
+    "lng": 127.0386,
+    "name": "수원 화성문화제",
+    "description": "연등·전통 공연 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1429962714451-bb834a88fbbd?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-play",
+    "regionCode": "GGD",
+    "lat": 37.2756,
+    "lng": 127.0206,
+    "name": "에버랜드",
+    "description": "경기 대표 테마파크",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-food",
+    "regionCode": "GWN",
+    "lat": 37.8228,
+    "lng": 128.1555,
+    "name": "강릉 초당순두부",
+    "description": "동해안 순두부 명물",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-stay",
+    "regionCode": "GWN",
+    "lat": 37.8308,
+    "lng": 128.1615,
+    "name": "씨마크호텔",
+    "description": "강릉 해변 리조트",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-event",
+    "regionCode": "GWN",
+    "lat": 37.8168,
+    "lng": 128.16549999999998,
+    "name": "강릉 단오제",
+    "description": "유네스코 무형문화 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1516450360452-aaa2ed0e8369?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-play",
+    "regionCode": "GWN",
+    "lat": 37.8348,
+    "lng": 128.14749999999998,
+    "name": "평창 알펜시아",
+    "description": "스키·골프 리조트",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-food",
+    "regionCode": "NCB",
+    "lat": 36.6357,
+    "lng": 127.4917,
+    "name": "청주 오창 한우",
+    "description": "충북 대표 한우 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-stay",
+    "regionCode": "NCB",
+    "lat": 36.6437,
+    "lng": 127.4977,
+    "name": "청주 스카이호텔",
+    "description": "청주 시내 중심 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1584132915807-be1e43e422d3?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-event",
+    "regionCode": "NCB",
+    "lat": 36.6297,
+    "lng": 127.5017,
+    "name": "청주 공예비엔날레",
+    "description": "세계 공예 전시",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1506157785271-0d7858b9f57e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-play",
+    "regionCode": "NCB",
+    "lat": 36.6477,
+    "lng": 127.4837,
+    "name": "청주 뮤지엄 산",
+    "description": "현대미술 체험",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-food",
+    "regionCode": "SCB",
+    "lat": 36.5184,
+    "lng": 126.8,
+    "name": "공주 한정식",
+    "description": "백제 고도 전통 한정식",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1504113888839-1c8e50233f76?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-stay",
+    "regionCode": "SCB",
+    "lat": 36.5264,
+    "lng": 126.806,
+    "name": "라한셀렉트 공주",
+    "description": "공산성 인근 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1591087657150-f9ff2c9dbfc4?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-event",
+    "regionCode": "SCB",
+    "lat": 36.5124,
+    "lng": 126.81,
+    "name": "부여 백제문화제",
+    "description": "백제 역사 문화 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-play",
+    "regionCode": "SCB",
+    "lat": 36.5304,
+    "lng": 126.792,
+    "name": "대천 해수욕장",
+    "description": "서해 대표 해수욕장",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-food",
+    "regionCode": "NJB",
+    "lat": 35.8242,
+    "lng": 127.148,
+    "name": "전주 비빔밥 거리",
+    "description": "전주 한옥마을 비빔밥",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1553621042-f6e147245756?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-stay",
+    "regionCode": "NJB",
+    "lat": 35.8322,
+    "lng": 127.154,
+    "name": "전주 한옥스테이",
+    "description": "한옥마을 전통 숙소",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1566665797737-15c698f58fe3?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-event",
+    "regionCode": "NJB",
+    "lat": 35.8182,
+    "lng": 127.158,
+    "name": "전주 세계소리축제",
+    "description": "국제 음악 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1511570174474-a2a27b9ca9b8?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-sight",
+    "regionCode": "NJB",
+    "lat": 35.8142,
+    "lng": 127.142,
+    "name": "경기전",
+    "description": "조선 왕실 사당",
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-food",
+    "regionCode": "SJB",
+    "lat": 34.8679,
+    "lng": 126.991,
+    "name": "여수 돌게장",
+    "description": "남해안 해산물 명물",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-stay",
+    "regionCode": "SJB",
+    "lat": 34.8759,
+    "lng": 126.997,
+    "name": "여수 오션호텔",
+    "description": "여수 밤바다 전망 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1571008881686-5bd8c7c4c4a4?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-event",
+    "regionCode": "SJB",
+    "lat": 34.8619,
+    "lng": 127.001,
+    "name": "보성 다원대축제",
+    "description": "녹차밭 문화 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1470225620780-dba8ba2b4445?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-play",
+    "regionCode": "SJB",
+    "lat": 34.8799,
+    "lng": 126.983,
+    "name": "순천만 습지열차",
+    "description": "갈대밭 생태 체험",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-food",
+    "regionCode": "NGB",
+    "lat": 36.4919,
+    "lng": 128.8889,
+    "name": "안동 찜닭",
+    "description": "경북 대표 찜닭",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1540189549336-e9e8883be175?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-stay",
+    "regionCode": "NGB",
+    "lat": 36.499900000000004,
+    "lng": 128.8949,
+    "name": "경주 힐튼",
+    "description": "경주 역사지구 호텔",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-event",
+    "regionCode": "NGB",
+    "lat": 36.4859,
+    "lng": 128.8989,
+    "name": "경주 세계문화엑스포 공원 행사",
+    "description": "역사 문화 야간 행사",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1506157785271-0d7858b9f57e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-play",
+    "regionCode": "NGB",
+    "lat": 36.5039,
+    "lng": 128.8809,
+    "name": "안동 하회마을 체험",
+    "description": "전통 마을 문화 체험",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-food",
+    "regionCode": "SGB",
+    "lat": 35.4606,
+    "lng": 128.2132,
+    "name": "통영 꿀빵",
+    "description": "통영 대표 디저트",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1551024506-0bccd828d307?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-stay",
+    "regionCode": "SGB",
+    "lat": 35.4686,
+    "lng": 128.2192,
+    "name": "통영 마리나 리조트",
+    "description": "남해 해안 리조트",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-event",
+    "regionCode": "SGB",
+    "lat": 35.4546,
+    "lng": 128.2232,
+    "name": "진주 남강유등축제",
+    "description": "유등 띄우기 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-play",
+    "regionCode": "SGB",
+    "lat": 35.4726,
+    "lng": 128.2052,
+    "name": "통영 케이블카",
+    "description": "한려수도 바다 전망",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-food",
+    "regionCode": "JEJ",
+    "lat": 33.4996,
+    "lng": 126.5312,
+    "name": "흑돼지 거리",
+    "description": "제주 흑돼지 구이 맛집",
+    "category": "food",
+    "imageUrl": "https://images.unsplash.com/photo-1476224208491-c28d37d32ed9?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-stay",
+    "regionCode": "JEJ",
+    "lat": 33.507600000000004,
+    "lng": 126.5372,
+    "name": "제주 신라호텔",
+    "description": "서귀포 리조트",
+    "category": "stay",
+    "imageUrl": "https://images.unsplash.com/photo-1560185127-6ed189bf02f4?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-event",
+    "regionCode": "JEJ",
+    "lat": 33.4936,
+    "lng": 126.5412,
+    "name": "제주 들불축제",
+    "description": "봄 들판 불꽃 축제",
+    "category": "event",
+    "imageUrl": "https://images.unsplash.com/photo-1533174072545-7a4b6d5c4d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-play",
+    "regionCode": "JEJ",
+    "lat": 33.5116,
+    "lng": 126.5232,
+    "name": "제주 올레길",
+    "description": "해안 트레킹 코스",
+    "category": "activity",
+    "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-station",
+    "regionCode": "SEO",
+    "name": "서울역",
+    "description": "서울 대표 기차역 · KTX·ITX·지하철 환승",
+    "lat": 37.5547,
+    "lng": 126.9707,
+    "category": "station"
+  },
+  {
+    "id": "p-bus-station",
+    "regionCode": "BUS",
+    "name": "부산역",
+    "description": "부산 대표 기차역 · KTX·SRT",
+    "lat": 35.1156,
+    "lng": 129.0423,
+    "category": "station"
+  },
+  {
+    "id": "p-dae-station",
+    "regionCode": "DAE",
+    "name": "동대구역",
+    "description": "대구 대표 기차역 · KTX·SRT",
+    "lat": 35.8796,
+    "lng": 128.6283,
+    "category": "station"
+  },
+  {
+    "id": "p-icn-station",
+    "regionCode": "ICN",
+    "name": "인천역",
+    "description": "인천 대표 기차역 · 수도권 전철 1호선",
+    "lat": 37.4767,
+    "lng": 126.6167,
+    "category": "station"
+  },
+  {
+    "id": "p-gwj-station",
+    "regionCode": "GWJ",
+    "name": "광주송정역",
+    "description": "광주 대표 기차역 · KTX·SRT",
+    "lat": 35.1393,
+    "lng": 126.7936,
+    "category": "station"
+  },
+  {
+    "id": "p-djn-station",
+    "regionCode": "DJN",
+    "name": "대전역",
+    "description": "대전 대표 기차역 · KTX·SRT",
+    "lat": 36.3325,
+    "lng": 127.4343,
+    "category": "station"
+  },
+  {
+    "id": "p-uls-station",
+    "regionCode": "ULS",
+    "name": "울산역",
+    "description": "울산 대표 기차역 · KTX·SRT",
+    "lat": 35.5514,
+    "lng": 129.1385,
+    "category": "station"
+  },
+  {
+    "id": "p-sjg-station",
+    "regionCode": "SJG",
+    "name": "오송역",
+    "description": "세종 접근 대표역 · KTX·SRT",
+    "lat": 36.6207,
+    "lng": 127.3278,
+    "category": "station"
+  },
+  {
+    "id": "p-ggd-station",
+    "regionCode": "GGD",
+    "name": "수원역",
+    "description": "경기 대표 기차역 · KTX·ITX",
+    "lat": 37.2659,
+    "lng": 127.0,
+    "category": "station"
+  },
+  {
+    "id": "p-gwn-station",
+    "regionCode": "GWN",
+    "name": "강릉역",
+    "description": "강원 대표 기차역 · KTX",
+    "lat": 37.7644,
+    "lng": 128.8978,
+    "category": "station"
+  },
+  {
+    "id": "p-ncb-station",
+    "regionCode": "NCB",
+    "name": "청주역",
+    "description": "충북 대표 기차역 · KTX·ITX",
+    "lat": 36.7166,
+    "lng": 127.4992,
+    "category": "station"
+  },
+  {
+    "id": "p-scb-station",
+    "regionCode": "SCB",
+    "name": "천안아산역",
+    "description": "충남 대표 기차역 · KTX·SRT",
+    "lat": 36.7947,
+    "lng": 127.1047,
+    "category": "station"
+  },
+  {
+    "id": "p-njb-station",
+    "regionCode": "NJB",
+    "name": "전주역",
+    "description": "전북 대표 기차역 · KTX·ITX",
+    "lat": 35.8494,
+    "lng": 127.1297,
+    "category": "station"
+  },
+  {
+    "id": "p-sjb-station",
+    "regionCode": "SJB",
+    "name": "여수엑스포역",
+    "description": "전남 대표 기차역 · KTX·ITX",
+    "lat": 34.7344,
+    "lng": 127.7389,
+    "category": "station"
+  },
+  {
+    "id": "p-ngb-station",
+    "regionCode": "NGB",
+    "name": "경주역",
+    "description": "경북 대표 기차역 · KTX·SRT",
+    "lat": 35.7983,
+    "lng": 129.1378,
+    "category": "station"
+  },
+  {
+    "id": "p-sgb-station",
+    "regionCode": "SGB",
+    "name": "창원중앙역",
+    "description": "경남 대표 기차역 · KTX·SRT",
+    "lat": 35.2289,
+    "lng": 128.6817,
+    "category": "station"
+  },
+  {
+    "id": "p-jej-station",
+    "regionCode": "JEJ",
+    "name": "제주공항",
+    "description": "제주 대표 교통 거점 (철도 미운영)",
+    "lat": 33.5067,
+    "lng": 126.4922,
+    "category": "station"
+  }
+]

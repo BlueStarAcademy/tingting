@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
-import { glassSurface, shadow } from '@/lib/ui';
+import { shadow } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
 type TabRoute = {
@@ -20,7 +20,8 @@ const TABS: TabRoute[] = [
   { href: '/(tabs)/home', match: '/home', icon: 'home', labelKey: 'tabs.home' },
   { href: '/(tabs)/steps', match: '/steps', icon: 'footsteps', labelKey: 'tabs.steps' },
   { href: '/(tabs)/minigames', match: '/minigames', icon: 'game-controller', labelKey: 'tabs.minigames' },
-  { href: '/(tabs)/ranking', match: '/ranking', icon: 'trophy', labelKey: 'tabs.ranking' },
+  { href: '/(tabs)/recommend', match: '/recommend', icon: 'heart', labelKey: 'tabs.recommend' },
+  { href: '/(tabs)/photos', match: '/photos', icon: 'images', labelKey: 'tabs.photos' },
   { href: '/(tabs)/shop', match: '/shop', icon: 'bag', labelKey: 'tabs.shopTab' },
 ];
 
@@ -37,7 +38,6 @@ export function MainTabBar() {
     <View
       style={[
         styles.bar,
-        glassSurface(),
         shadow('tab'),
         {
           width: contentWidth,
@@ -47,16 +47,23 @@ export function MainTabBar() {
         },
       ]}
     >
+      <LinearGradient
+        colors={[theme.colors.surfaceElevated, theme.colors.surface]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.topLine} />
       {TABS.map((tab) => {
         const active = pathname.includes(tab.match);
         return (
           <Pressable key={tab.match} style={styles.item} onPress={() => router.replace(tab.href)}>
             {active ? (
               <LinearGradient
-                colors={[theme.colors.tint.gradientStart, theme.colors.tint.gradientEnd]}
+                colors={[theme.colors.primary, theme.colors.primaryLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={styles.activePill}
               >
-                <Ionicons name={tab.icon} size={20} color={theme.colors.primaryDark} />
+                <Ionicons name={tab.icon} size={20} color="#fff" />
               </LinearGradient>
             ) : (
               <View style={styles.iconWrap}>
@@ -80,7 +87,18 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
     borderBottomWidth: 0,
+    borderColor: theme.colors.border,
+  },
+  topLine: {
+    position: 'absolute',
+    top: 0,
+    left: theme.spacing.lg,
+    right: theme.spacing.lg,
+    height: 1,
+    backgroundColor: theme.colors.tint.light,
   },
   item: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 2 },
   iconWrap: {
@@ -95,8 +113,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.borderStrong,
+    ...shadow('sm'),
   },
   label: { color: theme.colors.textSubtle, fontSize: 10, fontWeight: '600' },
   labelActive: { color: theme.colors.primaryDark, fontWeight: '800' },

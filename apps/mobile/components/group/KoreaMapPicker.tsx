@@ -6,12 +6,17 @@ import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 const GROUP_MAP_ZOOM = 3;
+const COMPACT_VIEWPORT_RATIO = 0.34;
+const DEFAULT_VIEWPORT_RATIO = 0.5;
 
 interface Props {
   visitedRegionCodes?: string[];
   selectedCode?: string | null;
   onRegionPress: (region: Region) => void;
   focusPlace?: Place | null;
+  onPinPress?: () => void;
+  /** 여행 탭 등 공간이 제한된 화면 */
+  compact?: boolean;
 }
 
 export function KoreaMapPicker({
@@ -19,12 +24,14 @@ export function KoreaMapPicker({
   selectedCode,
   onRegionPress,
   focusPlace,
+  onPinPress,
+  compact = false,
 }: Props) {
   const { t } = useLocale();
   const visitedCount = visitedRegionCodes.length;
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, compact && styles.wrapCompact]}>
       <ScrollableKoreaMap
         visitedRegionCodes={visitedRegionCodes}
         selectedCode={selectedCode}
@@ -37,9 +44,10 @@ export function KoreaMapPicker({
         minZoom={2}
         maxZoom={6}
         edgePadding={0}
-        viewportHeightRatio={0.5}
+        viewportHeightRatio={compact ? COMPACT_VIEWPORT_RATIO : DEFAULT_VIEWPORT_RATIO}
         focusPlace={focusPlace}
-        focusZoom={5.5}
+        focusZoom={6}
+        onPinPress={onPinPress}
       />
       <View style={styles.legend}>
         <View style={styles.legendItem}>
@@ -48,8 +56,14 @@ export function KoreaMapPicker({
             {t('map.visitedLegend')} {visitedCount}/{REGIONS.length}
           </Text>
         </View>
-        <Text style={styles.hint}>{t('map.panHint')}</Text>
-        <Text style={styles.hint}>{t('map.tapRegion')}</Text>
+        {compact ? (
+          <Text style={styles.hint}>{t('group.travelMapHint')}</Text>
+        ) : (
+          <>
+            <Text style={styles.hint}>{t('map.panHint')}</Text>
+            <Text style={styles.hint}>{t('map.tapRegion')}</Text>
+          </>
+        )}
       </View>
     </View>
   );
@@ -57,6 +71,7 @@ export function KoreaMapPicker({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, gap: theme.spacing.sm, alignSelf: 'stretch', minHeight: 0 },
+  wrapCompact: { flexGrow: 0, flexShrink: 0 },
   legend: { gap: 4, paddingHorizontal: theme.spacing.xs },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   swatch: { width: 12, height: 12, borderRadius: 3 },

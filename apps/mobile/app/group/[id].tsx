@@ -8,13 +8,11 @@ import { GroupChatBar } from '@/components/group/GroupChatBar';
 import { GroupNameEditModal } from '@/components/group/GroupNameEditModal';
 import { GroupHomeTab } from '@/components/group/tabs/GroupHomeTab';
 import { GroupMembersTab } from '@/components/group/tabs/GroupMembersTab';
-import { GroupMapTab } from '@/components/group/tabs/GroupMapTab';
-import { GroupGalleryTab } from '@/components/group/tabs/GroupGalleryTab';
-import { GroupQuestTab } from '@/components/group/tabs/GroupQuestTab';
+import { GroupTravelTab } from '@/components/group/tabs/GroupTravelTab';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
-import type { Group, Place, Quest, Visit } from '@tingting/shared';
+import type { Group, GroupSchedule, Place, Quest, Visit } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
@@ -26,24 +24,23 @@ export default function GroupDetailScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
   const [quests, setQuests] = useState<Quest[]>([]);
+  const [schedules, setSchedules] = useState<GroupSchedule[]>([]);
   const [nameEditOpen, setNameEditOpen] = useState(false);
 
   const load = async () => {
-    try {
-      const [nextGroup, nextVisits, nextPlaces, nextQuests] = await Promise.all([
-        api.getGroup(id),
-        api.getGroupVisits(id),
-        api.getPlaces(),
-        api.getGroupQuests(id),
-      ]);
-      setGroup(nextGroup);
-      setVisits(nextVisits);
-      setPlaces(nextPlaces);
-      setQuests(nextQuests);
-      await refreshAuth();
-    } catch {
-      /* keep last loaded state when the API is partially unavailable */
-    }
+    const [groupRes, visitsRes, placesRes, questsRes, schedulesRes] = await Promise.allSettled([
+      api.getGroup(id),
+      api.getGroupVisits(id),
+      api.getPlaces(),
+      api.getGroupQuests(id),
+      api.getGroupSchedules(id),
+    ]);
+    if (groupRes.status === 'fulfilled') setGroup(groupRes.value);
+    if (visitsRes.status === 'fulfilled') setVisits(visitsRes.value);
+    if (placesRes.status === 'fulfilled') setPlaces(placesRes.value);
+    if (questsRes.status === 'fulfilled') setQuests(questsRes.value);
+    if (schedulesRes.status === 'fulfilled') setSchedules(schedulesRes.value);
+    await refreshAuth();
   };
 
   useFocusEffect(
@@ -80,9 +77,17 @@ export default function GroupDetailScreen() {
       />
       <GroupTabBar active={tab} onChange={setTab} />
       <View style={styles.body}>
-        {tab === 'map' ? (
-          <View style={styles.mapBody}>
-            <GroupMapTab visitedRegionCodes={visitedRegions} places={places} visits={visits} />
+        {tab === 'travel' ? (
+          <View style={styles.travelBody}>
+            <GroupTravelTab
+              group={group}
+              places={places}
+              visits={visits}
+              quests={quests}
+              schedules={schedules}
+              visitedRegionCodes={visitedRegions}
+              onUpdated={load}
+            />
           </View>
         ) : (
           <ScrollView
@@ -91,10 +96,8 @@ export default function GroupDetailScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {tab === 'home' ? (
+            <View style={styles.homeSections}>
               <GroupHomeTab group={group} isOwner={isOwner} onUpdated={load} />
-            ) : null}
-            {tab === 'members' ? (
               <GroupMembersTab
                 group={group}
                 isOwner={isOwner}
@@ -102,19 +105,7 @@ export default function GroupDetailScreen() {
                 onUpdated={load}
                 onLeft={() => {}}
               />
-            ) : null}
-            {tab === 'gallery' ? (
-              <GroupGalleryTab
-                group={group}
-                isOwner={isOwner}
-                visits={visits}
-                places={places}
-                onUpdated={load}
-              />
-            ) : null}
-            {tab === 'quest' ? (
-              <GroupQuestTab groupId={id} quests={quests} onUpdated={load} />
-            ) : null}
+            </View>
           </ScrollView>
         )}
         <GroupChatBar groupId={id} />
@@ -135,6 +126,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, minHeight: 0, position: 'relative' },
   scroll: { flex: 1, minHeight: 0 },
   scrollContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
-  mapBody: { flex: 1, minHeight: 0, padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
+  homeSections: { gap: theme.spacing.xl },
+  travelBody: { flex: 1, minHeight: 0, padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
   loading: { color: theme.colors.text, padding: theme.spacing.lg },
 });

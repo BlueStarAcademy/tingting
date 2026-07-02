@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { GroupChatMessage } from '@tingting/shared';
+import { AppModal } from '@/components/AppModal';
+import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
@@ -28,6 +30,10 @@ interface Props {
   groupId: string;
 }
 
+function visibleMessages(messages: GroupChatMessage[]): GroupChatMessage[] {
+  return messages.filter((message) => !message.deletedAt);
+}
+
 function formatChatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -40,18 +46,24 @@ function formatChatTime(iso: string): string {
 
 export function GroupChatBar({ groupId }: Props) {
   const { t } = useLocale();
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
+  const ownerIds = useMemo(
+    () => new Set([profile?.id, session?.userId].filter(Boolean) as string[]),
+    [profile?.id, session?.userId],
+  );
   const insets = useSafeAreaInsets();
   const tabBarInset = MAIN_TAB_BAR_HEIGHT + Math.max(insets.bottom, 6);
   const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<GroupChatMessage[]>([]);
   const [text, setText] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<GroupChatMessage | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
     try {
-      setMessages(await api.getGroupChatMessages(groupId));
+      setMessages(visibleMessages(await api.getGroupChatMessages(groupId)));
     } catch {
       /* endpoint may be unavailable on older API builds */
     }
@@ -63,7 +75,7 @@ export function GroupChatBar({ groupId }: Props) {
 
     const poll = async () => {
       try {
-        const next = await api.getGroupChatMessages(groupId);
+        const next = visibleMessages(await api.getGroupChatMessages(groupId));
         if (active) setMessages(next);
       } catch {
         if (timer) {
@@ -104,21 +116,34 @@ export function GroupChatBar({ groupId }: Props) {
   const appendEmoji = (emoji: string) => setText((prev) => prev + emoji);
 
   const confirmDelete = (message: GroupChatMessage) => {
+    if (Platform.OS === 'web') {
+      setDeleteTarget(message);
+      return;
+    }
     Alert.alert(t('group.chatDelete'), t('group.chatDeleteConfirm'), [
       { text: t('header.cancel'), style: 'cancel' },
       {
         text: t('group.chatDelete'),
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await api.deleteGroupChatMessage(groupId, message.id);
-            await load();
-          } catch (e: unknown) {
-            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
-          }
-        },
+        onPress: () => runDelete(message),
       },
     ]);
+  };
+
+  const runDelete = async (message: GroupChatMessage) => {
+    setDeleteTarget(null);
+    setDeleting(true);
+    const previous = messages;
+    setMessages((current) => current.filter((item) => item.id !== message.id));
+    try {
+      await api.deleteGroupChatMessage(groupId, message.id);
+      await load();
+    } catch (e: unknown) {
+      setMessages(previous);
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const collapse = () => {
@@ -186,9 +211,7 @@ export function GroupChatBar({ groupId }: Props) {
               <Text style={styles.empty}>{t('group.chatEmpty')}</Text>
             ) : (
               messages.map((m, index) => {
-                const isDeleted = Boolean(m.deletedAt);
-                const isOwn = session?.userId === m.userId;
-                const canDelete = isOwn && !isDeleted;
+                const isOwn = ownerIds.has(m.userId);
 
                 return (
                   <View key={m.id}>
@@ -199,10 +222,11 @@ export function GroupChatBar({ groupId }: Props) {
                           {m.displayName}
                         </Text>
                         <View style={styles.metaRight}>
-                          {canDelete ? (
+                          {isOwn ? (
                             <Pressable
                               onPress={() => confirmDelete(m)}
                               hitSlop={6}
+                              disabled={deleting}
                               accessibilityRole="button"
                               accessibilityLabel={t('group.chatDelete')}
                             >
@@ -212,9 +236,7 @@ export function GroupChatBar({ groupId }: Props) {
                           <Text style={styles.time}>{formatChatTime(m.createdAt)}</Text>
                         </View>
                       </View>
-                      <Text style={[styles.msg, isDeleted && styles.msgDeleted]}>
-                        {isDeleted ? t('group.chatDeleted') : m.text}
-                      </Text>
+                      <Text style={styles.msg}>{m.text}</Text>
                     </View>
                   </View>
                 );
@@ -253,6 +275,36 @@ export function GroupChatBar({ groupId }: Props) {
           </Pressable>
         </View>
       </View>
+
+      <AppModal
+        visible={deleteTarget != null}
+        animationType="fade"
+        onRequestClose={() => setDeleteTarget(null)}
+        variant="center"
+        withGroupChat
+      >
+        <View style={styles.deleteModal}>
+          <Text style={styles.deleteModalTitle}>{t('group.chatDelete')}</Text>
+          <Text style={styles.deleteModalBody}>{t('group.chatDeleteConfirm')}</Text>
+          <View style={styles.deleteModalActions}>
+            <PremiumButton
+              title={t('header.cancel')}
+              variant="outline"
+              onPress={() => setDeleteTarget(null)}
+              fullWidth={false}
+              style={styles.deleteModalButton}
+            />
+            <PremiumButton
+              title={t('group.chatDelete')}
+              variant="danger"
+              onPress={() => deleteTarget && runDelete(deleteTarget)}
+              loading={deleting}
+              fullWidth={false}
+              style={styles.deleteModalButton}
+            />
+          </View>
+        </View>
+      </AppModal>
     </KeyboardAvoidingView>
   );
 }
@@ -399,7 +451,30 @@ const styles = StyleSheet.create({
   },
   time: { color: theme.colors.textMuted, fontSize: 11, flexShrink: 0 },
   msg: { color: theme.colors.text, fontSize: 14, lineHeight: 20 },
-  msgDeleted: { color: theme.colors.textMuted, fontStyle: 'italic' },
+  deleteModal: {
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+    minWidth: 280,
+  },
+  deleteModalTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  deleteModalBody: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  deleteModalButton: {
+    flex: 1,
+  },
   emojiRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

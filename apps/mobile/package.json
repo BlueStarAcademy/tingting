@@ -15,6 +15,7 @@
     "expo-linear-gradient": "~56.0.4",
     "expo-linking": "~56.0.14",
     "expo-location": "~56.0.18",
+    "expo-media-library": "~56.0.8",
     "expo-router": "~56.2.11",
     "expo-secure-store": "~56.0.4",
     "expo-sensors": "~56.0.6",
@@ -23,15 +24,21 @@
     "react-dom": "^19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-maps": "1.27.2",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^3.0.0",
+    "react-native-view-shot": "^4.0.3",
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@expo/config-plugins": "^56.0.9",
     "@types/react": "~19.2.2",
     "typescript": "~5.8.3"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
   },
   "scripts": {
     "start": "expo start",

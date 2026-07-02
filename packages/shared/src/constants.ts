@@ -7,6 +7,9 @@ export const QUEST_REWARD_DEFAULT = 10;
 export const GPS_QUEST_RADIUS_METERS = 200;
 export const MAX_GROUP_SLOTS = 6;
 export const MBTI_TEST_REWARD = 100;
+export const MINIGAME_DAILY_STAR_CAP = 30;
+export const MINIGAME_STAGE_STAR_REWARD = 5;
+export const MINIGAME_MAX_STAGE = 10;
 export const NICKNAME_CHANGE_BASE_COST = 200;
 export const NICKNAME_CHANGE_MAX_COST = 1000;
 /** 그룹 기본 무료 구성원 수 (방장 포함) */
@@ -63,11 +66,48 @@ export function getDisplayNameChangeCost(priorChangeCount: number): number {
   return Math.min(cost, NICKNAME_CHANGE_MAX_COST);
 }
 
-export const SHOP_ITEMS = [
-  { id: 'ai-bbosyap', name: '뽀샵', description: 'AI 밝기 보정 효과', cost: 20, type: 'ai_effect' as const },
-  { id: 'ai-sky', name: '하늘리터치', description: 'AI 하늘 틴트 효과', cost: 25, type: 'ai_effect' as const },
-  { id: 'boost-stars', name: '별 부스트', description: '퀘스트 보상 +5', cost: 30, type: 'boost' as const },
-];
+import type { FeaturePassTier } from './types';
+
+/** 사진 편집 기능 이용권 (기능별) */
+export const FEATURE_PASS_COSTS: Record<FeaturePassTier, number> = {
+  day1: 100,
+  day7: 250,
+  day30: 500,
+  permanent: 1000,
+};
+
+export const FEATURE_PASS_DAYS: Record<FeaturePassTier, number | null> = {
+  day1: 1,
+  day7: 7,
+  day30: 30,
+  permanent: null,
+};
+
+export const FEATURE_PASS_TIERS: FeaturePassTier[] = ['day1', 'day7', 'day30', 'permanent'];
+
+/** @deprecated 이용권(pass) 방식으로 대체됨 */
+export const AI_FEATURE_COSTS: Record<string, number> = {
+  bbosyap: 100,
+  sky: 100,
+};
+
+/** @deprecated 아이템 상점 제거 */
+export const SHOP_ITEMS: Array<{
+  id: string;
+  name: string;
+  description: string;
+  cost: number;
+  type: 'ai_effect' | 'boost';
+}> = [];
+
+export const AI_EFFECTS = {
+  bbosyap: { id: 'ai_bbosyap', label: '뽀샵', type: 'brightness' as const, value: 0.22 },
+  sky: { id: 'ai_sky', label: '하늘리터치', type: 'tint' as const, value: 0.18 },
+  portrait: { id: 'ai_portrait', label: '인물 보정', type: 'portrait' as const, value: 0.15 },
+  cinematic: { id: 'ai_cinematic', label: '시네마', type: 'cinematic' as const, value: 0.2 },
+  travel_pop: { id: 'ai_travel_pop', label: '여행 POP', type: 'vivid' as const, value: 0.25 },
+  night_fix: { id: 'ai_night_fix', label: '야경 보정', type: 'brightness' as const, value: 0.35 },
+};
 
 export const PLACE_CATEGORY_BY_MENU: Record<string, string[]> = {
   food: ['food', 'restaurant'],
@@ -75,11 +115,6 @@ export const PLACE_CATEGORY_BY_MENU: Record<string, string[]> = {
   play: ['beach', 'culture', 'activity', 'science', 'city'],
   sight: ['heritage', 'landmark', 'nature', 'mountain', 'sea', 'park'],
   event: ['event'],
-};
-
-export const AI_EFFECTS = {
-  bbosyap: { id: 'bbosyap', label: '뽀샵', type: 'brightness' as const, value: 0.3 },
-  sky: { id: 'sky', label: '하늘리터치', type: 'tint' as const, value: 0.2 },
 };
 
 /** 홈·추천 여행지에 노출할 대표 장소 ID (순서 유지) */

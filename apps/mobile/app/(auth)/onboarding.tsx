@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
 import { ProgressRing } from '@/components/ProgressRing';
+import { clampNicknameInput, nicknameErrorMessage, validateNickname } from '@/lib/nickname';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
@@ -17,7 +18,10 @@ export default function OnboardingScreen() {
   const [loading, setLoading] = useState(false);
 
   const finish = async () => {
-    if (!name.trim()) return Alert.alert(t('common.alert'), t('auth.enterName'));
+    const validationError = validateNickname(name);
+    if (validationError) {
+      return Alert.alert(t('common.alert'), nicknameErrorMessage(validationError, t));
+    }
     setLoading(true);
     try {
       await api.completeOnboarding(name.trim());
@@ -45,7 +49,7 @@ export default function OnboardingScreen() {
           placeholder={t('auth.yourName')}
           placeholderTextColor={theme.colors.textMuted}
           value={name}
-          onChangeText={setName}
+          onChangeText={(text) => setName(clampNicknameInput(text))}
         />
         <PremiumButton title={t('auth.startExploring')} onPress={finish} loading={loading} />
       </View>

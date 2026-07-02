@@ -29,11 +29,21 @@ export default function GroupDetailScreen() {
   const [nameEditOpen, setNameEditOpen] = useState(false);
 
   const load = async () => {
-    setGroup(await api.getGroup(id));
-    setVisits(await api.getGroupVisits(id));
-    setPlaces(await api.getPlaces());
-    setQuests(await api.getGroupQuests(id));
-    await refreshAuth();
+    try {
+      const [nextGroup, nextVisits, nextPlaces, nextQuests] = await Promise.all([
+        api.getGroup(id),
+        api.getGroupVisits(id),
+        api.getPlaces(),
+        api.getGroupQuests(id),
+      ]);
+      setGroup(nextGroup);
+      setVisits(nextVisits);
+      setPlaces(nextPlaces);
+      setQuests(nextQuests);
+      await refreshAuth();
+    } catch {
+      /* keep last loaded state when the API is partially unavailable */
+    }
   };
 
   useFocusEffect(

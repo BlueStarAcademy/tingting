@@ -81,3 +81,15 @@ export const AI_EFFECTS = {
   bbosyap: { id: 'bbosyap', label: '뽀샵', type: 'brightness' as const, value: 0.3 },
   sky: { id: 'sky', label: '하늘리터치', type: 'tint' as const, value: 0.2 },
 };
+
+/** 홈·추천 여행지에 노출할 대표 장소 ID (순서 유지) */
+export const FEATURED_PLACE_IDS = [
+  'p-bus-1',
+  'p-seo-1',
+  'p-jej-1',
+  'p-ngb-1',
+  'p-njb-1',
+  'p-gwn-1',
+  'p-sjb-1',
+  'p-bus-2',
+] as const;

@@ -30,7 +30,12 @@ interface Props {
 
 function formatChatTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  if (Number.isNaN(d.getTime())) return '';
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ap = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ap}`;
 }
 
 export function GroupChatBar({ groupId }: Props) {
@@ -45,14 +50,36 @@ export function GroupChatBar({ groupId }: Props) {
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
-    setMessages(await api.getGroupChatMessages(groupId));
+    try {
+      setMessages(await api.getGroupChatMessages(groupId));
+    } catch {
+      /* endpoint may be unavailable on older API builds */
+    }
   }, [groupId]);
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 4000);
-    return () => clearInterval(timer);
-  }, [load]);
+    let active = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      try {
+        const next = await api.getGroupChatMessages(groupId);
+        if (active) setMessages(next);
+      } catch {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      }
+    };
+
+    poll();
+    timer = setInterval(poll, 4000);
+    return () => {
+      active = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [groupId]);
 
   useEffect(() => {
     if (expanded) {
@@ -110,10 +137,10 @@ export function GroupChatBar({ groupId }: Props) {
         >
           <View style={styles.bubbleRow}>
             <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-            <Text style={styles.bubbleBrand}>
-              <Text style={styles.bubbleTing}>Ting</Text>
-              <Text style={styles.bubbleTalk}>Talk</Text>
-            </Text>
+            <View style={styles.bubbleBrand}>
+              <Text style={[styles.bubbleBrandText, styles.bubbleTing]}>Ting</Text>
+              <Text style={[styles.bubbleBrandText, styles.bubbleTalk]}>Talk</Text>
+            </View>
           </View>
         </Pressable>
       </View>
@@ -130,10 +157,10 @@ export function GroupChatBar({ groupId }: Props) {
         <View style={styles.panelHeader}>
           <View style={styles.headerBrand}>
             <Ionicons name="chatbubble-ellipses" size={16} color={theme.colors.primaryLight} />
-            <Text style={styles.headerBrandText}>
-              <Text style={styles.bubbleTingDark}>Ting</Text>
-              <Text style={styles.bubbleTalkDark}>Talk</Text>
-            </Text>
+            <View style={styles.headerBrandText}>
+              <Text style={[styles.bubbleBrandText, styles.bubbleTingDark]}>Ting</Text>
+              <Text style={[styles.bubbleBrandText, styles.bubbleTalkDark]}>Talk</Text>
+            </View>
           </View>
           <Pressable
             style={styles.collapseBtn}
@@ -260,6 +287,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   bubbleBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bubbleBrandText: {
     fontSize: 15,
     fontWeight: '900',
     letterSpacing: 0.3,
@@ -302,9 +333,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerBrandText: {
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   bubbleTingDark: {
     color: theme.colors.text,

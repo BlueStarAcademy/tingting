@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { pickRecommendedPlaces } from '@tingting/shared';
 import type {
   AuthSession,
   Group,
@@ -181,7 +182,11 @@ export const httpApi = {
   },
 
   async getGroupChatMessages(groupId: string): Promise<GroupChatMessage[]> {
-    return request<GroupChatMessage[]>(`/groups/${groupId}/chat`);
+    try {
+      return await request<GroupChatMessage[]>(`/groups/${groupId}/chat`);
+    } catch {
+      return [];
+    }
   },
 
   async sendGroupChatMessage(groupId: string, text: string): Promise<GroupChatMessage> {
@@ -196,7 +201,11 @@ export const httpApi = {
   },
 
   async getGroupVisits(groupId: string): Promise<Visit[]> {
-    return request<Visit[]>(`/groups/${groupId}/visits`);
+    try {
+      return await request<Visit[]>(`/groups/${groupId}/visits`);
+    } catch {
+      return [];
+    }
   },
 
   async getPlaces(regionCode?: string): Promise<Place[]> {
@@ -205,7 +214,12 @@ export const httpApi = {
   },
 
   async getRecommendedPlaces(limit = 6): Promise<Place[]> {
-    return request<Place[]>(`/places/recommended?limit=${limit}`);
+    try {
+      return await request<Place[]>(`/places/recommended?limit=${limit}`);
+    } catch {
+      const all = await this.getPlaces();
+      return pickRecommendedPlaces(all, limit);
+    }
   },
 
   async getPlace(id: string): Promise<Place | null> {
@@ -271,7 +285,11 @@ export const httpApi = {
   },
 
   async getGroupQuests(groupId: string): Promise<Quest[]> {
-    return request<Quest[]>(`/groups/${groupId}/quests`);
+    try {
+      return await request<Quest[]>(`/groups/${groupId}/quests`);
+    } catch {
+      return [];
+    }
   },
 
   async completeGroupQuest(

@@ -28,20 +28,22 @@ const LocaleContext = createContext<LocaleContextValue>({
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<LocalePreference>('system');
+  // Stable default for SSR / first paint — updated after mount to avoid hydration mismatch.
+  const [locale, setLocale] = useState<Locale>('ko');
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     loadLocalePreference().then((pref) => {
       setPreferenceState(pref);
+      setLocale(resolveLocale(pref));
       setReady(true);
     });
   }, []);
 
-  const locale = resolveLocale(preference);
-
   const setPreference = useCallback(async (pref: LocalePreference) => {
     await saveLocalePreference(pref);
     setPreferenceState(pref);
+    setLocale(resolveLocale(pref));
   }, []);
 
   const t = useCallback(

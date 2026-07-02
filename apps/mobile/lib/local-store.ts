@@ -19,6 +19,7 @@ import {
   REGION_MAIN_STATIONS,
   buildGroupStationQuestId,
   GROUP_STATION_QUEST_GALLERY_REWARD,
+  pickRecommendedPlaces,
 } from '@tingting/shared';
 import type {
   AuthSession,
@@ -78,7 +79,6 @@ function uid(): string {
 }
 
 import PLACES_JSON from '@/constants/places.json';
-import { FEATURED_PLACE_IDS } from '@/constants/featured-places';
 
 const DEFAULT_PLACES: Place[] = PLACES_JSON as Place[];
 
@@ -673,45 +673,8 @@ export const localStore = {
 
   async getRecommendedPlaces(limit = 6): Promise<Place[]> {
     const places = await ensurePlaces();
-    const byId = new Map(places.map((p) => [p.id, p]));
-    const picked: Place[] = [];
-    const usedIds = new Set<string>();
-
-    for (const id of FEATURED_PLACE_IDS) {
-      if (picked.length >= limit) break;
-      const place = byId.get(id);
-      if (!place || usedIds.has(place.id)) continue;
-      usedIds.add(place.id);
-      picked.push(place);
-    }
-
-    if (picked.length >= limit) return picked;
-
     const profile = await this.getProfile();
-    const visited = new Set(profile?.visitedRegions ?? []);
-    const unvisitedPool = places.filter((p) => !visited.has(p.regionCode));
-    const pool = unvisitedPool.length > 0 ? unvisitedPool : places;
-    const usedRegions = new Set(picked.map((p) => p.regionCode));
-
-    for (const place of pool) {
-      if (picked.length >= limit) break;
-      if (usedIds.has(place.id)) continue;
-      if (usedRegions.has(place.regionCode)) continue;
-      usedIds.add(place.id);
-      usedRegions.add(place.regionCode);
-      picked.push(place);
-    }
-
-    if (picked.length < limit) {
-      for (const place of places) {
-        if (picked.length >= limit) break;
-        if (usedIds.has(place.id)) continue;
-        usedIds.add(place.id);
-        picked.push(place);
-      }
-    }
-
-    return picked;
+    return pickRecommendedPlaces(places, limit, profile?.visitedRegions ?? []);
   },
 
   async getPlace(id: string): Promise<Place | null> {

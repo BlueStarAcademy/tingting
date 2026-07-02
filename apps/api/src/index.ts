@@ -15,7 +15,13 @@ import {
   SHOP_ITEMS,
   FREE_GROUP_MEMBER_COUNT,
   getGroupMemberInviteCost,
+  pickRecommendedPlaces,
+  REGION_MAIN_STATIONS,
+  buildGroupStationQuestId,
+  GROUP_STATION_QUEST_GALLERY_REWARD,
 } from '@tingting/shared';
+import type { GroupChatMessage, Quest } from '@tingting/shared';
+import type { Place } from '@tingting/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const JWT_SECRET = process.env.JWT_SECRET ?? 'tingting-dev-secret-change-me';
@@ -94,26 +100,43 @@ async function migrate() {
   const sql = fs.readFileSync(sqlPath, 'utf8');
   await pool.query(sql);
 
-  const placesPath = path.join(__dirname, '..', '..', '..', 'seed', 'places.json');
-  if (fs.existsSync(placesPath)) {
-    const places = JSON.parse(fs.readFileSync(placesPath, 'utf8')) as Array<Record<string, unknown>>;
-    for (const p of places) {
-      await pool.query(
-        `INSERT INTO places (id, region_code, name, description, lat, lng, category, image_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (id) DO UPDATE SET
-           region_code = EXCLUDED.region_code,
-           name = EXCLUDED.name,
-           description = EXCLUDED.description,
-           lat = EXCLUDED.lat,
-           lng = EXCLUDED.lng,
-           category = EXCLUDED.category,
-           image_url = EXCLUDED.image_url`,
-        [p.id, p.regionCode, p.name, p.description ?? '', p.lat, p.lng, p.category ?? '', p.imageUrl ?? null]
-      );
-    }
-    console.log(`Seeded ${places.length} places`);
+  const seedCandidates = [
+    path.join(__dirname, '..', 'seed', 'places.json'),
+    path.join(__dirname, '..', '..', '..', 'seed', 'places.json'),
+    path.join(process.cwd(), 'seed', 'places.json'),
+  ];
+  const placesPath = seedCandidates.find((p) => fs.existsSync(p));
+  if (!placesPath) {
+    console.warn('places.json seed not found — food/stay/recommended places may be missing');
+    return;
   }
+
+  const places = JSON.parse(fs.readFileSync(placesPath, 'utf8')) as Array<Record<string, unknown>>;
+  for (const p of places) {
+    await pool.query(
+      `INSERT INTO places (id, region_code, name, description, lat, lng, category, image_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET
+         region_code = EXCLUDED.region_code,
+         name = EXCLUDED.name,
+         description = EXCLUDED.description,
+         lat = EXCLUDED.lat,
+         lng = EXCLUDED.lng,
+         category = EXCLUDED.category,
+         image_url = EXCLUDED.image_url`,
+      [p.id, p.regionCode, p.name, p.description ?? '', p.lat, p.lng, p.category ?? '', p.imageUrl ?? null]
+    );
+  }
+  console.log(`Seeded ${places.length} places from ${placesPath}`);
+
+  // Ensure every group owner has a group_members row (legacy data repair).
+  await pool.query(
+    `INSERT INTO group_members (group_id, user_id)
+     SELECT g.id, g.owner_id FROM groups g
+     WHERE NOT EXISTS (
+       SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = g.owner_id
+     )`
+  );
 }
 
 // --- Auth ---
@@ -316,6 +339,169 @@ app.get('/groups/:id', authMiddleware, async (req: AuthedRequest, res) => {
   res.json({ id: g.id, name: g.name, description: g.description, ownerId: g.owner_id, memberIds: g.member_ids ?? [], createdAt: g.created_at });
 });
 
+async function isGroupMember(groupId: string, userId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2
+     UNION ALL
+     SELECT 1 FROM groups WHERE id = $1 AND owner_id = $2
+     LIMIT 1`,
+    [groupId, userId]
+  );
+  return rows.length > 0;
+}
+
+app.get('/groups/:id/visits', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const { rows } = await pool.query(
+    'SELECT * FROM visits WHERE group_id = $1 ORDER BY visited_at DESC',
+    [groupId]
+  );
+  res.json(rows.map(mapVisit));
+});
+
+app.get('/groups/:id/chat', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const { rows } = await pool.query(
+    `SELECT m.*, u.display_name FROM group_chat_messages m
+     JOIN users u ON u.id = m.user_id
+     WHERE m.group_id = $1
+     ORDER BY m.created_at ASC
+     LIMIT 200`,
+    [groupId]
+  );
+  res.json(rows.map(mapChatMessage));
+});
+
+app.post('/groups/:id/chat', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  const { text } = req.body as { text?: string };
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    res.status(400).json({ error: 'text required' });
+    return;
+  }
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const user = await getUserById(userId);
+  const { rows } = await pool.query(
+    `INSERT INTO group_chat_messages (group_id, user_id, text) VALUES ($1,$2,$3) RETURNING *`,
+    [groupId, userId, trimmed]
+  );
+  res.json(mapChatMessage({ ...rows[0], display_name: user?.display_name ?? '' }));
+});
+
+app.delete('/groups/:id/chat/:messageId', authMiddleware, async (req: AuthedRequest, res) => {
+  const { id: groupId, messageId } = req.params;
+  const userId = req.user!.userId;
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const { rows } = await pool.query(
+    'SELECT * FROM group_chat_messages WHERE id = $1 AND group_id = $2',
+    [messageId, groupId]
+  );
+  const msg = rows[0];
+  if (!msg) {
+    res.status(404).json({ error: 'Message not found' });
+    return;
+  }
+  if (msg.user_id !== userId) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  await pool.query('UPDATE group_chat_messages SET deleted_at = now(), text = $1 WHERE id = $2', [
+    '삭제된 메세지입니다.',
+    messageId,
+  ]);
+  res.status(204).send();
+});
+
+app.get('/groups/:id/quests', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const visitedRegions = await getGroupVisitedRegionCodes(groupId);
+  const completedResult = await pool.query(
+    'SELECT quest_id FROM group_quest_completions WHERE group_id = $1',
+    [groupId]
+  );
+  const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
+  res.json(buildGroupStationQuests(visitedRegions, completedIds));
+});
+
+app.post('/groups/:id/quests/:questId/complete', authMiddleware, async (req: AuthedRequest, res) => {
+  const { id: groupId, questId } = req.params;
+  const userId = req.user!.userId;
+  const { lat, lng } = req.body as { lat?: number; lng?: number };
+  if (lat == null || lng == null) {
+    res.status(400).json({ error: 'lat and lng required' });
+    return;
+  }
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const visitedRegions = await getGroupVisitedRegionCodes(groupId);
+  const completedResult = await pool.query(
+    'SELECT quest_id FROM group_quest_completions WHERE group_id = $1',
+    [groupId]
+  );
+  const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
+  const quests = buildGroupStationQuests(visitedRegions, completedIds);
+  const quest = quests.find((q) => q.id === questId);
+  if (!quest) {
+    res.status(404).json({ error: 'Quest not found' });
+    return;
+  }
+  if (quest.completed) {
+    res.status(400).json({ error: 'Already completed' });
+    return;
+  }
+  const dist = haversineMeters(lat, lng, quest.targetLat, quest.targetLng);
+  if (dist > quest.radiusMeters) {
+    res.status(400).json({ error: 'Too far from quest location', distance: Math.round(dist) });
+    return;
+  }
+  await pool.query('INSERT INTO group_quest_completions (group_id, quest_id) VALUES ($1,$2)', [groupId, questId]);
+  res.json({ rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD });
+});
+
+app.post('/groups/:id/quests/:questId/skip-purchase', authMiddleware, async (req: AuthedRequest, res) => {
+  const { id: groupId, questId } = req.params;
+  const userId = req.user!.userId;
+  if (!(await isGroupMember(groupId, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  const existing = await pool.query(
+    'SELECT 1 FROM group_quest_completions WHERE group_id = $1 AND quest_id = $2',
+    [groupId, questId]
+  );
+  if (existing.rows.length) {
+    res.status(400).json({ error: 'Already completed' });
+    return;
+  }
+  await pool.query('INSERT INTO group_quest_completions (group_id, quest_id) VALUES ($1,$2)', [groupId, questId]);
+  res.json({ rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD });
+});
+
 // --- Places ---
 
 app.get('/places', async (req, res) => {
@@ -324,6 +510,13 @@ app.get('/places', async (req, res) => {
     ? await pool.query('SELECT * FROM places WHERE region_code = $1 ORDER BY name', [region])
     : await pool.query('SELECT * FROM places ORDER BY region_code, name');
   res.json(rows.map(mapPlace));
+});
+
+app.get('/places/recommended', async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '6'), 10) || 6, 1), 20);
+  const { rows } = await pool.query('SELECT * FROM places ORDER BY region_code, name');
+  const places = rows.map(mapPlace);
+  res.json(pickRecommendedPlaces(places, limit));
 });
 
 app.get('/places/:id', async (req, res) => {
@@ -582,16 +775,16 @@ app.post('/editor/unlock', authMiddleware, async (req: AuthedRequest, res) => {
 
 app.get('/shop/items', (_req, res) => res.json(SHOP_ITEMS));
 
-function mapPlace(row: Record<string, unknown>) {
+function mapPlace(row: Record<string, unknown>): Place {
   return {
-    id: row.id,
-    regionCode: row.region_code,
-    name: row.name,
-    description: row.description ?? '',
-    lat: row.lat,
-    lng: row.lng,
-    category: row.category ?? '',
-    imageUrl: row.image_url,
+    id: String(row.id),
+    regionCode: String(row.region_code),
+    name: String(row.name),
+    description: String(row.description ?? ''),
+    lat: Number(row.lat),
+    lng: Number(row.lng),
+    category: String(row.category ?? ''),
+    imageUrl: row.image_url ? String(row.image_url) : undefined,
   };
 }
 
@@ -609,6 +802,56 @@ function mapVisit(row: Record<string, unknown>) {
     lng: row.lng,
     filter: row.filter,
   };
+}
+
+function mapChatMessage(row: Record<string, unknown>): GroupChatMessage {
+  return {
+    id: row.id as string,
+    groupId: row.group_id as string,
+    userId: row.user_id as string,
+    displayName: (row.display_name as string) ?? '',
+    text: row.text as string,
+    createdAt: row.created_at as string,
+    deletedAt: (row.deleted_at as string | null) ?? undefined,
+  };
+}
+
+async function getGroupVisitedRegionCodes(groupId: string): Promise<Set<string>> {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT p.region_code FROM visits v
+     JOIN places p ON p.id = v.place_id
+     WHERE v.group_id = $1`,
+    [groupId]
+  );
+  return new Set(rows.map((r) => r.region_code as string));
+}
+
+function buildGroupStationQuests(visitedRegionCodes: Set<string>, completedIds: Set<string>): Quest[] {
+  return REGIONS.map((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code)!;
+    const questId = buildGroupStationQuestId(region.code);
+    return {
+      id: questId,
+      placeId: station.placeId,
+      title: `${region.name} 대표역 방문`,
+      description: `${station.stationName}에서 GPS 방문 인증을 완료하세요.`,
+      rewardStars: 0,
+      rewardType: 'gallery_slots' as const,
+      rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD,
+      targetLat: station.lat,
+      targetLng: station.lng,
+      radiusMeters: GPS_QUEST_RADIUS_METERS,
+      isStationQuest: true,
+      regionCode: region.code,
+      completed: completedIds.has(questId),
+    };
+  }).sort((a, b) => {
+    const aVisited = visitedRegionCodes.has(a.regionCode!);
+    const bVisited = visitedRegionCodes.has(b.regionCode!);
+    if (aVisited !== bVisited) return aVisited ? -1 : 1;
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return (a.regionCode ?? '').localeCompare(b.regionCode ?? '');
+  });
 }
 
 async function main() {

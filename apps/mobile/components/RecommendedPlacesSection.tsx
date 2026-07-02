@@ -25,7 +25,7 @@ export function RecommendedPlacesSection() {
 
   useFocusEffect(
     useCallback(() => {
-      api.getRecommendedPlaces(6).then(setPlaces);
+      api.getRecommendedPlaces(6).then(setPlaces).catch(() => setPlaces([]));
     }, [])
   );
 

@@ -11,6 +11,13 @@ export const NICKNAME_CHANGE_BASE_COST = 200;
 export const NICKNAME_CHANGE_MAX_COST = 1000;
 /** 그룹 기본 무료 구성원 수 (방장 포함) */
 export const FREE_GROUP_MEMBER_COUNT = 2;
+export const MAX_GROUP_MEMBER_SLOTS = 20;
+/** 그룹 갤러리 기본 무료 슬롯 수 */
+export const FREE_GALLERY_SLOTS = 10;
+/** 갤러리 슬롯 추가 시 한 번에 해금되는 슬롯 수 */
+export const GALLERY_SLOT_BATCH_SIZE = 10;
+/** 갤러리 슬롯 10개 추가 비용 */
+export const GALLERY_SLOT_BATCH_COST = 100;
 
 /** 슬롯 2~6 해금 비용 (1번 슬롯 무료, unlockedSlotCount = 현재 해금된 슬롯 수) */
 const GROUP_SLOT_UNLOCK_COSTS: Record<number, number> = {
@@ -25,11 +32,29 @@ export function getGroupSlotUnlockCost(unlockedSlotCount: number): number {
   return GROUP_SLOT_UNLOCK_COSTS[unlockedSlotCount] ?? 0;
 }
 
-/** 3번째 구성원부터 초대 시 스타 비용 (현재 인원 기준) */
-export function getGroupMemberInviteCost(currentMemberCount: number): number {
-  if (currentMemberCount < FREE_GROUP_MEMBER_COUNT) return 0;
-  return ADDITIONAL_GROUP_COST + (currentMemberCount - FREE_GROUP_MEMBER_COUNT) * 10;
+/** 3번째 구성원 슬롯부터 해금 비용 (현재 해금된 슬롯 수 기준) */
+export function getGroupMemberSlotUnlockCost(unlockedMemberSlots: number): number {
+  if (unlockedMemberSlots < FREE_GROUP_MEMBER_COUNT) return 0;
+  return ADDITIONAL_GROUP_COST + (unlockedMemberSlots - FREE_GROUP_MEMBER_COUNT) * 10;
 }
+
+/** @deprecated 슬롯 해금 방식으로 대체됨. getGroupMemberSlotUnlockCost 사용 */
+export function getGroupMemberInviteCost(currentMemberCount: number): number {
+  return getGroupMemberSlotUnlockCost(currentMemberCount);
+}
+
+/** 갤러리 슬롯 10개 추가 해금 비용 */
+export function getGallerySlotUnlockCost(): number {
+  return GALLERY_SLOT_BATCH_COST;
+}
+
+/** 그룹 대표역 퀘스트 클리어 보상 (갤러리 슬롯) */
+export const GROUP_STATION_QUEST_GALLERY_REWARD = GALLERY_SLOT_BATCH_SIZE;
+
+/** 대표역 퀘스트 현금 즉시 해금 가격 (원) */
+export const GROUP_STATION_QUEST_SKIP_PRICE_KRW = 2900;
+
+export const GROUP_STATION_QUEST_SKIP_PRODUCT_ID = 'gallery_quest_skip';
 
 /** 닉네임 변경 비용 (이미 변경한 횟수 기준, 첫 변경 무료) */
 export function getDisplayNameChangeCost(priorChangeCount: number): number {
@@ -47,8 +72,8 @@ export const SHOP_ITEMS = [
 export const PLACE_CATEGORY_BY_MENU: Record<string, string[]> = {
   food: ['food', 'restaurant'],
   stay: ['stay', 'hotel'],
-  play: ['beach', 'culture', 'activity'],
-  sight: ['heritage', 'landmark'],
+  play: ['beach', 'culture', 'activity', 'science', 'city'],
+  sight: ['heritage', 'landmark', 'nature', 'mountain', 'sea', 'park'],
   event: ['event'],
 };
 

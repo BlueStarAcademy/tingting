@@ -99,9 +99,17 @@ async function migrate() {
     const places = JSON.parse(fs.readFileSync(placesPath, 'utf8')) as Array<Record<string, unknown>>;
     for (const p of places) {
       await pool.query(
-        `INSERT INTO places (id, region_code, name, description, lat, lng, category)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
-        [p.id, p.regionCode, p.name, p.description ?? '', p.lat, p.lng, p.category ?? '']
+        `INSERT INTO places (id, region_code, name, description, lat, lng, category, image_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (id) DO UPDATE SET
+           region_code = EXCLUDED.region_code,
+           name = EXCLUDED.name,
+           description = EXCLUDED.description,
+           lat = EXCLUDED.lat,
+           lng = EXCLUDED.lng,
+           category = EXCLUDED.category,
+           image_url = EXCLUDED.image_url`,
+        [p.id, p.regionCode, p.name, p.description ?? '', p.lat, p.lng, p.category ?? '', p.imageUrl ?? null]
       );
     }
     console.log(`Seeded ${places.length} places`);

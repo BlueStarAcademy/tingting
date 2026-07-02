@@ -8,10 +8,12 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { GroupChatMessage } from '@tingting/shared';
 import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
@@ -33,6 +35,7 @@ function formatChatTime(iso: string): string {
 
 export function GroupChatBar({ groupId }: Props) {
   const { t } = useLocale();
+  const { session } = useAuth();
   const insets = useSafeAreaInsets();
   const tabBarInset = MAIN_TAB_BAR_HEIGHT + Math.max(insets.bottom, 6);
   const [expanded, setExpanded] = useState(false);
@@ -72,6 +75,25 @@ export function GroupChatBar({ groupId }: Props) {
   };
 
   const appendEmoji = (emoji: string) => setText((prev) => prev + emoji);
+
+  const confirmDelete = (message: GroupChatMessage) => {
+    Alert.alert(t('group.chatDelete'), t('group.chatDeleteConfirm'), [
+      { text: t('header.cancel'), style: 'cancel' },
+      {
+        text: t('group.chatDelete'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteGroupChatMessage(groupId, message.id);
+            await load();
+          } catch (e: unknown) {
+            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+          }
+        },
+      },
+    ]);
+  };
+
   const collapse = () => {
     setExpanded(false);
     setEmojiOpen(false);
@@ -136,20 +158,40 @@ export function GroupChatBar({ groupId }: Props) {
             {messages.length === 0 ? (
               <Text style={styles.empty}>{t('group.chatEmpty')}</Text>
             ) : (
-              messages.map((m, index) => (
-                <View key={m.id}>
-                  {index > 0 ? <View style={styles.divider} /> : null}
-                  <View style={styles.messageBlock}>
-                    <View style={styles.metaRow}>
-                      <Text style={styles.sender} numberOfLines={1}>
-                        {m.displayName}
+              messages.map((m, index) => {
+                const isDeleted = Boolean(m.deletedAt);
+                const isOwn = session?.userId === m.userId;
+                const canDelete = isOwn && !isDeleted;
+
+                return (
+                  <View key={m.id}>
+                    {index > 0 ? <View style={styles.divider} /> : null}
+                    <View style={styles.messageBlock}>
+                      <View style={styles.metaRow}>
+                        <Text style={styles.sender} numberOfLines={1}>
+                          {m.displayName}
+                        </Text>
+                        <View style={styles.metaRight}>
+                          {canDelete ? (
+                            <Pressable
+                              onPress={() => confirmDelete(m)}
+                              hitSlop={6}
+                              accessibilityRole="button"
+                              accessibilityLabel={t('group.chatDelete')}
+                            >
+                              <Text style={styles.deleteBtn}>{t('group.chatDelete')}</Text>
+                            </Pressable>
+                          ) : null}
+                          <Text style={styles.time}>{formatChatTime(m.createdAt)}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.msg, isDeleted && styles.msgDeleted]}>
+                        {isDeleted ? t('group.chatDeleted') : m.text}
                       </Text>
-                      <Text style={styles.time}>{formatChatTime(m.createdAt)}</Text>
                     </View>
-                    <Text style={styles.msg}>{m.text}</Text>
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
         </View>
@@ -314,8 +356,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  metaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  deleteBtn: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
   time: { color: theme.colors.textMuted, fontSize: 11, flexShrink: 0 },
   msg: { color: theme.colors.text, fontSize: 14, lineHeight: 20 },
+  msgDeleted: { color: theme.colors.textMuted, fontStyle: 'italic' },
   emojiRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

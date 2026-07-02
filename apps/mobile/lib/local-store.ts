@@ -2,15 +2,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MBTI_TEST_REWARD,
   getGroupSlotUnlockCost,
-  getGroupMemberInviteCost,
+  getGroupMemberSlotUnlockCost,
+  getGallerySlotUnlockCost,
   getDisplayNameChangeCost,
   MAX_GROUP_SLOTS,
+  MAX_GROUP_MEMBER_SLOTS,
+  FREE_GROUP_MEMBER_COUNT,
+  FREE_GALLERY_SLOTS,
+  GALLERY_SLOT_BATCH_SIZE,
   QUEST_REWARD_DEFAULT,
   GPS_QUEST_RADIUS_METERS,
   INITIAL_STARS,
   DEMO_EMAIL,
   SHOP_ITEMS,
   REGIONS,
+  REGION_MAIN_STATIONS,
+  buildGroupStationQuestId,
+  GROUP_STATION_QUEST_GALLERY_REWARD,
 } from '@tingting/shared';
 import type {
   AuthSession,
@@ -46,6 +54,7 @@ const KEYS = {
   editorUnlocks: '@tingting/editorUnlocks',
   phoneDirectory: '@tingting/phoneDirectory',
   groupChats: '@tingting/groupChats',
+  groupQuestCompletions: '@tingting/groupQuestCompletions',
   pedometer: '@tingting/pedometer',
   accountPassword: '@tingting/accountPassword',
 };
@@ -91,7 +100,8 @@ async function ensurePlaces(): Promise<Place[]> {
       ...p,
       name: latest.name,
       description: latest.description,
-      imageUrl: p.imageUrl ?? latest.imageUrl,
+      category: latest.category,
+      imageUrl: latest.imageUrl ?? p.imageUrl,
     };
   });
 
@@ -100,6 +110,37 @@ async function ensurePlaces(): Promise<Place[]> {
   }
 
   return places;
+}
+
+function buildGroupStationQuests(
+  visitedRegionCodes: Set<string>,
+  completedIds: Set<string>
+): Quest[] {
+  return REGIONS.map((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code)!;
+    const questId = buildGroupStationQuestId(region.code);
+    return {
+      id: questId,
+      placeId: station.placeId,
+      title: `${region.name} 대표역 방문`,
+      description: `${station.stationName}에서 GPS 방문 인증을 완료하세요.`,
+      rewardStars: 0,
+      rewardType: 'gallery_slots' as const,
+      rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD,
+      targetLat: station.lat,
+      targetLng: station.lng,
+      radiusMeters: GPS_QUEST_RADIUS_METERS,
+      isStationQuest: true,
+      regionCode: region.code,
+      completed: completedIds.has(questId),
+    };
+  }).sort((a, b) => {
+    const aVisited = visitedRegionCodes.has(a.regionCode!);
+    const bVisited = visitedRegionCodes.has(b.regionCode!);
+    if (aVisited !== bVisited) return aVisited ? -1 : 1;
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return (a.regionCode ?? '').localeCompare(b.regionCode ?? '');
+  });
 }
 
 function buildQuests(places: Place[]): Quest[] {
@@ -129,7 +170,16 @@ function normalizeProfile(profile: UserProfile, groups: Group[]): UserProfile {
   };
 }
 
+function normalizeGroup(group: Group): Group {
+  return {
+    ...group,
+    unlockedMemberSlots: group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT,
+    unlockedGallerySlots: group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS,
+  };
+}
+
 function migrateGroupMembers(group: Group, ownerProfile?: UserProfile | null): Group {
+  group = normalizeGroup(group);
   if (group.members && group.members.length > 0) {
     return { ...group, memberIds: group.members.map((m) => m.id) };
   }
@@ -384,6 +434,8 @@ export const localStore = {
       ],
       createdAt: new Date().toISOString(),
       slotIndex: targetSlot,
+      unlockedMemberSlots: FREE_GROUP_MEMBER_COUNT,
+      unlockedGallerySlots: FREE_GALLERY_SLOTS,
     };
     groups.unshift(group);
     await writeJson(KEYS.groups, groups);
@@ -424,8 +476,12 @@ export const localStore = {
       throw new Error('이미 초대된 번호입니다');
     }
 
-    const cost = getGroupMemberInviteCost(members.length);
-    if (cost > 0 && profile.stars < cost) throw new Error('스타가 부족합니다');
+    const unlockedSlots = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
+    if (members.length >= unlockedSlots) {
+      throw new Error('구성원 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
+    }
+
+    const cost = 0;
 
     const directory = await readJson<GroupMember[]>(KEYS.phoneDirectory, []);
     const known = directory.find((u) => u.phone && normalizePhone(u.phone) === normalized);
@@ -448,10 +504,55 @@ export const localStore = {
     groups[idx] = updatedGroup;
     await writeJson(KEYS.groups, groups);
 
-    if (cost > 0) {
-      const updatedProfile = { ...profile, stars: profile.stars - cost };
-      await writeJson(KEYS.profile, updatedProfile);
-    }
+    return { group: updatedGroup, cost };
+  },
+
+  async unlockGroupMemberSlot(groupId: string): Promise<{ group: Group; cost: number }> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const groups = await readJson<Group[]>(KEYS.groups, []);
+    const idx = groups.findIndex((g) => g.id === groupId);
+    if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
+
+    let group = migrateGroupMembers(groups[idx], profile);
+    if (group.ownerId !== session.userId) throw new Error('방장만 슬롯을 해금할 수 있습니다');
+
+    const unlocked = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
+    if (unlocked >= MAX_GROUP_MEMBER_SLOTS) throw new Error('더 이상 슬롯을 열 수 없습니다');
+
+    const cost = getGroupMemberSlotUnlockCost(unlocked);
+    if (profile.stars < cost) throw new Error('스타가 부족합니다');
+
+    const updatedGroup: Group = { ...group, unlockedMemberSlots: unlocked + 1 };
+    groups[idx] = updatedGroup;
+    await writeJson(KEYS.groups, groups);
+    await writeJson(KEYS.profile, { ...profile, stars: profile.stars - cost });
+
+    return { group: updatedGroup, cost };
+  },
+
+  async unlockGroupGallerySlots(groupId: string): Promise<{ group: Group; cost: number }> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const groups = await readJson<Group[]>(KEYS.groups, []);
+    const idx = groups.findIndex((g) => g.id === groupId);
+    if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
+
+    let group = migrateGroupMembers(groups[idx], profile);
+    if (group.ownerId !== session.userId) throw new Error('방장만 슬롯을 해금할 수 있습니다');
+
+    const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
+    const cost = getGallerySlotUnlockCost();
+    if (profile.stars < cost) throw new Error('스타가 부족합니다');
+
+    const updatedGroup: Group = { ...group, unlockedGallerySlots: unlocked + GALLERY_SLOT_BATCH_SIZE };
+    groups[idx] = updatedGroup;
+    await writeJson(KEYS.groups, groups);
+    await writeJson(KEYS.profile, { ...profile, stars: profile.stars - cost });
 
     return { group: updatedGroup, cost };
   },
@@ -541,6 +642,25 @@ export const localStore = {
     return msg;
   },
 
+  async deleteGroupChatMessage(groupId: string, messageId: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const all = await readJson<Record<string, GroupChatMessage[]>>(KEYS.groupChats, {});
+    const list = all[groupId] ?? [];
+    const idx = list.findIndex((m) => m.id === messageId);
+    if (idx === -1) throw new Error('메시지를 찾을 수 없습니다');
+    const msg = list[idx];
+    if (msg.userId !== session.userId) throw new Error('본인 메시지만 삭제할 수 있습니다');
+    if (msg.deletedAt) return;
+    list[idx] = {
+      ...msg,
+      text: '삭제된 메세지입니다.',
+      deletedAt: new Date().toISOString(),
+    };
+    all[groupId] = list;
+    await writeJson(KEYS.groupChats, all);
+  },
+
   async getGroupVisits(groupId: string): Promise<Visit[]> {
     const visits = await readJson<Visit[]>(KEYS.visits, []);
     return visits.filter((v) => v.groupId === groupId);
@@ -621,6 +741,20 @@ export const localStore = {
     if (!session || !profile) throw new Error('로그인이 필요합니다');
     const place = await this.getPlace(input.placeId);
     if (!place) throw new Error('장소를 찾을 수 없습니다');
+
+    if (input.groupId) {
+      const groups = await readJson<Group[]>(KEYS.groups, []);
+      const group = groups.find((g) => g.id === input.groupId);
+      if (group) {
+        const visits = await readJson<Visit[]>(KEYS.visits, []);
+        const groupVisitCount = visits.filter((v) => v.groupId === input.groupId).length;
+        const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
+        if (groupVisitCount >= unlocked) {
+          throw new Error('갤러리 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
+        }
+      }
+    }
+
     const visit: Visit = {
       id: uid(),
       userId: session.userId,
@@ -704,6 +838,102 @@ export const localStore = {
     const stars = profile.stars + quest.rewardStars;
     await writeJson(KEYS.profile, { ...profile, stars });
     return { reward: quest.rewardStars, stars };
+  },
+
+  async getGroupQuests(groupId: string): Promise<Quest[]> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const group = await this.getGroup(groupId);
+    if (!group) throw new Error('그룹을 찾을 수 없습니다');
+    const memberIds = group.memberIds ?? group.members?.map((m) => m.id) ?? [];
+    if (!memberIds.includes(session.userId)) throw new Error('그룹 구성원만 참여할 수 있습니다');
+
+    const visits = await readJson<Visit[]>(KEYS.visits, []);
+    const places = await ensurePlaces();
+    const visitedRegionCodes = new Set<string>();
+    for (const v of visits.filter((visit) => visit.groupId === groupId)) {
+      const place = places.find((p) => p.id === v.placeId);
+      if (place) visitedRegionCodes.add(place.regionCode);
+    }
+
+    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+    const completedIds = new Set(allCompletions[groupId] ?? []);
+
+    return buildGroupStationQuests(visitedRegionCodes, completedIds);
+  },
+
+  async completeGroupQuest(
+    groupId: string,
+    questId: string,
+    lat: number,
+    lng: number
+  ): Promise<{ rewardGallerySlots: number }> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const group = await this.getGroup(groupId);
+    if (!group) throw new Error('그룹을 찾을 수 없습니다');
+    const memberIds = group.memberIds ?? group.members?.map((m) => m.id) ?? [];
+    if (!memberIds.includes(session.userId)) throw new Error('그룹 구성원만 참여할 수 있습니다');
+
+    const quests = await this.getGroupQuests(groupId);
+    const quest = quests.find((q) => q.id === questId);
+    if (!quest) throw new Error('퀘스트를 찾을 수 없습니다');
+    if (quest.completed) throw new Error('이미 완료한 퀘스트입니다');
+
+    const dist = haversineMeters(lat, lng, quest.targetLat, quest.targetLng);
+    if (dist > quest.radiusMeters) throw new Error('퀘스트 위치에서 너무 멀리 있습니다');
+
+    return this.grantGroupStationQuestReward(groupId, questId);
+  },
+
+  async skipGroupStationQuestPurchase(
+    groupId: string,
+    questId: string
+  ): Promise<{ rewardGallerySlots: number }> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const group = await this.getGroup(groupId);
+    if (!group) throw new Error('그룹을 찾을 수 없습니다');
+    const memberIds = group.memberIds ?? group.members?.map((m) => m.id) ?? [];
+    if (!memberIds.includes(session.userId)) throw new Error('그룹 구성원만 참여할 수 있습니다');
+
+    const quests = await this.getGroupQuests(groupId);
+    const quest = quests.find((q) => q.id === questId);
+    if (!quest) throw new Error('퀘스트를 찾을 수 없습니다');
+    if (quest.completed) throw new Error('이미 완료한 퀘스트입니다');
+
+    return this.grantGroupStationQuestReward(groupId, questId);
+  },
+
+  async grantGroupStationQuestReward(
+    groupId: string,
+    questId: string
+  ): Promise<{ rewardGallerySlots: number }> {
+    const groups = await readJson<Group[]>(KEYS.groups, []);
+    const idx = groups.findIndex((g) => g.id === groupId);
+    if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
+
+    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+    const completed = allCompletions[groupId] ?? [];
+    if (completed.includes(questId)) throw new Error('이미 완료한 퀘스트입니다');
+
+    const group = groups[idx];
+    const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
+    groups[idx] = {
+      ...group,
+      unlockedGallerySlots: unlocked + GROUP_STATION_QUEST_GALLERY_REWARD,
+    };
+    await writeJson(KEYS.groups, groups);
+    allCompletions[groupId] = [...completed, questId];
+    await writeJson(KEYS.groupQuestCompletions, allCompletions);
+
+    return { rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD };
   },
 
   async spendStars(amount: number, _reason: string): Promise<number> {

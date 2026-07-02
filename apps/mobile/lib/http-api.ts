@@ -160,6 +160,14 @@ export const httpApi = {
     });
   },
 
+  async unlockGroupMemberSlot(groupId: string): Promise<{ group: Group; cost: number }> {
+    return request(`/groups/${groupId}/unlock-member-slot`, { method: 'POST' });
+  },
+
+  async unlockGroupGallerySlots(groupId: string): Promise<{ group: Group; cost: number }> {
+    return request(`/groups/${groupId}/unlock-gallery-slots`, { method: 'POST' });
+  },
+
   async updateGroup(groupId: string, patch: { name?: string; description?: string }): Promise<Group> {
     return request<Group>(`/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(patch) });
   },
@@ -181,6 +189,10 @@ export const httpApi = {
       method: 'POST',
       body: JSON.stringify({ text }),
     });
+  },
+
+  async deleteGroupChatMessage(groupId: string, messageId: string): Promise<void> {
+    await request(`/groups/${groupId}/chat/${messageId}`, { method: 'DELETE' });
   },
 
   async getGroupVisits(groupId: string): Promise<Visit[]> {
@@ -255,6 +267,31 @@ export const httpApi = {
     return request(`/quests/${encodeURIComponent(questId)}/complete`, {
       method: 'POST',
       body: JSON.stringify({ lat, lng }),
+    });
+  },
+
+  async getGroupQuests(groupId: string): Promise<Quest[]> {
+    return request<Quest[]>(`/groups/${groupId}/quests`);
+  },
+
+  async completeGroupQuest(
+    groupId: string,
+    questId: string,
+    lat: number,
+    lng: number
+  ): Promise<{ rewardGallerySlots: number }> {
+    return request(`/groups/${groupId}/quests/${encodeURIComponent(questId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ lat, lng }),
+    });
+  },
+
+  async skipGroupStationQuestPurchase(
+    groupId: string,
+    questId: string
+  ): Promise<{ rewardGallerySlots: number }> {
+    return request(`/groups/${groupId}/quests/${encodeURIComponent(questId)}/skip-purchase`, {
+      method: 'POST',
     });
   },
 

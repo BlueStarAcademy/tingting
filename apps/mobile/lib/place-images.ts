@@ -1,29 +1,31 @@
 import type { Place } from '@tingting/shared';
 
-/** Curated cover photos for demo / local mode (Unsplash, crop 600×400) */
-const PLACE_IMAGES: Record<string, string> = {
-  'p-seo-1': 'https://images.unsplash.com/photo-1583417319070-4a1d3d9f5a6e?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-seo-2': 'https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-bus-1': 'https://images.unsplash.com/photo-1596436889106-58a3ee4c6b54?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-bus-2': 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-dae-1': 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-icn-1': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-gwj-1': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-djn-1': 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-uls-1': 'https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-sjg-1': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-ggd-1': 'https://images.unsplash.com/photo-1517154421774-6aad56366d86?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-gwn-1': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-ncb-1': 'https://images.unsplash.com/photo-1439066588041-2504cb8550a9?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-scb-1': 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-njb-1': 'https://images.unsplash.com/photo-1583417319070-4a1d3d9f5a6e?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-sjb-1': 'https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-ngb-1': 'https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-sgb-1': 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-jej-1': 'https://images.unsplash.com/photo-1590523277543-a94d2e4ddb54?auto=format&fit=crop&w=600&h=400&q=80',
-  'p-jej-2': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80',
+const CROP = 'auto=format&fit=crop&w=600&h=400&q=80';
+
+/** Category fallback covers (Unsplash) */
+export const CATEGORY_IMAGES: Record<string, string> = {
+  food: `https://images.unsplash.com/photo-1504674900247-0877df9cc836?${CROP}`,
+  restaurant: `https://images.unsplash.com/photo-1504674900247-0877df9cc836?${CROP}`,
+  stay: `https://images.unsplash.com/photo-1566073771259-6a8506099945?${CROP}`,
+  hotel: `https://images.unsplash.com/photo-1566073771259-6a8506099945?${CROP}`,
+  event: `https://images.unsplash.com/photo-1492684223066-81342ee5ff30?${CROP}`,
+  activity: `https://images.unsplash.com/photo-1529156069898-49953e39b3ac?${CROP}`,
+  beach: `https://images.unsplash.com/photo-1596436889106-58a3ee4c6b54?${CROP}`,
+  culture: `https://images.unsplash.com/photo-1559827260-dc66d52bef19?${CROP}`,
+  city: `https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?${CROP}`,
+  science: `https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?${CROP}`,
+  heritage: `https://images.unsplash.com/photo-1583417319070-4a1d3d9f5a6e?${CROP}`,
+  landmark: `https://images.unsplash.com/photo-1534274867514-d5b3310cb327?${CROP}`,
+  mountain: `https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?${CROP}`,
+  sea: `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?${CROP}`,
+  park: `https://images.unsplash.com/photo-1441974231531-c6227db76b6e?${CROP}`,
+  nature: `https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?${CROP}`,
 };
 
-export function getPlaceImageUrl(place: Place): string | undefined {
-  return place.imageUrl ?? PLACE_IMAGES[place.id];
+export function getPlaceImageUrl(place: Place): string {
+  return (
+    place.imageUrl ??
+    CATEGORY_IMAGES[place.category] ??
+    `https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?${CROP}`
+  );
 }

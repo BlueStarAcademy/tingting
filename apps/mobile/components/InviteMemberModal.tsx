@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getGroupMemberInviteCost } from '@tingting/shared';
 import { formatPhone, isValidPhone, normalizePhone } from '@/lib/phone';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
@@ -22,16 +21,14 @@ import { theme } from '@/constants/theme';
 interface Props {
   visible: boolean;
   groupId: string;
-  currentMemberCount: number;
   onClose: () => void;
   onInvited: () => void;
 }
 
-export function InviteMemberModal({ visible, groupId, currentMemberCount, onClose, onInvited }: Props) {
+export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Props) {
   const { t } = useLocale();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const cost = getGroupMemberInviteCost(currentMemberCount);
 
   const reset = () => setPhone('');
 
@@ -51,32 +48,17 @@ export function InviteMemberModal({ visible, groupId, currentMemberCount, onClos
       return;
     }
 
-    const doInvite = async () => {
-      setLoading(true);
-      try {
-        const result = await api.inviteGroupMember(groupId, digits);
-        reset();
-        onClose();
-        onInvited();
-        if (result.cost > 0) {
-          Alert.alert(t('group.invited'), t('group.invitedPaid', { cost: result.cost }));
-        } else {
-          Alert.alert(t('group.invited'), t('group.invitedFree'));
-        }
-      } catch (e: unknown) {
-        Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (cost > 0) {
-      Alert.alert(t('group.inviteTitle'), t('group.inviteCostMessage', { cost }), [
-        { text: t('header.cancel'), style: 'cancel' },
-        { text: t('common.continue'), onPress: doInvite },
-      ]);
-    } else {
-      await doInvite();
+    setLoading(true);
+    try {
+      await api.inviteGroupMember(groupId, digits);
+      reset();
+      onClose();
+      onInvited();
+      Alert.alert(t('group.invited'), t('group.invitedFree'));
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -104,11 +86,7 @@ export function InviteMemberModal({ visible, groupId, currentMemberCount, onClos
             keyboardType="phone-pad"
             maxLength={13}
           />
-          {cost > 0 ? (
-            <Text style={styles.cost}>✦ {cost} {t('group.inviteCostNote')}</Text>
-          ) : (
-            <Text style={styles.free}>{t('group.inviteFreeNote')}</Text>
-          )}
+          <Text style={styles.free}>{t('group.inviteSlotNote')}</Text>
           <PremiumButton title={t('group.sendInvite')} onPress={submit} loading={loading} />
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -138,6 +116,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.surfaceLight,
   },
-  cost: { color: theme.colors.star, fontSize: 14, fontWeight: '700' },
   free: { color: theme.colors.success, fontSize: 14, fontWeight: '600' },
 });

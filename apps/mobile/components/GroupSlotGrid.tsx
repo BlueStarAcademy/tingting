@@ -45,6 +45,7 @@ export function GroupSlotGrid({ profile, groups, onUpdated }: Props) {
               try {
                 await api.unlockGroupSlot();
                 onUpdated();
+                router.push(`/group/create?slot=${index}` as Href);
               } catch (e: unknown) {
                 Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
               }

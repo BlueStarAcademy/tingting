@@ -163,6 +163,18 @@ export const api = {
     return localStore.getGroup(id);
   },
 
+  async unlockGroupMemberSlot(groupId: string): Promise<{ group: Group; cost: number }> {
+    if (isHttpApiConfigured()) return httpApi.unlockGroupMemberSlot(groupId);
+    if (!isSupabaseConfigured) return localStore.unlockGroupMemberSlot(groupId);
+    return localStore.unlockGroupMemberSlot(groupId);
+  },
+
+  async unlockGroupGallerySlots(groupId: string): Promise<{ group: Group; cost: number }> {
+    if (isHttpApiConfigured()) return httpApi.unlockGroupGallerySlots(groupId);
+    if (!isSupabaseConfigured) return localStore.unlockGroupGallerySlots(groupId);
+    return localStore.unlockGroupGallerySlots(groupId);
+  },
+
   async inviteGroupMember(groupId: string, phone: string): Promise<{ group: Group; cost: number }> {
     if (isHttpApiConfigured()) return httpApi.inviteGroupMember(groupId, phone);
     if (!isSupabaseConfigured) return localStore.inviteGroupMember(groupId, phone);
@@ -192,6 +204,11 @@ export const api = {
   async sendGroupChatMessage(groupId: string, text: string): Promise<GroupChatMessage> {
     if (isHttpApiConfigured()) return httpApi.sendGroupChatMessage(groupId, text);
     return localStore.sendGroupChatMessage(groupId, text);
+  },
+
+  async deleteGroupChatMessage(groupId: string, messageId: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.deleteGroupChatMessage(groupId, messageId);
+    return localStore.deleteGroupChatMessage(groupId, messageId);
   },
 
   async getGroupVisits(groupId: string): Promise<Visit[]> {
@@ -306,6 +323,29 @@ export const api = {
     const { data, error } = await sb.rpc('complete_quest', { p_quest_id: questId, p_lat: lat, p_lng: lng });
     if (error) throw error;
     return { reward: data.reward, stars: data.stars };
+  },
+
+  async getGroupQuests(groupId: string): Promise<Quest[]> {
+    if (isHttpApiConfigured()) return httpApi.getGroupQuests(groupId);
+    return localStore.getGroupQuests(groupId);
+  },
+
+  async completeGroupQuest(
+    groupId: string,
+    questId: string,
+    lat: number,
+    lng: number
+  ): Promise<{ rewardGallerySlots: number }> {
+    if (isHttpApiConfigured()) return httpApi.completeGroupQuest(groupId, questId, lat, lng);
+    return localStore.completeGroupQuest(groupId, questId, lat, lng);
+  },
+
+  async skipGroupStationQuestPurchase(
+    groupId: string,
+    questId: string
+  ): Promise<{ rewardGallerySlots: number }> {
+    if (isHttpApiConfigured()) return httpApi.skipGroupStationQuestPurchase(groupId, questId);
+    return localStore.skipGroupStationQuestPurchase(groupId, questId);
   },
 
   async spendStars(amount: number, reason: string): Promise<number> {

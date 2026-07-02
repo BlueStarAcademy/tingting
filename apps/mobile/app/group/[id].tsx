@@ -32,7 +32,7 @@ export default function GroupDetailScreen() {
     setGroup(await api.getGroup(id));
     setVisits(await api.getGroupVisits(id));
     setPlaces(await api.getPlaces());
-    setQuests(await api.getQuests());
+    setQuests(await api.getGroupQuests(id));
     await refreshAuth();
   };
 
@@ -70,32 +70,43 @@ export default function GroupDetailScreen() {
       />
       <GroupTabBar active={tab} onChange={setTab} />
       <View style={styles.body}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {tab === 'home' ? (
-            <GroupHomeTab group={group} isOwner={isOwner} onUpdated={load} />
-          ) : null}
-          {tab === 'members' ? (
-            <GroupMembersTab
-              group={group}
-              isOwner={isOwner}
-              currentUserId={session?.userId}
-              onUpdated={load}
-              onLeft={() => {}}
-            />
-          ) : null}
-          {tab === 'map' ? (
-            <GroupMapTab visitedRegionCodes={visitedRegions} places={places} />
-          ) : null}
-          {tab === 'gallery' ? (
-            <GroupGalleryTab groupId={id} visits={visits} places={places} onUpdated={load} />
-          ) : null}
-          {tab === 'quest' ? <GroupQuestTab quests={quests} /> : null}
-        </ScrollView>
+        {tab === 'map' ? (
+          <View style={styles.mapBody}>
+            <GroupMapTab visitedRegionCodes={visitedRegions} places={places} visits={visits} />
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {tab === 'home' ? (
+              <GroupHomeTab group={group} isOwner={isOwner} onUpdated={load} />
+            ) : null}
+            {tab === 'members' ? (
+              <GroupMembersTab
+                group={group}
+                isOwner={isOwner}
+                currentUserId={session?.userId}
+                onUpdated={load}
+                onLeft={() => {}}
+              />
+            ) : null}
+            {tab === 'gallery' ? (
+              <GroupGalleryTab
+                group={group}
+                isOwner={isOwner}
+                visits={visits}
+                places={places}
+                onUpdated={load}
+              />
+            ) : null}
+            {tab === 'quest' ? (
+              <GroupQuestTab groupId={id} quests={quests} onUpdated={load} />
+            ) : null}
+          </ScrollView>
+        )}
         <GroupChatBar groupId={id} />
       </View>
       <GroupNameEditModal
@@ -114,5 +125,6 @@ const styles = StyleSheet.create({
   body: { flex: 1, minHeight: 0, position: 'relative' },
   scroll: { flex: 1, minHeight: 0 },
   scrollContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
+  mapBody: { flex: 1, minHeight: 0, padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
   loading: { color: theme.colors.text, padding: theme.spacing.lg },
 });

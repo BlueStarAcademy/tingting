@@ -1,15 +1,24 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Image, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, Image, Pressable, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Group, GroupMember } from '@tingting/shared';
-import { FREE_GROUP_MEMBER_COUNT, getGroupMemberInviteCost } from '@tingting/shared';
+import {
+  FREE_GROUP_MEMBER_COUNT,
+  MAX_GROUP_MEMBER_SLOTS,
+  getGroupMemberSlotUnlockCost,
+} from '@tingting/shared';
 import { formatPhone } from '@/lib/phone';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
 import { InviteMemberModal } from '@/components/InviteMemberModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { theme } from '@/constants/theme';
+
+const MAX_ROWS = 3;
+const GRID_GAP = theme.spacing.sm;
+const CARD_MIN_HEIGHT = 130;
+const GRID_MAX_HEIGHT = MAX_ROWS * CARD_MIN_HEIGHT + GRID_GAP * (MAX_ROWS - 1);
 
 interface Props {
   group: Group;
@@ -58,8 +67,10 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
   const members = group.members ?? [];
-  const inviteCost = getGroupMemberInviteCost(members.length);
-  const slotCount = Math.max(FREE_GROUP_MEMBER_COUNT, members.length + (isOwner ? 1 : 0));
+  const unlocked = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
+  const canInvite = isOwner && members.length < unlocked;
+  const nextUnlockCost = getGroupMemberSlotUnlockCost(unlocked);
+  const showPurchaseSlot = isOwner && unlocked < MAX_GROUP_MEMBER_SLOTS;
 
   const confirmKick = (member: GroupMember) => {
     Alert.alert(t('group.kickTitle'), t('group.kickMessage', { name: member.displayName }), [
@@ -98,18 +109,40 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
     ]);
   };
 
-  const slots: Array<{ type: 'member' | 'invite' | 'empty'; member?: GroupMember }> = [];
-  for (let i = 0; i < slotCount; i++) {
-    if (i < members.length) slots.push({ type: 'member', member: members[i] });
-    else if (i === members.length && isOwner) slots.push({ type: 'invite' });
-    else slots.push({ type: 'empty' });
+  const confirmUnlockSlot = () => {
+    Alert.alert(t('profile.unlockSlot'), t('profile.unlockSlotMessage', { cost: nextUnlockCost }), [
+      { text: t('header.cancel'), style: 'cancel' },
+      {
+        text: t('profile.unlock'),
+        onPress: async () => {
+          try {
+            await api.unlockGroupMemberSlot(group.id);
+            onUpdated();
+          } catch (e: unknown) {
+            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
+          }
+        },
+      },
+    ]);
+  };
+
+  const unlockedSlots: Array<{ type: 'member' | 'invite' | 'empty'; member?: GroupMember }> = [];
+  for (let i = 0; i < unlocked; i++) {
+    if (i < members.length) unlockedSlots.push({ type: 'member', member: members[i] });
+    else if (isOwner) unlockedSlots.push({ type: 'invite' });
+    else unlockedSlots.push({ type: 'empty' });
   }
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{t('group.membersTitle')}</Text>
-      <View style={styles.grid}>
-        {slots.map((slot, i) => {
+      <ScrollView
+        style={[styles.gridScroll, { maxHeight: GRID_MAX_HEIGHT }]}
+        contentContainerStyle={styles.grid}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
+        {unlockedSlots.map((slot, i) => {
           if (slot.type === 'member' && slot.member) {
             return (
               <MemberCard
@@ -122,14 +155,14 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
           }
           if (slot.type === 'invite') {
             return (
-              <Pressable key="invite" style={[styles.card, styles.inviteCard]} onPress={() => setInviteOpen(true)}>
+              <Pressable
+                key={`invite-${i}`}
+                style={[styles.card, styles.inviteCard]}
+                onPress={() => canInvite && setInviteOpen(true)}
+              >
                 <Ionicons name="person-add-outline" size={28} color={theme.colors.primaryLight} />
                 <Text style={styles.inviteLabel}>{t('group.invite')}</Text>
-                {inviteCost > 0 ? (
-                  <Text style={styles.inviteCost}>✦ {inviteCost}</Text>
-                ) : (
-                  <Text style={styles.inviteFree}>{t('common.free')}</Text>
-                )}
+                <Text style={styles.inviteFree}>{t('common.free')}</Text>
               </Pressable>
             );
           }
@@ -140,7 +173,14 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
             </View>
           );
         })}
-      </View>
+        {showPurchaseSlot ? (
+          <Pressable key="purchase-slot" style={[styles.card, styles.lockedCard]} onPress={confirmUnlockSlot}>
+            <Ionicons name="lock-closed" size={24} color={theme.colors.textMuted} />
+            <Text style={styles.price}>✦ {nextUnlockCost}</Text>
+            <Text style={styles.lockedLabel}>{t('profile.unlockSlot')}</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
 
       {!isOwner ? (
         <PremiumButton title={t('group.leave')} onPress={confirmLeave} />
@@ -149,7 +189,6 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
       <InviteMemberModal
         visible={inviteOpen}
         groupId={group.id}
-        currentMemberCount={members.length}
         onClose={() => setInviteOpen(false)}
         onInvited={onUpdated}
       />
@@ -160,7 +199,8 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
 const styles = StyleSheet.create({
   wrap: { gap: theme.spacing.md },
   title: { color: theme.colors.text, fontSize: 18, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+  gridScroll: { alignSelf: 'stretch' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP },
   card: {
     width: '48%',
     flexGrow: 1,
@@ -172,7 +212,7 @@ const styles = StyleSheet.create({
     gap: 4,
     borderWidth: 1,
     borderColor: theme.colors.tint.border,
-    minHeight: 130,
+    minHeight: CARD_MIN_HEIGHT,
     justifyContent: 'center',
   },
   avatar: { width: 48, height: 48, borderRadius: 24 },
@@ -203,8 +243,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.tint.soft,
   },
   inviteLabel: { color: theme.colors.primaryLight, fontSize: 13, fontWeight: '600' },
-  inviteCost: { color: theme.colors.star, fontSize: 12, fontWeight: '800' },
   inviteFree: { color: theme.colors.success, fontSize: 12, fontWeight: '700' },
   emptyCard: { opacity: 0.45, borderStyle: 'dashed' },
   emptyLabel: { color: theme.colors.textMuted, fontSize: 11 },
+  lockedCard: {
+    borderStyle: 'dashed',
+    borderColor: theme.colors.textMuted,
+    opacity: 0.85,
+  },
+  price: { color: theme.colors.star, fontSize: 12, fontWeight: '800' },
+  lockedLabel: { color: theme.colors.textMuted, fontSize: 10 },
 });

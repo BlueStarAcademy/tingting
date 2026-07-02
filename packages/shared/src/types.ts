@@ -5,6 +5,7 @@ export interface GroupChatMessage {
   displayName: string;
   text: string;
   createdAt: string;
+  deletedAt?: string | null;
 }
 
 export type RegionMenuCategory = 'food' | 'stay' | 'play' | 'sight' | 'event';
@@ -44,6 +45,10 @@ export interface Group {
   members?: GroupMember[];
   createdAt: string;
   slotIndex?: number;
+  /** 해금된 구성원 슬롯 수 (방장 포함, 기본 2) */
+  unlockedMemberSlots?: number;
+  /** 해금된 갤러리 슬롯 수 (기본 10) */
+  unlockedGallerySlots?: number;
 }
 
 export interface Visit {
@@ -92,6 +97,12 @@ export interface Quest {
   targetLng: number;
   radiusMeters: number;
   completed?: boolean;
+  /** stars(기본) | gallery_slots */
+  rewardType?: 'stars' | 'gallery_slots';
+  rewardGallerySlots?: number;
+  /** 그룹 대표역 방문 퀘스트 */
+  isStationQuest?: boolean;
+  regionCode?: string;
 }
 
 export interface ShopItem {

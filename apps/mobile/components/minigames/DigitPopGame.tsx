@@ -134,17 +134,23 @@ export function DigitPopGame() {
     restart(activeStage);
   }, [activeStage, loading, restart]);
 
+  const scrollHistoryToEnd = useCallback(() => {
+    const node = historyScrollRef.current;
+    if (!node) return;
+
+    const scroll = (animated: boolean) => node.scrollToEnd({ animated });
+
+    scroll(false);
+    requestAnimationFrame(() => {
+      scroll(true);
+      setTimeout(() => scroll(false), 100);
+    });
+  }, []);
+
   useEffect(() => {
     if (history.length === 0) return;
-    const timer = setTimeout(() => {
-      historyScrollRef.current?.scrollToEnd({ animated: true });
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [history.length]);
-
-  const scrollHistoryToEnd = useCallback(() => {
-    historyScrollRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    scrollHistoryToEnd();
+  }, [history, scrollHistoryToEnd]);
 
   useEffect(() => {
     if (loading || finished) return;
@@ -243,7 +249,10 @@ export function DigitPopGame() {
         <ScrollView
           ref={historyScrollRef}
           style={styles.historyScroll}
-          contentContainerStyle={styles.historyContent}
+          contentContainerStyle={[
+            styles.historyContent,
+            history.length > 0 ? styles.historyContentFilled : null,
+          ]}
           onContentSizeChange={scrollHistoryToEnd}
           showsVerticalScrollIndicator={false}
           clipToPadding={false}
@@ -389,7 +398,10 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.md,
     paddingHorizontal: theme.spacing.xs,
     gap: 10,
+  },
+  historyContentFilled: {
     flexGrow: 1,
+    justifyContent: 'flex-end',
   },
   historyRow: {
     paddingVertical: 3,

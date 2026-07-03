@@ -1,0 +1,162 @@
+import { View, Text, Image, Pressable, Linking, Platform, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocale } from '@/hooks/useLocale';
+import { APK_DOWNLOAD_URL, getApkQrImageUrl, openApkDownload } from '@/lib/app-config';
+import { theme } from '@/constants/theme';
+
+export const DOWNLOAD_BAR_HEIGHT = 72;
+
+export function DownloadBar() {
+  const { t } = useLocale();
+  const router = useRouter();
+  const hasApk = APK_DOWNLOAD_URL.length > 0;
+  const qrUri = hasApk ? getApkQrImageUrl(APK_DOWNLOAD_URL) : undefined;
+
+  const openDownload = () => {
+    if (Platform.OS !== 'web') {
+      if (hasApk) Linking.openURL(APK_DOWNLOAD_URL);
+      return;
+    }
+    openApkDownload();
+  };
+
+  return (
+    <View style={styles.bar}>
+      <View style={styles.inner}>
+        <View style={styles.brand}>
+          <Text style={styles.logo}>{t('appName')}</Text>
+          <Text style={styles.badge}>{t('landing.downloadBadge')}</Text>
+        </View>
+
+        <View style={styles.actions}>
+          {hasApk ? (
+            <>
+              <View style={styles.qrBlock}>
+                <Image source={{ uri: qrUri! }} style={styles.qr} accessibilityLabel={t('landing.qrLabel')} />
+                <Text style={styles.qrHint}>{t('landing.qrHint')}</Text>
+              </View>
+              <Pressable style={styles.downloadBtn} onPress={openDownload}>
+                <Ionicons name="logo-android" size={20} color={theme.colors.onPrimary} />
+                <Text style={styles.downloadText}>{t('landing.downloadAndroid')}</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Text style={styles.comingSoon}>{t('landing.apkComingSoon')}</Text>
+          )}
+
+          <Pressable style={styles.webBtn} onPress={() => router.push('/app')}>
+            <Ionicons name="globe-outline" size={18} color={theme.colors.primary} />
+            <Text style={styles.webText}>{t('landing.tryWeb')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  bar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    ...(Platform.OS === 'web'
+      ? ({ position: 'fixed' } as object)
+      : null),
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    minHeight: DOWNLOAD_BAR_HEIGHT,
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logo: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: theme.colors.primaryDark,
+  },
+  badge: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.teal,
+    backgroundColor: theme.colors.tealSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  qrBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qr: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: theme.colors.surface,
+  },
+  qrHint: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    maxWidth: 72,
+    lineHeight: 14,
+  },
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  downloadText: {
+    color: theme.colors.onPrimary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  webBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.borderStrong,
+    backgroundColor: theme.colors.surface,
+  },
+  webText: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  comingSoon: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+  },
+});

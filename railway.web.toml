@@ -1,6 +1,8 @@
 # Railway Web service — rename service to tingting-web in dashboard
+# Dashboard → Settings → Config file: railway.web.toml
 [build]
 builder = "NIXPACKS"
+buildCommand = "npm install && npm run build:web"
 
 [deploy]
 startCommand = "npm run start:web"

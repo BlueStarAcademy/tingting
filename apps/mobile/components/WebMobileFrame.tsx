@@ -7,10 +7,11 @@ export function WebMobileFrame({ children }: { children: React.ReactNode }) {
 
   if (Platform.OS !== 'web') return <>{children}</>;
 
-  const frameWidth = Math.min(Math.round(windowWidth), MOBILE_MAX_WIDTH);
+  const hasWidth = windowWidth > 0;
+  const frameWidth = Math.min(Math.round(hasWidth ? windowWidth : MOBILE_MAX_WIDTH), MOBILE_MAX_WIDTH);
 
   return (
-    <View style={[styles.root, { width: windowWidth }]}>
+    <View style={[styles.root, hasWidth ? { width: windowWidth } : styles.rootFullWidth]}>
       <View style={[styles.frame, { width: frameWidth, maxWidth: frameWidth }]}>
         {children}
       </View>
@@ -25,6 +26,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#EEF1F5',
     overflow: 'hidden',
+  },
+  rootFullWidth: {
+    width: '100%',
   },
   frame: {
     flex: 1,

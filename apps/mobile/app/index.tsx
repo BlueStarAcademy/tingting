@@ -1,31 +1,11 @@
-import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
-import { theme } from '@/constants/theme';
+import { Platform } from 'react-native';
+import { LandingPage } from '@/components/landing/LandingPage';
+import { AppEntryRedirect } from '@/components/AppEntryRedirect';
 
+/** Web `/` = 홈페이지, Native `/` = 앱 진입 (인증 리다이렉트) */
 export default function Index() {
-  const router = useRouter();
-  const { session, profile, loading } = useAuth();
-
-  useEffect(() => {
-    if (loading) return;
-    if (!session) {
-      router.replace('/(auth)/login');
-    } else if (!profile?.onboardingComplete) {
-      router.replace('/(auth)/onboarding');
-    } else {
-      router.replace('/(tabs)/home');
-    }
-  }, [loading, session, profile]);
-
-  return (
-    <View style={styles.center}>
-      <ActivityIndicator size="large" color={theme.colors.primaryLight} />
-    </View>
-  );
+  if (Platform.OS === 'web') {
+    return <LandingPage />;
+  }
+  return <AppEntryRedirect />;
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background },
-});

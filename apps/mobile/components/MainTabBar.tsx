@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
+import { shouldShowMainTabBar } from '@/components/AppShell';
 import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
 import { shadow } from '@/lib/ui';
 import { theme } from '@/constants/theme';
@@ -32,7 +33,7 @@ export function MainTabBar() {
   const contentWidth = useContentWidth();
   const { t } = useLocale();
 
-  if (pathname.includes('(auth)')) return null;
+  if (!shouldShowMainTabBar(pathname)) return null;
 
   return (
     <View

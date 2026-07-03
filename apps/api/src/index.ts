@@ -25,7 +25,15 @@ import {
   GROUP_STATION_QUEST_GALLERY_REWARD,
   SEED_PUBLIC_EXPERIENCE_POSTS,
 } from '@tingting/shared';
-import type { GroupChatMessage, Quest, FeaturePass, FeaturePassTier } from '@tingting/shared';
+import type {
+  GroupChatMessage,
+  GroupInviteStatus,
+  MailboxMessage,
+  MailboxMessageType,
+  Quest,
+  FeaturePass,
+  FeaturePassTier,
+} from '@tingting/shared';
 import type { Place } from '@tingting/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
@@ -826,6 +834,144 @@ app.post('/editor/passes', authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 app.get('/shop/items', (_req, res) => res.json([]));
+
+// --- Mailbox ---
+
+function mapMailboxMessage(row: Record<string, unknown>): MailboxMessage {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    type: row.type as MailboxMessageType,
+    title: String(row.title),
+    body: String(row.body),
+    createdAt: row.created_at as string,
+    readAt: row.read_at ? String(row.read_at) : undefined,
+    groupId: row.group_id ? String(row.group_id) : undefined,
+    groupName: row.group_name ? String(row.group_name) : undefined,
+    inviterId: row.inviter_id ? String(row.inviter_id) : undefined,
+    inviterName: row.inviter_name ? String(row.inviter_name) : undefined,
+    inviteStatus: row.invite_status ? (row.invite_status as GroupInviteStatus) : undefined,
+  };
+}
+
+function mapGroupRow(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    ownerId: row.owner_id,
+    memberIds: row.member_ids ?? [],
+    createdAt: row.created_at,
+  };
+}
+
+app.get('/mailbox', authMiddleware, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    'SELECT * FROM mailbox_messages WHERE user_id = $1 ORDER BY created_at DESC',
+    [req.user!.userId]
+  );
+  res.json(rows.map(mapMailboxMessage));
+});
+
+app.get('/mailbox/unread-count', authMiddleware, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM mailbox_messages WHERE user_id = $1 AND read_at IS NULL',
+    [req.user!.userId]
+  );
+  res.json({ count: rows[0]?.count ?? 0 });
+});
+
+app.post('/mailbox/:messageId/read', authMiddleware, async (req: AuthedRequest, res) => {
+  await pool.query(
+    'UPDATE mailbox_messages SET read_at = now() WHERE id = $1 AND user_id = $2 AND read_at IS NULL',
+    [req.params.messageId, req.user!.userId]
+  );
+  res.status(204).send();
+});
+
+app.post('/mailbox/:messageId/invite-response', authMiddleware, async (req: AuthedRequest, res) => {
+  const userId = req.user!.userId;
+  const accept = Boolean(req.body?.accept);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const msgResult = await client.query(
+      `SELECT * FROM mailbox_messages
+       WHERE id = $1 AND user_id = $2 AND type = 'group_invite'
+       FOR UPDATE`,
+      [req.params.messageId, userId]
+    );
+    const message = msgResult.rows[0];
+    if (!message) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: '초대장을 찾을 수 없습니다' });
+      return;
+    }
+    if (message.invite_status !== 'pending') {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: '이미 처리된 초대입니다' });
+      return;
+    }
+    if (!message.group_id) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: '잘못된 초대장입니다' });
+      return;
+    }
+
+    let group = null;
+    if (accept) {
+      const groupResult = await client.query('SELECT * FROM groups WHERE id = $1', [message.group_id]);
+      if (!groupResult.rows[0]) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: '그룹을 찾을 수 없습니다' });
+        return;
+      }
+
+      const memberCountResult = await client.query(
+        'SELECT COUNT(*)::int AS count FROM group_members WHERE group_id = $1',
+        [message.group_id]
+      );
+      const memberCount = memberCountResult.rows[0]?.count ?? 0;
+      if (memberCount >= FREE_GROUP_MEMBER_COUNT) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ error: '그룹 구성원 슬롯이 가득 찼습니다' });
+        return;
+      }
+
+      await client.query(
+        `INSERT INTO group_members (group_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (group_id, user_id) DO NOTHING`,
+        [message.group_id, userId]
+      );
+
+      const updatedGroup = await client.query(
+        `SELECT g.*, array_agg(gm.user_id) AS member_ids
+         FROM groups g
+         JOIN group_members gm ON gm.group_id = g.id
+         WHERE g.id = $1
+         GROUP BY g.id`,
+        [message.group_id]
+      );
+      group = mapGroupRow(updatedGroup.rows[0]);
+    }
+
+    await client.query(
+      `UPDATE mailbox_messages
+       SET invite_status = $1, read_at = COALESCE(read_at, now())
+       WHERE id = $2`,
+      [accept ? 'accepted' : 'declined', message.id]
+    );
+
+    await client.query('COMMIT');
+    res.json(group);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Invite response failed' });
+  } finally {
+    client.release();
+  }
+});
 
 function mapPlace(row: Record<string, unknown>): Place {
   return {

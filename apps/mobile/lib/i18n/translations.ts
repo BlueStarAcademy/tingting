@@ -93,6 +93,7 @@ export const translations = {
       continue: '계속',
       save: '저장',
       thanks: '감사합니다',
+      retry: '다시 시도',
     },
     reward: {
       title: '축하합니다!',
@@ -644,6 +645,7 @@ export const translations = {
       continue: 'Continue',
       save: 'Save',
       thanks: 'Thanks',
+      retry: 'Retry',
     },
     reward: {
       title: 'Congratulations!',

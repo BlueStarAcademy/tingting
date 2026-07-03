@@ -222,7 +222,11 @@ export const httpApi = {
   },
 
   async markMailboxMessageRead(messageId: string): Promise<void> {
-    await request(`/mailbox/${messageId}/read`, { method: 'POST' });
+    try {
+      await request(`/mailbox/${messageId}/read`, { method: 'POST' });
+    } catch {
+      // Mailbox API may be unavailable on older deployments.
+    }
   },
 
   async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {

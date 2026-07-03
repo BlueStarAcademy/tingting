@@ -100,3 +100,21 @@ CREATE TABLE IF NOT EXISTS group_quest_completions (
   completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (group_id, quest_id)
 );
+
+CREATE TABLE IF NOT EXISTS mailbox_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('notice', 'notification', 'group_invite')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at TIMESTAMPTZ,
+  group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+  group_name TEXT,
+  inviter_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  inviter_name TEXT,
+  invite_status TEXT CHECK (invite_status IS NULL OR invite_status IN ('pending', 'accepted', 'declined'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mailbox_messages_user_created
+  ON mailbox_messages (user_id, created_at DESC);

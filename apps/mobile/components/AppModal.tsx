@@ -41,7 +41,7 @@ export function AppModal({
       {variant === 'fullscreen' ? (
         <View style={[styles.fullscreen, { paddingBottom: footerInset }]}>{children}</View>
       ) : (
-        <View style={styles.root}>
+        <View style={[styles.root, variant === 'center' && styles.rootCenter]}>
           {dismissOnBackdrop ? (
             <Pressable style={styles.backdrop} onPress={onRequestClose} accessibilityRole="button" />
           ) : (
@@ -54,12 +54,7 @@ export function AppModal({
               {children}
             </View>
           ) : (
-            <View
-              style={[
-                styles.centerSheet,
-                { bottom: footerInset + theme.spacing.md, maxHeight: maxSheetHeight * 0.85 },
-              ]}
-            >
+            <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.85 }]}>
               {children}
             </View>
           )}
@@ -75,8 +70,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     zIndex: 200,
     ...Platform.select({
-      web: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0 },
+      web: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 },
     }),
+  },
+  rootCenter: {
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
@@ -95,9 +94,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   centerSheet: {
-    position: 'absolute',
-    left: theme.spacing.lg,
-    right: theme.spacing.lg,
+    alignSelf: 'stretch',
     zIndex: 201,
     overflow: 'hidden',
     backgroundColor: theme.colors.surfaceElevated,

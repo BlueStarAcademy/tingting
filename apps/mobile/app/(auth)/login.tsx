@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
+import { APP_ENTRY_HREF } from '@/lib/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
@@ -22,7 +23,7 @@ export default function LoginScreen() {
     try {
       await api.signIn(email.trim(), password);
       await refresh();
-      router.replace('/');
+      router.replace(APP_ENTRY_HREF);
     } catch (e: unknown) {
       Alert.alert(t('auth.loginFailed'), e instanceof Error ? e.message : t('auth.unknownError'));
     } finally {
@@ -35,7 +36,7 @@ export default function LoginScreen() {
     try {
       await api.signInDemo();
       await refresh();
-      router.replace('/');
+      router.replace(APP_ENTRY_HREF);
     } finally {
       setLoading(false);
     }

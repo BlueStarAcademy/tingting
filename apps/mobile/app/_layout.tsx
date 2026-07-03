@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/hooks/useAuth';
+import { LogoutConfirmProvider } from '@/hooks/useLogoutConfirm';
 import { LocaleProvider } from '@/hooks/useLocale';
 import { AppShell } from '@/components/AppShell';
 import { WebLayoutFix } from '@/components/WebLayoutFix';
@@ -17,19 +18,21 @@ export default function RootLayout() {
       <AppShell>
         <LocaleProvider>
           <AuthProvider>
-            <UpdateChecker />
-            <StatusBar style="dark" />
-            <View style={{ flex: 1 }}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: theme.colors.background, flex: 1 },
-                }}
-              />
-              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}>
-                <MainTabBar />
+            <LogoutConfirmProvider>
+              <UpdateChecker />
+              <StatusBar style="dark" />
+              <View style={{ flex: 1 }}>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: theme.colors.background, flex: 1 },
+                  }}
+                />
+                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50 }}>
+                  <MainTabBar />
+                </View>
               </View>
-            </View>
+            </LogoutConfirmProvider>
           </AuthProvider>
         </LocaleProvider>
       </AppShell>

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { isAdminProfile } from '@tingting/shared';
 import { StarChip } from '@/components/StarChip';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useAuth } from '@/hooks/useAuth';
+import { useLogoutConfirm } from '@/hooks/useLogoutConfirm';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { api } from '@/lib/api';
@@ -23,7 +24,8 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const contentWidth = useContentWidth();
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
+  const { requestLogout } = useLogoutConfirm();
   const { t } = useLocale();
   const [unreadCount, setUnreadCount] = useState(0);
   const narrow = contentWidth < 380;
@@ -42,20 +44,6 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
       loadUnread();
     }, [loadUnread])
   );
-
-  const handleLogout = () => {
-    Alert.alert(t('header.logout'), t('header.logoutConfirm'), [
-      { text: t('header.cancel'), style: 'cancel' },
-      {
-        text: t('header.logout'),
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
-  };
 
   return (
     <View style={[styles.container, styles.headerShell, { paddingTop: insets.top, width: contentWidth, maxWidth: contentWidth }]}>
@@ -118,7 +106,7 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
             />
             <PremiumIconButton
               icon="log-out-outline"
-              onPress={handleLogout}
+              onPress={requestLogout}
               accessibilityLabel={t('header.logout')}
             />
           </View>

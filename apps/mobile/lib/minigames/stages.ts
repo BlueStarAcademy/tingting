@@ -1,6 +1,6 @@
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 
-export type MinigameId = 'match' | 'quiz' | 'tap' | 'memory';
+export type MinigameId = 'match' | 'quiz' | 'slime' | 'memory' | 'guess' | 'code';
 
 export interface MatchStageConfig {
   timeSeconds: number;
@@ -13,9 +13,9 @@ export interface QuizStageConfig {
   requiredCorrect: number;
 }
 
-export interface TapStageConfig {
-  durationSeconds: number;
-  targetTaps: number;
+export interface SlimeStageConfig {
+  playerTarget: number;
+  aiTarget: number;
 }
 
 export interface MemoryStageConfig {
@@ -24,11 +24,22 @@ export interface MemoryStageConfig {
   columns: number;
 }
 
+export interface GuessStageConfig {
+  maxAttempts: number;
+}
+
+export interface CodeStageConfig {
+  maxAttempts: number;
+  digitCount: number;
+}
+
 export type MinigameStageConfig =
   | { gameId: 'match'; config: MatchStageConfig }
   | { gameId: 'quiz'; config: QuizStageConfig }
-  | { gameId: 'tap'; config: TapStageConfig }
-  | { gameId: 'memory'; config: MemoryStageConfig };
+  | { gameId: 'slime'; config: SlimeStageConfig }
+  | { gameId: 'memory'; config: MemoryStageConfig }
+  | { gameId: 'guess'; config: GuessStageConfig }
+  | { gameId: 'code'; config: CodeStageConfig };
 
 export interface MatchStageResult {
   score: number;
@@ -38,8 +49,9 @@ export interface QuizStageResult {
   correctCount: number;
 }
 
-export interface TapStageResult {
-  taps: number;
+export interface SlimeStageResult {
+  won: boolean;
+  playerCaptures: number;
 }
 
 export interface MemoryStageResult {
@@ -47,11 +59,23 @@ export interface MemoryStageResult {
   allMatched: boolean;
 }
 
+export interface GuessStageResult {
+  won: boolean;
+  attemptsUsed: number;
+}
+
+export interface CodeStageResult {
+  won: boolean;
+  attemptsUsed: number;
+}
+
 export type MinigameStageResult =
   | { gameId: 'match'; result: MatchStageResult }
   | { gameId: 'quiz'; result: QuizStageResult }
-  | { gameId: 'tap'; result: TapStageResult }
-  | { gameId: 'memory'; result: MemoryStageResult };
+  | { gameId: 'slime'; result: SlimeStageResult }
+  | { gameId: 'memory'; result: MemoryStageResult }
+  | { gameId: 'guess'; result: GuessStageResult }
+  | { gameId: 'code'; result: CodeStageResult };
 
 const MATCH_STAGES: MatchStageConfig[] = [
   { timeSeconds: 60, targetScore: 200, tileTypeCount: 4 },
@@ -79,18 +103,10 @@ const QUIZ_STAGES: QuizStageConfig[] = [
   { questionCount: 10, requiredCorrect: 9 },
 ];
 
-const TAP_STAGES: TapStageConfig[] = [
-  { durationSeconds: 10, targetTaps: 35 },
-  { durationSeconds: 10, targetTaps: 42 },
-  { durationSeconds: 9, targetTaps: 48 },
-  { durationSeconds: 9, targetTaps: 50 },
-  { durationSeconds: 9, targetTaps: 55 },
-  { durationSeconds: 9, targetTaps: 62 },
-  { durationSeconds: 8, targetTaps: 70 },
-  { durationSeconds: 8, targetTaps: 75 },
-  { durationSeconds: 8, targetTaps: 80 },
-  { durationSeconds: 8, targetTaps: 85 },
-];
+const SLIME_STAGES: SlimeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
+  playerTarget: index + 1,
+  aiTarget: 5,
+}));
 
 const MEMORY_STAGES: MemoryStageConfig[] = [
   { pairCount: 6, maxMoves: 28, columns: 4 },
@@ -111,6 +127,20 @@ function clampStage(stage: number): number {
   return Math.min(Math.max(1, stage), MINIGAME_MAX_STAGE);
 }
 
+/** 스테이지 1 = 15회, 스테이지 10 = 6회 */
+export function getMinigameAttemptLimit(stage: number): number {
+  return 16 - clampStage(stage);
+}
+
+const GUESS_STAGES: GuessStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
+  maxAttempts: 16 - (index + 1),
+}));
+
+const CODE_STAGES: CodeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
+  maxAttempts: 16 - (index + 1),
+  digitCount: 8,
+}));
+
 export function getCurrentStage(clearedStage: number): number {
   if (clearedStage >= MINIGAME_MAX_STAGE) return MINIGAME_MAX_STAGE;
   return clearedStage + 1;
@@ -124,12 +154,20 @@ export function getQuizStageConfig(stage: number): QuizStageConfig {
   return QUIZ_STAGES[clampStage(stage) - 1];
 }
 
-export function getTapStageConfig(stage: number): TapStageConfig {
-  return TAP_STAGES[clampStage(stage) - 1];
+export function getSlimeStageConfig(stage: number): SlimeStageConfig {
+  return SLIME_STAGES[clampStage(stage) - 1];
 }
 
 export function getMemoryStageConfig(stage: number): MemoryStageConfig {
   return MEMORY_STAGES[clampStage(stage) - 1];
+}
+
+export function getGuessStageConfig(stage: number): GuessStageConfig {
+  return GUESS_STAGES[clampStage(stage) - 1];
+}
+
+export function getCodeStageConfig(stage: number): CodeStageConfig {
+  return CODE_STAGES[clampStage(stage) - 1];
 }
 
 export function evaluateStageClear(
@@ -148,15 +186,22 @@ export function evaluateStageClear(
       const { correctCount } = payload as QuizStageResult;
       return correctCount >= config.requiredCorrect;
     }
-    case 'tap': {
-      const config = getTapStageConfig(stage);
-      const { taps } = payload as TapStageResult;
-      return taps >= config.targetTaps;
+    case 'slime': {
+      const { won } = payload as SlimeStageResult;
+      return won;
     }
     case 'memory': {
       const config = getMemoryStageConfig(stage);
       const { moves, allMatched } = payload as MemoryStageResult;
       return allMatched && moves <= config.maxMoves;
+    }
+    case 'guess': {
+      const { won } = payload as GuessStageResult;
+      return won;
+    }
+    case 'code': {
+      const { won } = payload as CodeStageResult;
+      return won;
     }
     default:
       return false;
@@ -169,10 +214,13 @@ export function getStageTargetLabelKey(gameId: MinigameId): string {
       return 'minigames.targetScore';
     case 'quiz':
       return 'minigames.targetCorrect';
-    case 'tap':
-      return 'minigames.targetTaps';
+    case 'slime':
+      return 'minigames.targetSlimeCaptures';
     case 'memory':
       return 'minigames.targetMoves';
+    case 'guess':
+    case 'code':
+      return 'minigames.targetAttempts';
     default:
       return 'minigames.stageLabel';
   }
@@ -194,13 +242,24 @@ export function formatStageTarget(
         params: { correct: config.requiredCorrect, total: config.questionCount },
       };
     }
-    case 'tap': {
-      const config = getTapStageConfig(stage);
-      return { key: 'minigames.targetTaps', params: { taps: config.targetTaps } };
+    case 'slime': {
+      const config = getSlimeStageConfig(stage);
+      return {
+        key: 'minigames.targetSlimeCaptures',
+        params: { captures: config.playerTarget, ai: config.aiTarget },
+      };
     }
     case 'memory': {
       const config = getMemoryStageConfig(stage);
       return { key: 'minigames.targetMoves', params: { moves: config.maxMoves } };
+    }
+    case 'guess': {
+      const config = getGuessStageConfig(stage);
+      return { key: 'minigames.targetAttempts', params: { attempts: config.maxAttempts } };
+    }
+    case 'code': {
+      const config = getCodeStageConfig(stage);
+      return { key: 'minigames.targetAttempts', params: { attempts: config.maxAttempts } };
     }
     default:
       return { key: 'minigames.stageLabel', params: { current: stage, max: MINIGAME_MAX_STAGE } };

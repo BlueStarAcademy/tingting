@@ -3,18 +3,29 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppScreen } from '@/components/AppScreen';
 import { MatchPuzzleGame } from '@/components/minigames/MatchPuzzleGame';
 import { MemoryCardGame } from '@/components/minigames/MemoryCardGame';
-import { TapChallengeGame } from '@/components/minigames/TapChallengeGame';
+import { SlimeBattleGame } from '@/components/minigames/SlimeBattleGame';
 import { TravelQuizGame } from '@/components/minigames/TravelQuizGame';
+import { UpDownGame } from '@/components/minigames/UpDownGame';
+import { DigitPopGame } from '@/components/minigames/DigitPopGame';
 import { PremiumButton } from '@/components/PremiumButton';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
-const GAME_IDS = ['match', 'quiz', 'tap', 'memory'] as const;
+const GAME_IDS = ['match', 'quiz', 'slime', 'memory', 'guess', 'code'] as const;
 type GameId = (typeof GAME_IDS)[number];
 
 function isGameId(value: string | undefined): value is GameId {
   return GAME_IDS.includes(value as GameId);
 }
+
+const TITLE_KEYS: Record<GameId, string> = {
+  match: 'minigames.match',
+  quiz: 'minigames.quiz',
+  slime: 'minigames.slime',
+  memory: 'minigames.memory',
+  guess: 'minigames.guess',
+  code: 'minigames.code',
+};
 
 export default function MinigamePlayScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,21 +43,14 @@ export default function MinigamePlayScreen() {
     );
   }
 
-  const titleKey =
-    id === 'match'
-      ? 'minigames.match'
-      : id === 'quiz'
-        ? 'minigames.quiz'
-        : id === 'tap'
-          ? 'minigames.tap'
-          : 'minigames.memory';
-
   return (
-    <AppScreen title={t(titleKey)} showBack scroll={false} contentStyle={styles.content}>
+    <AppScreen title={t(TITLE_KEYS[id])} showBack scroll={false} contentStyle={styles.content}>
       {id === 'match' ? <MatchPuzzleGame /> : null}
       {id === 'quiz' ? <TravelQuizGame /> : null}
-      {id === 'tap' ? <TapChallengeGame /> : null}
+      {id === 'slime' ? <SlimeBattleGame /> : null}
       {id === 'memory' ? <MemoryCardGame /> : null}
+      {id === 'guess' ? <UpDownGame /> : null}
+      {id === 'code' ? <DigitPopGame /> : null}
     </AppScreen>
   );
 }

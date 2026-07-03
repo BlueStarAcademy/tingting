@@ -44,7 +44,12 @@ export function PremiumButton({
         {loading ? (
           <ActivityIndicator color={isPrimary ? '#fff' : theme.colors.primaryDark} />
         ) : (
-          <Text style={[styles.text, !isPrimary && styles.textOutline, variant === 'danger' && styles.textPrimary]}>
+          <Text
+            style={[styles.text, !isPrimary && styles.textOutline, variant === 'danger' && styles.textPrimary]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+          >
             {title}
           </Text>
         )}
@@ -58,12 +63,16 @@ const styles = StyleSheet.create({
     minHeight: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 4,
   },
   text: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   textOutline: {
     color: theme.colors.primaryDark,

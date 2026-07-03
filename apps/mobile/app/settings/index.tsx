@@ -1,66 +1,93 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Alert, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import type { LocalePreference } from '@/lib/i18n/translations';
+import { getLocaleLabel, SUPPORTED_LOCALES } from '@/lib/i18n/translations';
 import { AppScreen } from '@/components/AppScreen';
+import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
+import { PremiumIconButton } from '@/components/PremiumIconButton';
+import { SettingsMenuRow } from '@/components/settings/SettingsMenuRow';
+import { PhoneVerifyModal } from '@/components/settings/PhoneVerifyModal';
+import { PhoneInviteSettingsModal } from '@/components/settings/PhoneInviteSettingsModal';
 import { useLocale } from '@/hooks/useLocale';
-import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { api } from '@/lib/api';
 import { theme } from '@/constants/theme';
 
 type SettingsTab = 'display' | 'account';
 
-const LANG_OPTIONS: { value: LocalePreference; labelKey: string }[] = [
-  { value: 'system', labelKey: 'settings.languageSystem' },
-  { value: 'ko', labelKey: 'settings.languageKo' },
-  { value: 'en', labelKey: 'settings.languageEn' },
+const LANGUAGE_OPTIONS: { value: LocalePreference; label?: string }[] = [
+  { value: 'system' },
+  ...SUPPORTED_LOCALES.map((locale) => ({ value: locale.code as LocalePreference, label: locale.label })),
 ];
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { preference, setPreference, t } = useLocale();
-  const { signOut } = useAuth();
+  const { profile, signOut } = useAuth();
   const [tab, setTab] = useState<SettingsTab>('display');
   const [langOpen, setLangOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [couponOpen, setCouponOpen] = useState(false);
+  const [inquiryOpen, setInquiryOpen] = useState(false);
+  const [phoneVerifyOpen, setPhoneVerifyOpen] = useState(false);
+  const [phoneInviteOpen, setPhoneInviteOpen] = useState(false);
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNext, setPwNext] = useState('');
   const [coupon, setCoupon] = useState('');
   const [inquiry, setInquiry] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'display', label: t('settings.tabDisplay') },
     { id: 'account', label: t('settings.tabAccount') },
   ];
 
+  const currentLanguageLabel =
+    preference === 'system' ? t('settings.languageSystem') : getLocaleLabel(preference);
+
   const changePassword = async () => {
+    setBusy(true);
     try {
       await api.changePassword(pwCurrent, pwNext);
       setPwCurrent('');
       setPwNext('');
+      setPwOpen(false);
       Alert.alert(t('settings.pwChanged'), t('settings.pwChangedMessage'));
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setBusy(false);
     }
   };
 
   const applyCoupon = async () => {
+    setBusy(true);
     try {
       const { stars } = await api.redeemCoupon(coupon);
       setCoupon('');
+      setCouponOpen(false);
       Alert.alert(t('settings.couponDone'), t('settings.couponDoneMessage', { stars }));
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setBusy(false);
     }
   };
 
   const sendInquiry = async () => {
+    setBusy(true);
     try {
       await api.submitCustomerInquiry(inquiry);
       setInquiry('');
+      setInquiryOpen(false);
       Alert.alert(t('settings.inquirySent'), t('settings.inquirySentMessage'));
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -95,17 +122,77 @@ export default function SettingsScreen() {
 
       {tab === 'display' ? (
         <View style={styles.section}>
-          <Text style={styles.label}>{t('settings.language')}</Text>
-          <Pressable style={styles.dropdown} onPress={() => setLangOpen(true)}>
-            <Text style={styles.dropdownText}>
-              {t(LANG_OPTIONS.find((o) => o.value === preference)?.labelKey ?? 'settings.languageSystem')}
-            </Text>
-          </Pressable>
-          <Text style={styles.hint}>{t('settings.languageHint')}</Text>
+          <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
+          <SettingsMenuRow
+            label={t('settings.language')}
+            value={currentLanguageLabel}
+            onPress={() => setLangOpen(true)}
+          />
         </View>
       ) : (
-        <ScrollView style={styles.account} keyboardShouldPersistTaps="handled">
-          <Text style={styles.label}>{t('settings.changePassword')}</Text>
+        <ScrollView style={styles.account} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <SettingsMenuRow label={t('settings.changePassword')} onPress={() => setPwOpen(true)} />
+          <SettingsMenuRow label={t('settings.coupon')} onPress={() => setCouponOpen(true)} />
+          <SettingsMenuRow label={t('settings.inquiry')} onPress={() => setInquiryOpen(true)} />
+          <SettingsMenuRow
+            label={t('settings.phoneVerify')}
+            value={profile?.phoneVerified ? t('settings.phoneVerifyDone') : t('settings.phoneVerifyPending')}
+            onPress={() => setPhoneVerifyOpen(true)}
+          />
+          <SettingsMenuRow
+            label={t('settings.phoneInviteSettings')}
+            onPress={() => setPhoneInviteOpen(true)}
+          />
+          <SettingsMenuRow label={t('settings.deleteAccount')} onPress={confirmDelete} destructive />
+        </ScrollView>
+      )}
+
+      <AppModal visible={langOpen} animationType="fade" onRequestClose={() => setLangOpen(false)} variant="center">
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('settings.language')}</Text>
+            <PremiumIconButton
+              icon="close"
+              onPress={() => setLangOpen(false)}
+              variant="soft"
+              color={theme.colors.textMuted}
+              accessibilityLabel={t('header.cancel')}
+            />
+          </View>
+          <ScrollView style={styles.langList} showsVerticalScrollIndicator={false}>
+            {LANGUAGE_OPTIONS.map((option) => {
+              const selected = preference === option.value;
+              const label = option.label ?? t('settings.languageSystem');
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[styles.langRow, selected && styles.langRowActive]}
+                  onPress={async () => {
+                    await setPreference(option.value);
+                    setLangOpen(false);
+                  }}
+                >
+                  <Text style={[styles.langText, selected && styles.langTextActive]}>{label}</Text>
+                  {selected ? <Ionicons name="checkmark" size={20} color={theme.colors.primaryLight} /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </AppModal>
+
+      <AppModal visible={pwOpen} animationType="fade" onRequestClose={() => setPwOpen(false)} variant="center">
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('settings.changePassword')}</Text>
+            <PremiumIconButton
+              icon="close"
+              onPress={() => setPwOpen(false)}
+              variant="soft"
+              color={theme.colors.textMuted}
+              accessibilityLabel={t('header.cancel')}
+            />
+          </View>
           <TextInput
             style={styles.input}
             value={pwCurrent}
@@ -122,9 +209,22 @@ export default function SettingsScreen() {
             placeholderTextColor={theme.colors.textMuted}
             secureTextEntry
           />
-          <PremiumButton title={t('settings.changePassword')} onPress={changePassword} />
+          <PremiumButton title={t('settings.changePassword')} onPress={changePassword} loading={busy} />
+        </View>
+      </AppModal>
 
-          <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>{t('settings.coupon')}</Text>
+      <AppModal visible={couponOpen} animationType="fade" onRequestClose={() => setCouponOpen(false)} variant="center">
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('settings.coupon')}</Text>
+            <PremiumIconButton
+              icon="close"
+              onPress={() => setCouponOpen(false)}
+              variant="soft"
+              color={theme.colors.textMuted}
+              accessibilityLabel={t('header.cancel')}
+            />
+          </View>
           <TextInput
             style={styles.input}
             value={coupon}
@@ -133,9 +233,22 @@ export default function SettingsScreen() {
             placeholderTextColor={theme.colors.textMuted}
             autoCapitalize="characters"
           />
-          <PremiumButton title={t('settings.couponApply')} onPress={applyCoupon} variant="outline" />
+          <PremiumButton title={t('settings.couponApply')} onPress={applyCoupon} loading={busy} variant="outline" />
+        </View>
+      </AppModal>
 
-          <Text style={[styles.label, { marginTop: theme.spacing.lg }]}>{t('settings.inquiry')}</Text>
+      <AppModal visible={inquiryOpen} animationType="fade" onRequestClose={() => setInquiryOpen(false)} variant="center">
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('settings.inquiry')}</Text>
+            <PremiumIconButton
+              icon="close"
+              onPress={() => setInquiryOpen(false)}
+              variant="soft"
+              color={theme.colors.textMuted}
+              accessibilityLabel={t('header.cancel')}
+            />
+          </View>
           <TextInput
             style={[styles.input, styles.multiline]}
             value={inquiry}
@@ -144,31 +257,12 @@ export default function SettingsScreen() {
             placeholderTextColor={theme.colors.textMuted}
             multiline
           />
-          <PremiumButton title={t('settings.inquirySend')} onPress={sendInquiry} variant="outline" />
-
-          <View style={{ marginTop: theme.spacing.xl }}>
-            <PremiumButton title={t('settings.deleteAccount')} onPress={confirmDelete} />
-          </View>
-        </ScrollView>
-      )}
-
-      <Modal visible={langOpen} transparent animationType="fade" onRequestClose={() => setLangOpen(false)}>
-        <Pressable style={styles.modalBg} onPress={() => setLangOpen(false)} />
-        <View style={styles.modalSheet}>
-          {LANG_OPTIONS.map((o) => (
-            <Pressable
-              key={o.value}
-              style={styles.opt}
-              onPress={async () => {
-                await setPreference(o.value);
-                setLangOpen(false);
-              }}
-            >
-              <Text style={styles.optText}>{t(o.labelKey)}</Text>
-            </Pressable>
-          ))}
+          <PremiumButton title={t('settings.inquirySend')} onPress={sendInquiry} loading={busy} variant="outline" />
         </View>
-      </Modal>
+      </AppModal>
+
+      <PhoneVerifyModal visible={phoneVerifyOpen} onClose={() => setPhoneVerifyOpen(false)} />
+      <PhoneInviteSettingsModal visible={phoneInviteOpen} onClose={() => setPhoneInviteOpen(false)} />
     </AppScreen>
   );
 }
@@ -186,17 +280,36 @@ const styles = StyleSheet.create({
   tabText: { color: theme.colors.textMuted, fontWeight: '600' },
   tabTextActive: { color: theme.colors.primaryLight, fontWeight: '800' },
   section: { gap: theme.spacing.xs },
+  sectionTitle: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700', marginBottom: 4 },
   account: { flex: 1 },
-  label: { color: theme.colors.text, fontSize: 14, fontWeight: '700', marginBottom: 6 },
-  hint: { color: theme.colors.textMuted, fontSize: 13, marginTop: theme.spacing.sm },
-  dropdown: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.surfaceLight,
+  modalSheet: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+    maxHeight: '80%',
+    minWidth: 300,
   },
-  dropdownText: { color: theme.colors.text, fontSize: 16, fontWeight: '600' },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.xs,
+  },
+  modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800', flex: 1 },
+  langList: { maxHeight: 420 },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.surfaceLight,
+  },
+  langRowActive: { backgroundColor: 'rgba(79,107,149,0.08)' },
+  langText: { color: theme.colors.text, fontSize: 16, fontWeight: '500' },
+  langTextActive: { color: theme.colors.primaryDark, fontWeight: '700' },
   input: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
@@ -204,19 +317,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     borderWidth: 1,
     borderColor: theme.colors.surfaceLight,
-    marginBottom: theme.spacing.sm,
   },
-  multiline: { minHeight: 96, textAlignVertical: 'top' },
-  modalBg: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
-  modalSheet: {
-    position: 'absolute',
-    bottom: 80,
-    left: 16,
-    right: 16,
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.radius.lg,
-    padding: theme.spacing.md,
-  },
-  opt: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.surfaceLight },
-  optText: { color: theme.colors.text, fontSize: 16 },
+  multiline: { minHeight: 120, textAlignVertical: 'top' },
 });

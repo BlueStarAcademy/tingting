@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pickRecommendedPlaces } from '@tingting/shared';
 import type {
+  AdminUserSummary,
   AuthSession,
+  CustomerInquiry,
   Group,
   GroupChatMessage,
   GroupSchedule,
@@ -178,7 +180,9 @@ export const httpApi = {
     });
   },
 
-  async searchUserByPhone(phone: string): Promise<{ userId: string; displayName: string; phone: string } | null> {
+  async searchUserByPhone(
+    phone: string
+  ): Promise<{ userId: string; displayName: string; phone: string; profile?: UserProfile } | null> {
     try {
       return await request(`/users/search-by-phone?phone=${encodeURIComponent(phone)}`);
     } catch {
@@ -227,6 +231,24 @@ export const httpApi = {
     } catch {
       // Mailbox API may be unavailable on older deployments.
     }
+  },
+
+  async markAllMailboxRead(): Promise<number> {
+    try {
+      const { count } = await request<{ count: number }>('/mailbox/read-all', { method: 'POST' });
+      return count;
+    } catch {
+      return 0;
+    }
+  },
+
+  async deleteMailboxMessage(messageId: string): Promise<void> {
+    await request(`/mailbox/${messageId}`, { method: 'DELETE' });
+  },
+
+  async deleteAllMailboxMessages(): Promise<number> {
+    const { count } = await request<{ count: number }>('/mailbox', { method: 'DELETE' });
+    return count;
   },
 
   async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
@@ -478,5 +500,56 @@ export const httpApi = {
     } catch {
       return SEED_PUBLIC_EXPERIENCE_POSTS;
     }
+  },
+
+  async submitCustomerInquiry(message: string): Promise<void> {
+    await request('/inquiries', { method: 'POST', body: JSON.stringify({ message }) });
+  },
+
+  async adminListUsers(query?: string): Promise<AdminUserSummary[]> {
+    const q = query?.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+    return request<AdminUserSummary[]>(`/admin/users${q}`);
+  },
+
+  async adminGrantStars(userId: string, amount: number, reason?: string): Promise<{ stars: number }> {
+    return request(`/admin/users/${userId}/stars`, {
+      method: 'PATCH',
+      body: JSON.stringify({ amount, reason: reason ?? 'admin_grant' }),
+    });
+  },
+
+  async adminListInquiries(): Promise<CustomerInquiry[]> {
+    return request<CustomerInquiry[]>('/admin/inquiries');
+  },
+
+  async adminResolveInquiry(inquiryId: string): Promise<CustomerInquiry> {
+    return request<CustomerInquiry>(`/admin/inquiries/${inquiryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'resolved' }),
+    });
+  },
+
+  async adminSendMailbox(input: {
+    userId: string;
+    title: string;
+    body: string;
+    type?: 'notice' | 'notification';
+  }): Promise<MailboxMessage> {
+    return request<MailboxMessage>('/admin/mailbox/send', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async adminBroadcastMailbox(input: {
+    title: string;
+    body: string;
+    userIds?: string[];
+    type?: 'notice' | 'notification';
+  }): Promise<{ sent: number }> {
+    return request<{ sent: number }>('/admin/mailbox/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
   },
 };

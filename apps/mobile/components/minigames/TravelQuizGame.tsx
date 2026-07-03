@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { PremiumButton } from '@/components/PremiumButton';
+import { ComboBanner } from '@/components/minigames/ComboBanner';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
+import { scoreQuizCorrect } from '@/lib/minigames/quiz-scoring';
 import { formatStageTarget, getQuizStageConfig } from '@/lib/minigames/stages';
 import { pickQuizQuestions, pickLocalizedOptions, pickLocalizedText } from '@/lib/minigames/travel-quiz-data';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
@@ -13,11 +15,14 @@ import { theme } from '@/constants/theme';
 export function TravelQuizGame() {
   const { t, locale } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('quiz');
-  const stageConfig = useMemo(() => getQuizStageConfig(currentStage), [currentStage]);
+  const [activeStage, setActiveStage] = useState(1);
+  const initialStageSynced = useRef(false);
+
+  const stageConfig = useMemo(() => getQuizStageConfig(activeStage), [activeStage]);
   const targetLabel = useMemo(() => {
-    const target = formatStageTarget('quiz', currentStage);
+    const target = formatStageTarget('quiz', activeStage);
     return t(target.key, target.params);
-  }, [currentStage, t]);
+  }, [activeStage, t]);
 
   const [round, setRound] = useState(0);
   const questions = useMemo(
@@ -25,35 +30,116 @@ export function TravelQuizGame() {
     [round, stageConfig.questionCount],
   );
   const [index, setIndex] = useState(0);
-  const [score, setScore] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [displayScore, setDisplayScore] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [combo, setCombo] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
   const [finished, setFinished] = useState(false);
+  const [lastGain, setLastGain] = useState<number | null>(null);
+
+  const scoreAnim = useRef(new Animated.Value(0)).current;
+  const gainOpacity = useRef(new Animated.Value(0)).current;
+  const gainTranslate = useRef(new Animated.Value(0)).current;
 
   const current = questions[index];
   const total = questions.length;
 
-  const restart = useCallback(() => {
-    setRound((value) => value + 1);
-    setIndex(0);
-    setScore(0);
-    setPicked(null);
-    setFinished(false);
-  }, []);
+  useEffect(() => {
+    if (loading || initialStageSynced.current) return;
+    setActiveStage(currentStage);
+    initialStageSynced.current = true;
+  }, [currentStage, loading]);
+
+  const restart = useCallback(
+    (stage = activeStage) => {
+      const config = getQuizStageConfig(stage);
+      setRound((value) => value + 1);
+      setIndex(0);
+      setPoints(0);
+      setDisplayScore(0);
+      scoreAnim.setValue(0);
+      setCorrectCount(0);
+      setCombo(0);
+      setPicked(null);
+      setFinished(false);
+      setLastGain(null);
+      void config;
+    },
+    [activeStage, scoreAnim],
+  );
 
   useEffect(() => {
-    if (loading) return;
-    restart();
-  }, [currentStage, loading, restart]);
+    if (loading || !initialStageSynced.current) return;
+    restart(activeStage);
+  }, [activeStage, loading, restart]);
+
+  useEffect(() => {
+    const listener = scoreAnim.addListener(({ value }) => setDisplayScore(Math.round(value)));
+    return () => scoreAnim.removeListener(listener);
+  }, [scoreAnim]);
+
+  useEffect(() => {
+    if (finished || correctCount < stageConfig.requiredCorrect) return;
+    const timer = setTimeout(() => setFinished(true), 700);
+    return () => clearTimeout(timer);
+  }, [correctCount, finished, stageConfig.requiredCorrect]);
+
+  const animateScoreTo = useCallback(
+    (next: number) => {
+      Animated.timing(scoreAnim, {
+        toValue: next,
+        duration: 420,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }).start();
+    },
+    [scoreAnim],
+  );
+
+  const showGainPopup = useCallback(
+    (amount: number) => {
+      setLastGain(amount);
+      gainOpacity.setValue(0);
+      gainTranslate.setValue(8);
+      Animated.parallel([
+        Animated.timing(gainOpacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+        Animated.timing(gainTranslate, { toValue: -12, duration: 600, useNativeDriver: true }),
+      ]).start(() => {
+        Animated.timing(gainOpacity, { toValue: 0, duration: 280, useNativeDriver: true }).start(() =>
+          setLastGain(null),
+        );
+      });
+    },
+    [gainOpacity, gainTranslate],
+  );
 
   const handlePick = (optionIndex: number) => {
-    if (picked !== null || !current) return;
+    if (picked !== null || !current || finished) return;
     setPicked(optionIndex);
+
     if (optionIndex === current.correctIndex) {
-      setScore((value) => value + 1);
+      const nextCombo = combo + 1;
+      const gain = scoreQuizCorrect(nextCombo);
+      setCombo(nextCombo);
+      setCorrectCount((value) => value + 1);
+      setPoints((value) => {
+        const next = value + gain;
+        animateScoreTo(next);
+        return next;
+      });
+      showGainPopup(gain);
+    } else {
+      setCombo(0);
     }
   };
 
   const handleNext = () => {
+    if (finished) return;
+    if (correctCount >= stageConfig.requiredCorrect) {
+      setFinished(true);
+      return;
+    }
     if (index + 1 >= total) {
       setFinished(true);
       return;
@@ -62,18 +148,28 @@ export function TravelQuizGame() {
     setPicked(null);
   };
 
+  const handleNextStage = useCallback(async () => {
+    await refresh();
+    setFinished(false);
+    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
+  }, [refresh]);
+
+  const comboLabel = t('minigames.combo', { count: combo });
+  const canAdvance = activeStage < MINIGAME_MAX_STAGE;
+
   if (loading || !current) return null;
 
   return (
     <View style={styles.wrap}>
       <GameStatsBar
         stats={[
-          { label: t('minigames.stage'), value: `${currentStage}/${MINIGAME_MAX_STAGE}` },
-          { label: t('minigames.score'), value: score },
+          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+          { label: t('minigames.score'), value: displayScore },
           { label: t('minigames.question'), value: `${index + 1}/${total}` },
         ]}
       />
       <Text style={styles.target}>{targetLabel}</Text>
+      <ComboBanner combo={combo} label={comboLabel} minCombo={2} />
       <View style={styles.card}>
         <Text style={styles.question}>{pickLocalizedText(current.question, locale)}</Text>
         <View style={styles.options}>
@@ -90,10 +186,10 @@ export function TravelQuizGame() {
 
             return (
               <PremiumButton
-                key={option}
+                key={`${current.id}-${optionIndex}`}
                 title={option}
                 onPress={() => handlePick(optionIndex)}
-                disabled={picked !== null}
+                disabled={picked !== null || finished}
                 variant={variant}
                 compact
                 fullWidth
@@ -103,10 +199,24 @@ export function TravelQuizGame() {
         </View>
         {picked !== null ? (
           <Text style={[styles.feedback, picked === current.correctIndex ? styles.correct : styles.wrong]}>
-            {picked === current.correctIndex ? t('minigames.correct') : t('minigames.wrong')}
+            {picked === current.correctIndex
+              ? combo >= 2
+                ? t('minigames.correctCombo', { combo, gain: scoreQuizCorrect(combo) })
+                : t('minigames.correct')
+              : t('minigames.wrong')}
           </Text>
         ) : null}
-        {picked !== null ? (
+        {lastGain !== null ? (
+          <Animated.Text
+            style={[
+              styles.gainPop,
+              { opacity: gainOpacity, transform: [{ translateY: gainTranslate }] },
+            ]}
+          >
+            +{lastGain}
+          </Animated.Text>
+        ) : null}
+        {picked !== null && !finished ? (
           <PremiumButton
             title={index + 1 >= total ? t('minigames.seeResult') : t('minigames.next')}
             onPress={handleNext}
@@ -115,14 +225,16 @@ export function TravelQuizGame() {
       </View>
       <MinigameResultPanel
         gameId="quiz"
-        stage={currentStage}
+        stage={activeStage}
         finished={finished}
         scoreLabel={t('minigames.finalScore')}
-        scoreValue={`${score}/${total}`}
-        detail={t('minigames.quizResult', { score, total })}
-        stageResult={{ correctCount: score }}
-        onRestart={restart}
+        scoreValue={String(points)}
+        detail={t('minigames.quizResult', { correct: correctCount, total, points })}
+        stageResult={{ correctCount }}
+        onRestart={() => restart(activeStage)}
         onProgressUpdated={refresh}
+        onNextStage={canAdvance ? handleNextStage : undefined}
+        nextStageLabel={t('minigames.nextStage')}
       />
     </View>
   );
@@ -144,6 +256,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    position: 'relative',
+    overflow: 'hidden',
   },
   question: {
     color: theme.colors.text,
@@ -159,4 +273,12 @@ const styles = StyleSheet.create({
   },
   correct: { color: theme.colors.success },
   wrong: { color: theme.colors.error },
+  gainPop: {
+    position: 'absolute',
+    right: theme.spacing.lg,
+    top: theme.spacing.md,
+    color: theme.colors.star,
+    fontSize: 22,
+    fontWeight: '900',
+  },
 });

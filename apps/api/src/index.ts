@@ -24,8 +24,16 @@ import {
   buildGroupStationQuestId,
   GROUP_STATION_QUEST_GALLERY_REWARD,
   SEED_PUBLIC_EXPERIENCE_POSTS,
+  ADMIN_EMAIL,
+  ADMIN_SEED_PASSWORD,
+  MAX_GROUP_SLOTS,
+  normalizeAdminLoginEmail,
+  isAdminProfile,
+  buildAdminFeaturePasses,
 } from '@tingting/shared';
 import type {
+  AdminUserSummary,
+  CustomerInquiry,
   GroupChatMessage,
   GroupInviteStatus,
   MailboxMessage,
@@ -77,6 +85,18 @@ function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   }
 }
 
+async function adminMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (!req.user?.userId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  if (!(await userIsAdmin(req.user.userId))) {
+    res.status(403).json({ error: 'Admin only' });
+    return;
+  }
+  next();
+}
+
 function signToken(userId: string, email: string) {
   return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: '30d' });
 }
@@ -92,6 +112,7 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 }
 
 function mapUser(row: Record<string, unknown>) {
+  const role = (row.role as string) ?? 'user';
   return {
     id: row.id,
     email: row.email,
@@ -100,7 +121,15 @@ function mapUser(row: Record<string, unknown>) {
     onboardingComplete: row.onboarding_complete,
     visitedRegions: row.visited_regions ?? [],
     isDemo: row.is_demo ?? false,
+    role,
+    isAdmin: role === 'admin',
+    unlockedGroupSlots: role === 'admin' ? MAX_GROUP_SLOTS : undefined,
   };
+}
+
+async function userIsAdmin(userId: string): Promise<boolean> {
+  const user = await getUserById(userId);
+  return user?.role === 'admin';
 }
 
 async function getUserById(id: string) {
@@ -112,6 +141,28 @@ async function migrate() {
   const sqlPath = path.join(__dirname, '..', 'migrations', '001_railway.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
   await pool.query(sql);
+
+  // Ensure every group owner has a group_members row (legacy data repair).
+  await pool.query(
+    `INSERT INTO group_members (group_id, user_id)
+     SELECT g.id, g.owner_id FROM groups g
+     WHERE NOT EXISTS (
+       SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = g.owner_id
+     )`
+  );
+
+  const adminHash = await bcrypt.hash(ADMIN_SEED_PASSWORD, 10);
+  await pool.query(
+    `INSERT INTO users (email, password_hash, display_name, stars, onboarding_complete, role)
+     VALUES ($1, $2, 'tingadmin', 999999, true, 'admin')
+     ON CONFLICT (email) DO UPDATE SET
+       password_hash = EXCLUDED.password_hash,
+       role = 'admin',
+       display_name = EXCLUDED.display_name,
+       onboarding_complete = true`,
+    [ADMIN_EMAIL, adminHash]
+  );
+  console.log(`Admin account ready: ${ADMIN_EMAIL}`);
 
   const seedCandidates = [
     path.join(__dirname, '..', 'seed', 'places.json'),
@@ -141,15 +192,6 @@ async function migrate() {
     );
   }
   console.log(`Seeded ${places.length} places from ${placesPath}`);
-
-  // Ensure every group owner has a group_members row (legacy data repair).
-  await pool.query(
-    `INSERT INTO group_members (group_id, user_id)
-     SELECT g.id, g.owner_id FROM groups g
-     WHERE NOT EXISTS (
-       SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = g.owner_id
-     )`
-  );
 }
 
 // --- Auth ---
@@ -183,7 +225,8 @@ app.post('/auth/login', async (req, res) => {
       res.status(400).json({ error: 'email and password required' });
       return;
     }
-    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    const normalizedEmail = normalizeAdminLoginEmail(email);
+    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -306,11 +349,12 @@ app.post('/groups', authMiddleware, async (req: AuthedRequest, res) => {
     }
     await client.query('BEGIN');
     const userId = req.user!.userId;
+    const isAdmin = await userIsAdmin(userId);
     const countResult = await client.query('SELECT COUNT(*)::int AS c FROM groups WHERE owner_id = $1', [userId]);
-    const cost = countResult.rows[0].c >= 1 ? ADDITIONAL_GROUP_COST : 0;
+    const cost = isAdmin ? 0 : countResult.rows[0].c >= 1 ? ADDITIONAL_GROUP_COST : 0;
     const userResult = await client.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
     const stars = userResult.rows[0].stars;
-    if (stars < cost) {
+    if (!isAdmin && stars < cost) {
       await client.query('ROLLBACK');
       res.status(400).json({ error: 'Insufficient stars' });
       return;
@@ -696,6 +740,11 @@ app.post('/stars/spend', authMiddleware, async (req: AuthedRequest, res) => {
     return;
   }
   const userId = req.user!.userId;
+  if (await userIsAdmin(userId)) {
+    const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1', [userId]);
+    res.json({ stars: rows[0]?.stars ?? 0 });
+    return;
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -722,6 +771,11 @@ app.post('/ai/use', authMiddleware, async (req: AuthedRequest, res) => {
   const { feature } = req.body as { feature?: string };
   const cost = AI_FEATURE_COSTS[feature ?? ''] ?? 20;
   const userId = req.user!.userId;
+  if (await userIsAdmin(userId)) {
+    const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1', [userId]);
+    res.json({ cost: 0, stars: rows[0]?.stars ?? 0 });
+    return;
+  }
   const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
   if (rows[0].stars < cost) {
     res.status(400).json({ error: 'Insufficient stars' });
@@ -792,7 +846,11 @@ app.post('/editor/unlock', authMiddleware, async (req: AuthedRequest, res) => {
 
 const featurePassStore = new Map<string, FeaturePass[]>();
 
-app.get('/editor/passes', authMiddleware, (req: AuthedRequest, res) => {
+app.get('/editor/passes', authMiddleware, async (req: AuthedRequest, res) => {
+  if (await userIsAdmin(req.user!.userId)) {
+    res.json(buildAdminFeaturePasses());
+    return;
+  }
   res.json(featurePassStore.get(req.user!.userId) ?? []);
 });
 
@@ -803,6 +861,12 @@ app.post('/editor/passes', authMiddleware, async (req: AuthedRequest, res) => {
     return;
   }
   const userId = req.user!.userId;
+  if (await userIsAdmin(userId)) {
+    const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1', [userId]);
+    const pass = buildFeaturePass([], featureId, tier);
+    res.json({ pass, stars: rows[0]?.stars ?? 0 });
+    return;
+  }
   const cost = FEATURE_PASS_COSTS[tier];
   const client = await pool.connect();
   try {
@@ -889,6 +953,45 @@ app.post('/mailbox/:messageId/read', authMiddleware, async (req: AuthedRequest, 
   res.status(204).send();
 });
 
+app.post('/mailbox/read-all', authMiddleware, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `UPDATE mailbox_messages
+     SET read_at = now()
+     WHERE user_id = $1
+       AND read_at IS NULL
+       AND NOT (type = 'group_invite' AND invite_status = 'pending')
+     RETURNING id`,
+    [req.user!.userId]
+  );
+  res.json({ count: rows.length });
+});
+
+app.delete('/mailbox/:messageId', authMiddleware, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `DELETE FROM mailbox_messages
+     WHERE id = $1 AND user_id = $2
+       AND NOT (type = 'group_invite' AND invite_status = 'pending')
+     RETURNING id`,
+    [req.params.messageId, req.user!.userId]
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: '우편을 찾을 수 없거나 삭제할 수 없습니다' });
+    return;
+  }
+  res.status(204).send();
+});
+
+app.delete('/mailbox', authMiddleware, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `DELETE FROM mailbox_messages
+     WHERE user_id = $1
+       AND NOT (type = 'group_invite' AND invite_status = 'pending')
+     RETURNING id`,
+    [req.user!.userId]
+  );
+  res.json({ count: rows.length });
+});
+
 app.post('/mailbox/:messageId/invite-response', authMiddleware, async (req: AuthedRequest, res) => {
   const userId = req.user!.userId;
   const accept = Boolean(req.body?.accept);
@@ -956,12 +1059,7 @@ app.post('/mailbox/:messageId/invite-response', authMiddleware, async (req: Auth
       group = mapGroupRow(updatedGroup.rows[0]);
     }
 
-    await client.query(
-      `UPDATE mailbox_messages
-       SET invite_status = $1, read_at = COALESCE(read_at, now())
-       WHERE id = $2`,
-      [accept ? 'accepted' : 'declined', message.id]
-    );
+    await client.query('DELETE FROM mailbox_messages WHERE id = $1', [message.id]);
 
     await client.query('COMMIT');
     res.json(group);
@@ -971,6 +1069,160 @@ app.post('/mailbox/:messageId/invite-response', authMiddleware, async (req: Auth
   } finally {
     client.release();
   }
+});
+
+// --- Customer inquiries ---
+
+function mapInquiry(row: Record<string, unknown>): CustomerInquiry {
+  return {
+    id: String(row.id),
+    userId: row.user_id ? String(row.user_id) : undefined,
+    userEmail: row.user_email ? String(row.user_email) : undefined,
+    userDisplayName: row.user_display_name ? String(row.user_display_name) : undefined,
+    message: String(row.message),
+    status: row.status as CustomerInquiry['status'],
+    createdAt: row.created_at as string,
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : undefined,
+  };
+}
+
+app.post('/inquiries', authMiddleware, async (req: AuthedRequest, res) => {
+  const message = String(req.body?.message ?? '').trim();
+  if (!message) {
+    res.status(400).json({ error: '문의 내용을 입력해 주세요' });
+    return;
+  }
+  const user = await getUserById(req.user!.userId);
+  const { rows } = await pool.query(
+    `INSERT INTO customer_inquiries (user_id, user_email, user_display_name, message)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [req.user!.userId, user?.email ?? null, user?.display_name ?? null, message]
+  );
+  res.status(201).json(mapInquiry(rows[0]));
+});
+
+// --- Admin ---
+
+function mapAdminUser(row: Record<string, unknown>): AdminUserSummary {
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    displayName: String(row.display_name),
+    stars: Number(row.stars),
+    role: (row.role as AdminUserSummary['role']) ?? 'user',
+    createdAt: row.created_at as string,
+  };
+}
+
+app.get('/admin/users', authMiddleware, adminMiddleware, async (req: AuthedRequest, res) => {
+  const q = String(req.query.q ?? '').trim();
+  const { rows } = q
+    ? await pool.query(
+        `SELECT id, email, display_name, stars, role, created_at FROM users
+         WHERE email ILIKE $1 OR display_name ILIKE $1
+         ORDER BY created_at DESC LIMIT 50`,
+        [`%${q}%`]
+      )
+    : await pool.query(
+        `SELECT id, email, display_name, stars, role, created_at FROM users
+         ORDER BY created_at DESC LIMIT 50`
+      );
+  res.json(rows.map(mapAdminUser));
+});
+
+app.patch('/admin/users/:userId/stars', authMiddleware, adminMiddleware, async (req: AuthedRequest, res) => {
+  const amount = Number(req.body?.amount);
+  const reason = String(req.body?.reason ?? 'admin_grant');
+  if (!Number.isFinite(amount) || amount === 0) {
+    res.status(400).json({ error: 'Invalid amount' });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [req.params.userId]);
+    if (!rows[0]) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const nextStars = Math.max(0, rows[0].stars + amount);
+    await client.query('UPDATE users SET stars = $1 WHERE id = $2', [nextStars, req.params.userId]);
+    await client.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+      req.params.userId,
+      amount,
+      reason,
+    ]);
+    await client.query('COMMIT');
+    res.json({ stars: nextStars });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Grant failed' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/inquiries', authMiddleware, adminMiddleware, async (_req, res) => {
+  const { rows } = await pool.query(
+    'SELECT * FROM customer_inquiries ORDER BY created_at DESC LIMIT 100'
+  );
+  res.json(rows.map(mapInquiry));
+});
+
+app.patch('/admin/inquiries/:inquiryId', authMiddleware, adminMiddleware, async (req, res) => {
+  const status = req.body?.status === 'resolved' ? 'resolved' : 'open';
+  const { rows } = await pool.query(
+    `UPDATE customer_inquiries
+     SET status = $1, resolved_at = CASE WHEN $1 = 'resolved' THEN now() ELSE NULL END
+     WHERE id = $2 RETURNING *`,
+    [status, req.params.inquiryId]
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: 'Inquiry not found' });
+    return;
+  }
+  res.json(mapInquiry(rows[0]));
+});
+
+app.post('/admin/mailbox/send', authMiddleware, adminMiddleware, async (req, res) => {
+  const userId = String(req.body?.userId ?? '').trim();
+  const title = String(req.body?.title ?? '').trim();
+  const body = String(req.body?.body ?? '').trim();
+  const type = (req.body?.type as MailboxMessageType) ?? 'notice';
+  if (!userId || !title || !body) {
+    res.status(400).json({ error: 'userId, title, body required' });
+    return;
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO mailbox_messages (user_id, type, title, body)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [userId, type, title, body]
+  );
+  res.status(201).json(mapMailboxMessage(rows[0]));
+});
+
+app.post('/admin/mailbox/broadcast', authMiddleware, adminMiddleware, async (req, res) => {
+  const title = String(req.body?.title ?? '').trim();
+  const body = String(req.body?.body ?? '').trim();
+  const type = (req.body?.type as MailboxMessageType) ?? 'notice';
+  if (!title || !body) {
+    res.status(400).json({ error: 'title, body required' });
+    return;
+  }
+  const userIds = Array.isArray(req.body?.userIds)
+    ? (req.body.userIds as string[]).filter(Boolean)
+    : null;
+  const { rows: users } = userIds?.length
+    ? await pool.query('SELECT id FROM users WHERE id = ANY($1::uuid[])', [userIds])
+    : await pool.query('SELECT id FROM users');
+  for (const user of users) {
+    await pool.query(
+      `INSERT INTO mailbox_messages (user_id, type, title, body) VALUES ($1, $2, $3, $4)`,
+      [user.id, type, title, body]
+    );
+  }
+  res.json({ sent: users.length });
 });
 
 function mapPlace(row: Record<string, unknown>): Place {

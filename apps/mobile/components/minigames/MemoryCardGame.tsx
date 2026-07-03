@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
@@ -27,11 +27,14 @@ function buildDeck(pairCount: number): Card[] {
 export function MemoryCardGame() {
   const { t } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('memory');
-  const stageConfig = useMemo(() => getMemoryStageConfig(currentStage), [currentStage]);
+  const [activeStage, setActiveStage] = useState(1);
+  const initialStageSynced = useRef(false);
+
+  const stageConfig = useMemo(() => getMemoryStageConfig(activeStage), [activeStage]);
   const targetLabel = useMemo(() => {
-    const target = formatStageTarget('memory', currentStage);
+    const target = formatStageTarget('memory', activeStage);
     return t(target.key, target.params);
-  }, [currentStage, t]);
+  }, [activeStage, t]);
 
   const [deck, setDeck] = useState<Card[]>(() => buildDeck(stageConfig.pairCount));
   const [flipped, setFlipped] = useState<number[]>([]);
@@ -44,20 +47,29 @@ export function MemoryCardGame() {
   const totalPairs = stageConfig.pairCount;
   const gridCols = stageConfig.columns;
 
-  const restart = useCallback(() => {
-    const config = getMemoryStageConfig(currentStage);
-    setDeck(buildDeck(config.pairCount));
-    setFlipped([]);
-    setMatched(new Set());
-    setMoves(0);
-    setLock(false);
-    setFinished(false);
-  }, [currentStage]);
+  useEffect(() => {
+    if (loading || initialStageSynced.current) return;
+    setActiveStage(currentStage);
+    initialStageSynced.current = true;
+  }, [currentStage, loading]);
+
+  const restart = useCallback(
+    (stage = activeStage) => {
+      const config = getMemoryStageConfig(stage);
+      setDeck(buildDeck(config.pairCount));
+      setFlipped([]);
+      setMatched(new Set());
+      setMoves(0);
+      setLock(false);
+      setFinished(false);
+    },
+    [activeStage],
+  );
 
   useEffect(() => {
-    if (loading) return;
-    restart();
-  }, [currentStage, loading, restart]);
+    if (loading || !initialStageSynced.current) return;
+    restart(activeStage);
+  }, [activeStage, loading, restart]);
 
   const handleFlip = (card: Card) => {
     if (lock || finished) return;
@@ -93,8 +105,15 @@ export function MemoryCardGame() {
     }, 700);
   };
 
+  const handleNextStage = useCallback(async () => {
+    await refresh();
+    setFinished(false);
+    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
+  }, [refresh]);
+
   const rows = useMemo(() => Math.ceil(deck.length / gridCols), [deck.length, gridCols]);
   const cardSize = gridCols >= 5 ? 64 : 72;
+  const canAdvance = activeStage < MINIGAME_MAX_STAGE;
 
   if (loading) return null;
 
@@ -102,7 +121,7 @@ export function MemoryCardGame() {
     <View style={styles.wrap}>
       <GameStatsBar
         stats={[
-          { label: t('minigames.stage'), value: `${currentStage}/${MINIGAME_MAX_STAGE}` },
+          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
           { label: t('minigames.moves'), value: moves },
           { label: t('minigames.pairs'), value: `${matchedCount}/${totalPairs}` },
         ]}
@@ -133,14 +152,16 @@ export function MemoryCardGame() {
       </View>
       <MinigameResultPanel
         gameId="memory"
-        stage={currentStage}
+        stage={activeStage}
         finished={finished}
         scoreLabel={t('minigames.finalScore')}
         scoreValue={String(moves)}
         detail={t('minigames.memoryResult', { moves })}
         stageResult={{ moves, allMatched: matchedCount >= totalPairs }}
-        onRestart={restart}
+        onRestart={() => restart(activeStage)}
         onProgressUpdated={refresh}
+        onNextStage={canAdvance ? handleNextStage : undefined}
+        nextStageLabel={t('minigames.nextStage')}
       />
     </View>
   );

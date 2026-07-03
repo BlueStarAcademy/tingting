@@ -3,24 +3,21 @@ import { useLocale } from '@/hooks/useLocale';
 import { tabPill } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
-export type GroupTab = 'home' | 'members' | 'map' | 'gallery' | 'quest';
+export type GroupTab = 'home' | 'travel';
 
 interface Props {
   active: GroupTab;
   onChange: (tab: GroupTab) => void;
 }
 
-const TABS: GroupTab[] = ['home', 'members', 'map', 'gallery', 'quest'];
+const TABS: GroupTab[] = ['home', 'travel'];
 
 export function GroupTabBar({ active, onChange }: Props) {
   const { t } = useLocale();
 
   const labels: Record<GroupTab, string> = {
     home: t('group.tabHome'),
-    members: t('group.tabMembers'),
-    map: t('group.tabMap'),
-    gallery: t('group.tabGallery'),
-    quest: t('group.tabQuest'),
+    travel: t('group.tabTravel'),
   };
 
   return (

@@ -1,0 +1,505 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
+import { GameStatsBar } from '@/components/minigames/GameStatsBar';
+import { useLocale } from '@/hooks/useLocale';
+import { useMinigameProgress } from '@/hooks/useMinigameProgress';
+import {
+  SLIME_AI,
+  SLIME_AI_WIN_TARGET,
+  SLIME_BOARD_SIZE,
+  SLIME_EMPTY,
+  SLIME_PLAYER,
+  createSlimeBoard,
+  delay,
+  pickAiMove,
+  tryPlaceStone,
+  type SlimeStone,
+} from '@/lib/minigames/slime-battle-logic';
+import { formatStageTarget, getSlimeStageConfig } from '@/lib/minigames/stages';
+import { MINIGAME_MAX_STAGE } from '@tingting/shared';
+import { theme } from '@/constants/theme';
+
+const CELL = 44;
+const SLOT_GAP = 5;
+const SLOT_STEP = CELL + SLOT_GAP;
+const ARENA_PAD = 18;
+const GRID_INNER = SLIME_BOARD_SIZE * SLOT_STEP - SLOT_GAP;
+const ARENA_SIZE = GRID_INNER + ARENA_PAD * 2;
+
+function slotPosition(x: number, y: number): { left: number; top: number } {
+  return {
+    left: ARENA_PAD + x * SLOT_STEP,
+    top: ARENA_PAD + y * SLOT_STEP,
+  };
+}
+
+function ArenaBubble({ style }: { style: object }) {
+  return <View style={[styles.arenaBubble, style]} />;
+}
+
+function SlimeSlot({
+  isLast,
+  isEmpty,
+  onPress,
+  disabled,
+  children,
+}: {
+  isLast: boolean;
+  isEmpty: boolean;
+  onPress: () => void;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.slot, isLast && styles.slotLast]}
+    >
+      {isEmpty ? (
+        <LinearGradient
+          colors={['rgba(167,243,208,0.35)', 'rgba(16,185,129,0.18)']}
+          style={styles.slotEmpty}
+        />
+      ) : null}
+      {children}
+    </Pressable>
+  );
+}
+
+function SlimeStoneView({ color, pulse }: { color: SlimeStone; pulse?: boolean }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!pulse) return;
+    scale.setValue(0.4);
+    Animated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }).start();
+  }, [pulse, scale]);
+
+  if (color === SLIME_EMPTY) return null;
+
+  const isPlayer = color === SLIME_PLAYER;
+  const colors = isPlayer
+    ? (['#86EFAC', '#22C55E', '#15803D'] as const)
+    : (['#F0ABFC', '#C026D3', '#7E22CE'] as const);
+
+  return (
+    <Animated.View style={[styles.slimeWrap, { transform: [{ scale }] }]}>
+      <LinearGradient colors={colors} style={styles.slimeBody} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}>
+        <View style={styles.eyesRow}>
+          <View style={[styles.eye, isPlayer ? styles.eyePlayer : styles.eyeAi]}>
+            <View style={styles.pupil} />
+          </View>
+          <View style={[styles.eye, isPlayer ? styles.eyePlayer : styles.eyeAi]}>
+            <View style={styles.pupil} />
+          </View>
+        </View>
+        <View style={styles.mouth} />
+        <View style={styles.shine} />
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
+export function SlimeBattleGame() {
+  const { t } = useLocale();
+  const { currentStage, loading, refresh } = useMinigameProgress('slime');
+  const [activeStage, setActiveStage] = useState(1);
+  const initialStageSynced = useRef(false);
+  const bootedStageRef = useRef<number | null>(null);
+  const hasLoadedOnce = useRef(false);
+
+  const stageConfig = useMemo(() => getSlimeStageConfig(activeStage), [activeStage]);
+  const targetLabel = useMemo(() => {
+    const target = formatStageTarget('slime', activeStage);
+    return t(target.key, target.params);
+  }, [activeStage, t]);
+
+  const [board, setBoard] = useState<SlimeStone[]>(() => createSlimeBoard());
+  const [playerCaptures, setPlayerCaptures] = useState(0);
+  const [aiCaptures, setAiCaptures] = useState(0);
+  const [turn, setTurn] = useState<'player' | 'ai'>('player');
+  const [busy, setBusy] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [won, setWon] = useState(false);
+  const [lastMove, setLastMove] = useState<number | null>(null);
+  const [pulseIndex, setPulseIndex] = useState<number | null>(null);
+
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    if (!loading) hasLoadedOnce.current = true;
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading || initialStageSynced.current) return;
+    setActiveStage(currentStage);
+    initialStageSynced.current = true;
+  }, [currentStage, loading]);
+
+  const restart = useCallback((stage = activeStage) => {
+    void getSlimeStageConfig(stage);
+    setBoard(createSlimeBoard());
+    setPlayerCaptures(0);
+    setAiCaptures(0);
+    setTurn('player');
+    setBusy(false);
+    busyRef.current = false;
+    setFinished(false);
+    setWon(false);
+    setLastMove(null);
+    setPulseIndex(null);
+  }, [activeStage]);
+
+  useEffect(() => {
+    if (loading || !initialStageSynced.current) return;
+    if (bootedStageRef.current === activeStage) return;
+    bootedStageRef.current = activeStage;
+    restart(activeStage);
+  }, [activeStage, loading, restart]);
+
+  const finishCheck = useCallback(
+    (nextPlayer: number, nextAi: number) => {
+      if (nextPlayer >= stageConfig.playerTarget) {
+        setWon(true);
+        setFinished(true);
+        return true;
+      }
+      if (nextAi >= SLIME_AI_WIN_TARGET) {
+        setWon(false);
+        setFinished(true);
+        return true;
+      }
+      return false;
+    },
+    [stageConfig.playerTarget],
+  );
+
+  const runAiTurn = useCallback(
+    async (currentBoard: SlimeStone[], currentPlayerCaptures: number, currentAiCaptures: number) => {
+      await delay(480);
+      const move = pickAiMove(currentBoard, activeStage);
+      if (move === null) {
+        setTurn('player');
+        setBusy(false);
+        return;
+      }
+
+      const result = tryPlaceStone(currentBoard, move, SLIME_AI);
+      if (!result.valid) {
+        setTurn('player');
+        setBusy(false);
+        return;
+      }
+
+      setBoard(result.board);
+      setLastMove(move);
+      setPulseIndex(move);
+      setTimeout(() => setPulseIndex(null), 320);
+
+      const nextAi = currentAiCaptures + result.captured;
+      setAiCaptures(nextAi);
+
+      if (nextAi >= SLIME_AI_WIN_TARGET) {
+        setWon(false);
+        setFinished(true);
+        setBusy(false);
+        return;
+      }
+      if (currentPlayerCaptures >= stageConfig.playerTarget) {
+        setWon(true);
+        setFinished(true);
+        setBusy(false);
+        return;
+      }
+
+      setTurn('player');
+      setBusy(false);
+    },
+    [activeStage, stageConfig.playerTarget],
+  );
+
+  const handleCellPress = useCallback(
+    async (index: number) => {
+      if (finished || busy || turn !== 'player') return;
+      const result = tryPlaceStone(board, index, SLIME_PLAYER);
+      if (!result.valid) return;
+
+      setBusy(true);
+      busyRef.current = true;
+      setBoard(result.board);
+      setLastMove(index);
+      setPulseIndex(index);
+      setTimeout(() => setPulseIndex(null), 320);
+
+      const nextPlayer = playerCaptures + result.captured;
+      setPlayerCaptures(nextPlayer);
+
+      if (finishCheck(nextPlayer, aiCaptures)) {
+        busyRef.current = false;
+        setBusy(false);
+        return;
+      }
+
+      setTurn('ai');
+      await runAiTurn(result.board, nextPlayer, aiCaptures);
+    },
+    [aiCaptures, board, busy, finishCheck, finished, playerCaptures, runAiTurn, turn],
+  );
+
+  const handleNextStage = useCallback(async () => {
+    await refresh();
+    setFinished(false);
+    setWon(false);
+    bootedStageRef.current = null;
+    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
+  }, [refresh]);
+
+  const handleRestart = useCallback(() => {
+    restart(activeStage);
+    bootedStageRef.current = activeStage;
+  }, [activeStage, restart]);
+
+  const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;
+
+  if (loading && !hasLoadedOnce.current) return null;
+
+  return (
+    <View style={styles.wrap}>
+      <GameStatsBar
+        stats={[
+          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+          {
+            label: t('minigames.slimePlayerScore'),
+            value: `${playerCaptures}/${stageConfig.playerTarget}`,
+          },
+          { label: t('minigames.slimeAiScore'), value: `${aiCaptures}/${SLIME_AI_WIN_TARGET}` },
+        ]}
+      />
+      <Text style={styles.target}>{targetLabel}</Text>
+      <Text style={styles.hint}>{t('minigames.slimeHint')}</Text>
+      <Text style={styles.turnLabel}>
+        {finished
+          ? won
+            ? t('minigames.slimeWin')
+            : t('minigames.slimeLose')
+          : turn === 'player'
+            ? t('minigames.slimeTurn')
+            : t('minigames.slimeAiTurn')}
+      </Text>
+
+      <View style={styles.boardFrame}>
+        <LinearGradient colors={['#4C1D95', '#6D28D9', '#312E81']} style={styles.arenaShell}>
+          <LinearGradient colors={['#065F46', '#047857', '#059669']} style={styles.arenaFloor}>
+            <View style={[styles.arenaGrid, { width: ARENA_SIZE, height: ARENA_SIZE }]}>
+              <ArenaBubble style={{ width: 28, height: 28, top: 8, left: 12, opacity: 0.35 }} />
+              <ArenaBubble style={{ width: 18, height: 18, top: 24, right: 20, opacity: 0.28 }} />
+              <ArenaBubble style={{ width: 22, height: 22, bottom: 16, left: 24, opacity: 0.3 }} />
+              <ArenaBubble style={{ width: 14, height: 14, bottom: 28, right: 16, opacity: 0.22 }} />
+
+              {board.map((stone, index) => {
+                const x = index % SLIME_BOARD_SIZE;
+                const y = Math.floor(index / SLIME_BOARD_SIZE);
+                const { left, top } = slotPosition(x, y);
+                const isLast = lastMove === index;
+                const isEmpty = stone === SLIME_EMPTY;
+
+                return (
+                  <View key={index} style={[styles.slotWrap, { left, top }]}>
+                    <SlimeSlot
+                      isLast={isLast}
+                      isEmpty={isEmpty}
+                      onPress={() => handleCellPress(index)}
+                      disabled={finished || busy || turn !== 'player' || !isEmpty}
+                    >
+                      <SlimeStoneView color={stone} pulse={pulseIndex === index} />
+                    </SlimeSlot>
+                  </View>
+                );
+              })}
+            </View>
+          </LinearGradient>
+        </LinearGradient>
+      </View>
+
+      <View style={styles.legendRow}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
+          <Text style={styles.legendText}>{t('minigames.slimeYou')}</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#C026D3' }]} />
+          <Text style={styles.legendText}>{t('minigames.slimeEnemy')}</Text>
+        </View>
+      </View>
+
+      <MinigameResultPanel
+        gameId="slime"
+        stage={activeStage}
+        finished={finished}
+        scoreLabel={t('minigames.finalScore')}
+        scoreValue={won ? t('minigames.slimeWin') : t('minigames.slimeLose')}
+        detail={t('minigames.slimeResult', {
+          player: playerCaptures,
+          target: stageConfig.playerTarget,
+          ai: aiCaptures,
+        })}
+        stageResult={{ won, playerCaptures }}
+        onRestart={handleRestart}
+        onProgressUpdated={refresh}
+        onNextStage={canAdvance ? handleNextStage : undefined}
+        nextStageLabel={t('minigames.nextStage')}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flex: 1, minHeight: 0, position: 'relative' },
+  target: {
+    color: theme.colors.primaryLight,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
+  },
+  hint: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
+  },
+  turnLabel: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  boardFrame: {
+    alignSelf: 'center',
+    borderRadius: theme.radius.xl,
+    borderWidth: 3,
+    borderColor: 'rgba(196,181,253,0.55)',
+    shadowColor: '#312E81',
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  arenaShell: {
+    borderRadius: theme.radius.xl - 2,
+    padding: 6,
+  },
+  arenaFloor: {
+    borderRadius: theme.radius.lg,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  arenaGrid: {
+    position: 'relative',
+  },
+  arenaBubble: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  slotWrap: {
+    position: 'absolute',
+    width: CELL,
+    height: CELL,
+  },
+  slot: {
+    width: CELL,
+    height: CELL,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: CELL / 2,
+  },
+  slotEmpty: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: CELL / 2,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  slotLast: {
+    backgroundColor: 'rgba(251,191,36,0.28)',
+    borderWidth: 2,
+    borderColor: 'rgba(251,191,36,0.65)',
+  },
+  slimeWrap: {
+    width: CELL - 8,
+    height: CELL - 8,
+  },
+  slimeBody: {
+    flex: 1,
+    borderRadius: (CELL - 8) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.35)',
+    overflow: 'hidden',
+  },
+  eyesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: -2,
+  },
+  eye: {
+    width: 10,
+    height: 12,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 1,
+  },
+  eyePlayer: { backgroundColor: '#FFF' },
+  eyeAi: { backgroundColor: '#FDF4FF' },
+  pupil: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#1A2B3D',
+  },
+  mouth: {
+    width: 10,
+    height: 4,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+    backgroundColor: 'rgba(26,43,61,0.35)',
+    marginTop: 2,
+  },
+  shine: {
+    position: 'absolute',
+    top: 4,
+    left: 6,
+    width: 8,
+    height: 5,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});

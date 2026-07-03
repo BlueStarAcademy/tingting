@@ -7,10 +7,10 @@ import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 const STAR_PRODUCTS = [
-  { name: '✦ 100', price: '₩1,100', desc: '스타 100개' },
-  { name: '✦ 250', price: '₩2,200', desc: '스타 200개 (+50 보너스)' },
-  { name: '✦ 650', price: '₩5,500', desc: '스타 500개 (+150 보너스)' },
-  { name: '✦ 1,500', price: '₩9,900', desc: '스타 1,000개 (+500 보너스)' },
+  { name: '✦ 100', price: '₩1,900', desc: '스타 100개' },
+  { name: '✦ 200', price: '₩3,900', desc: '스타 200개 (+50 보너스)' },
+  { name: '✦ 500', price: '₩8,900', desc: '스타 500개 (+150 보너스)' },
+  { name: '✦ 1,000', price: '₩17,900', desc: '스타 1,000개 (+500 보너스)' },
 ];
 
 export default function ShopScreen() {

@@ -9,11 +9,13 @@ import type { MinigameId } from '@/lib/minigames/stages';
 import { MINIGAME_DAILY_STAR_CAP, MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
-const GAMES: Array<{ id: MinigameId; icon: 'grid' | 'help-circle' | 'finger-print' | 'albums'; titleKey: string; descKey: string }> = [
+const GAMES: Array<{ id: MinigameId; icon: 'grid' | 'help-circle' | 'water' | 'albums' | 'swap-vertical' | 'keypad'; titleKey: string; descKey: string }> = [
   { id: 'match', icon: 'grid', titleKey: 'minigames.match', descKey: 'minigames.matchDesc' },
   { id: 'quiz', icon: 'help-circle', titleKey: 'minigames.quiz', descKey: 'minigames.quizDesc' },
-  { id: 'tap', icon: 'finger-print', titleKey: 'minigames.tap', descKey: 'minigames.tapDesc' },
+  { id: 'slime', icon: 'water', titleKey: 'minigames.slime', descKey: 'minigames.slimeDesc' },
   { id: 'memory', icon: 'albums', titleKey: 'minigames.memory', descKey: 'minigames.memoryDesc' },
+  { id: 'guess', icon: 'swap-vertical', titleKey: 'minigames.guess', descKey: 'minigames.guessDesc' },
+  { id: 'code', icon: 'keypad', titleKey: 'minigames.code', descKey: 'minigames.codeDesc' },
 ];
 
 export default function MinigamesScreen() {

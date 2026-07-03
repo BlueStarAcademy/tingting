@@ -7,8 +7,10 @@ export interface MinigameGameProgress {
 export interface MinigameProgress {
   match: MinigameGameProgress;
   quiz: MinigameGameProgress;
-  tap: MinigameGameProgress;
+  slime: MinigameGameProgress;
   memory: MinigameGameProgress;
+  guess: MinigameGameProgress;
+  code: MinigameGameProgress;
 }
 
 export interface MinigameDailyState {
@@ -19,8 +21,10 @@ export interface MinigameDailyState {
 export const EMPTY_MINIGAME_PROGRESS: MinigameProgress = {
   match: { clearedStage: 0 },
   quiz: { clearedStage: 0 },
-  tap: { clearedStage: 0 },
+  slime: { clearedStage: 0 },
   memory: { clearedStage: 0 },
+  guess: { clearedStage: 0 },
+  code: { clearedStage: 0 },
 };
 
 export function getClearedStage(progress: MinigameProgress, gameId: MinigameId): number {

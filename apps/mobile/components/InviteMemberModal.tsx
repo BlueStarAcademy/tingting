@@ -7,11 +7,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import type { UserProfile } from '@tingting/shared';
 import { formatPhone, isValidPhone, normalizePhone } from '@/lib/phone';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
+import { ProfileSection } from '@/components/ProfileSection';
 import { PremiumButton } from '@/components/PremiumButton';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { AppModal } from '@/components/AppModal';
@@ -24,13 +26,14 @@ interface Props {
   onInvited: () => void;
 }
 
-type FoundUser = { userId: string; displayName: string; phone: string };
+type FoundUser = { userId: string; displayName: string; phone: string; profile: UserProfile };
 
 export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Props) {
   const { t } = useLocale();
   const [phone, setPhone] = useState('');
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   const reset = () => {
     setPhone('');
@@ -54,7 +57,7 @@ export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Prop
       return;
     }
 
-    setLoading(true);
+    setSearching(true);
     try {
       const user = await api.searchUserByPhone(digits);
       if (!user) {
@@ -62,21 +65,32 @@ export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Prop
         setFoundUser(null);
         return;
       }
-      setFoundUser(user);
+      const profile = user.profile ?? (await api.getUserProfile(user.userId));
+      if (!profile || profile.profilePublic === false) {
+        Alert.alert(t('common.alert'), t('group.userProfilePrivate'));
+        setFoundUser(null);
+        return;
+      }
+      setFoundUser({ ...user, profile });
     } catch (e: unknown) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+      const code = e instanceof Error ? e.message : '';
+      if (code === 'PROFILE_PRIVATE') {
+        Alert.alert(t('common.alert'), t('group.userProfilePrivate'));
+      } else if (code === 'USER_NOT_FOUND') {
+        Alert.alert(t('common.alert'), t('group.userNotFound'));
+      } else {
+        Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+      }
+      setFoundUser(null);
     } finally {
-      setLoading(false);
+      setSearching(false);
     }
   };
 
-  const submit = async () => {
-    if (!foundUser) {
-      await search();
-      return;
-    }
+  const sendInvite = async () => {
+    if (!foundUser) return;
 
-    setLoading(true);
+    setInviting(true);
     try {
       await api.inviteGroupMember(groupId, foundUser.phone);
       reset();
@@ -86,14 +100,14 @@ export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Prop
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
     } finally {
-      setLoading(false);
+      setInviting(false);
     }
   };
 
   return (
     <AppModal visible={visible} animationType="slide" onRequestClose={handleClose} withGroupChat>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.sheet}>
+        <ScrollView contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <Text style={styles.title}>{t('group.inviteTitle')}</Text>
             <PremiumIconButton
@@ -115,20 +129,25 @@ export function InviteMemberModal({ visible, groupId, onClose, onInvited }: Prop
             maxLength={13}
           />
 
+          <PremiumButton
+            title={t('group.searchPhone')}
+            onPress={search}
+            loading={searching}
+            disabled={inviting}
+          />
+
           {foundUser ? (
-            <View style={styles.foundBox}>
-              <Ionicons name="person-circle-outline" size={28} color={theme.colors.primaryLight} />
-              <Text style={styles.foundText}>{t('group.userFound', { name: foundUser.displayName })}</Text>
+            <View style={styles.profileWrap}>
+              <ProfileSection profile={foundUser.profile} onUpdated={() => {}} readOnly embedded />
+              <PremiumButton
+                title={t('group.sendInvite')}
+                onPress={sendInvite}
+                loading={inviting}
+                disabled={searching}
+              />
             </View>
           ) : null}
-
-          <Text style={styles.free}>{t('group.inviteSlotNote')}</Text>
-          <PremiumButton
-            title={foundUser ? t('group.sendInvite') : t('group.searchPhone')}
-            onPress={submit}
-            loading={loading}
-          />
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </AppModal>
   );
@@ -151,14 +170,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.surfaceLight,
   },
-  foundBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.tint.pill,
-    borderRadius: theme.radius.md,
-    padding: 12,
-  },
-  foundText: { color: theme.colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
-  free: { color: theme.colors.success, fontSize: 14, fontWeight: '600' },
+  profileWrap: { gap: theme.spacing.sm, marginTop: theme.spacing.xs },
 });

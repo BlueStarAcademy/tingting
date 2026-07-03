@@ -53,10 +53,10 @@ export const PLUS_PLANS: PlusPlan[] = [
 ];
 
 export const STAR_IAP_CATALOG: StarPack[] = [
-  { id: 'stars_s', stars: 100, priceLabel: '₩1,100', revenueCatProductId: 'stars_s' },
-  { id: 'stars_m', stars: 550, priceLabel: '₩4,900', bonus: '+10%', revenueCatProductId: 'stars_m' },
-  { id: 'stars_l', stars: 1200, priceLabel: '₩9,900', bonus: '+20%', revenueCatProductId: 'stars_l' },
-  { id: 'stars_xl', stars: 2800, priceLabel: '₩19,900', bonus: '+30%', revenueCatProductId: 'stars_xl' },
+  { id: 'stars_s', stars: 100, priceLabel: '₩1,900', revenueCatProductId: 'stars_s' },
+  { id: 'stars_m', stars: 200, priceLabel: '₩3,900', bonus: '+50', revenueCatProductId: 'stars_m' },
+  { id: 'stars_l', stars: 500, priceLabel: '₩8,900', bonus: '+150', revenueCatProductId: 'stars_l' },
+  { id: 'stars_xl', stars: 1000, priceLabel: '₩17,900', bonus: '+500', revenueCatProductId: 'stars_xl' },
 ];
 
 export interface GalleryQuestSkipProduct {

@@ -8,13 +8,38 @@ export const GPS_QUEST_RADIUS_METERS = 200;
 export const MAX_GROUP_SLOTS = 6;
 export const MBTI_TEST_REWARD = 100;
 export const MINIGAME_DAILY_STAR_CAP = 30;
-export const MINIGAME_STAGE_STAR_REWARD = 5;
 export const MINIGAME_MAX_STAGE = 10;
+export const MINIGAME_FINAL_STAR_MIN = 1;
+export const MINIGAME_FINAL_STAR_MAX = 5;
+
+/** @deprecated 미니게임은 최종 스테이지(10) 클리어 시에만 1~5 랜덤 스타 지급 */
+export const MINIGAME_STAGE_STAR_REWARD = 5;
+
+/** 최종 스테이지 클리어 보상: 1~5 사이 랜덤 스타 */
+export function rollMinigameFinalStarReward(): number {
+  const span = MINIGAME_FINAL_STAR_MAX - MINIGAME_FINAL_STAR_MIN + 1;
+  return MINIGAME_FINAL_STAR_MIN + Math.floor(Math.random() * span);
+}
 export const NICKNAME_CHANGE_BASE_COST = 200;
 export const NICKNAME_CHANGE_MAX_COST = 1000;
-/** 그룹 기본 무료 구성원 수 (방장 포함) */
-export const FREE_GROUP_MEMBER_COUNT = 2;
-export const MAX_GROUP_MEMBER_SLOTS = 20;
+/** 그룹 기본 무료 구성원 수 (방장만) */
+export const FREE_GROUP_MEMBER_COUNT = 1;
+export const MAX_GROUP_MEMBER_SLOTS = 10;
+
+/** 2번째 슬롯 50, 3번째 100, 4번째부터 200 (해금 대상 슬롯 번호 기준) */
+export function getGroupMemberSlotUnlockCost(unlockedMemberSlots: number): number {
+  if (unlockedMemberSlots >= MAX_GROUP_MEMBER_SLOTS) return 0;
+  const nextSlotNumber = unlockedMemberSlots + 1;
+  if (nextSlotNumber === 2) return 50;
+  if (nextSlotNumber === 3) return 100;
+  return 200;
+}
+
+/** @deprecated 슬롯 해금 방식으로 대체됨. getGroupMemberSlotUnlockCost 사용 */
+export function getGroupMemberInviteCost(currentMemberCount: number): number {
+  return getGroupMemberSlotUnlockCost(currentMemberCount);
+}
+
 /** 그룹 갤러리 기본 무료 슬롯 수 */
 export const FREE_GALLERY_SLOTS = 10;
 /** 갤러리 슬롯 추가 시 한 번에 해금되는 슬롯 수 */
@@ -33,17 +58,6 @@ const GROUP_SLOT_UNLOCK_COSTS: Record<number, number> = {
 
 export function getGroupSlotUnlockCost(unlockedSlotCount: number): number {
   return GROUP_SLOT_UNLOCK_COSTS[unlockedSlotCount] ?? 0;
-}
-
-/** 3번째 구성원 슬롯부터 해금 비용 (현재 해금된 슬롯 수 기준) */
-export function getGroupMemberSlotUnlockCost(unlockedMemberSlots: number): number {
-  if (unlockedMemberSlots < FREE_GROUP_MEMBER_COUNT) return 0;
-  return ADDITIONAL_GROUP_COST + (unlockedMemberSlots - FREE_GROUP_MEMBER_COUNT) * 10;
-}
-
-/** @deprecated 슬롯 해금 방식으로 대체됨. getGroupMemberSlotUnlockCost 사용 */
-export function getGroupMemberInviteCost(currentMemberCount: number): number {
-  return getGroupMemberSlotUnlockCost(currentMemberCount);
 }
 
 /** 갤러리 슬롯 10개 추가 해금 비용 */

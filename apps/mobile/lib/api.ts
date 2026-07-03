@@ -1,5 +1,7 @@
 import type {
+  AdminUserSummary,
   AuthSession,
+  CustomerInquiry,
   Group,
   GroupChatMessage,
   GroupSchedule,
@@ -221,6 +223,21 @@ export const api = {
   async markMailboxMessageRead(messageId: string): Promise<void> {
     if (isHttpApiConfigured()) return httpApi.markMailboxMessageRead(messageId);
     return localStore.markMailboxMessageRead(messageId);
+  },
+
+  async markAllMailboxRead(): Promise<number> {
+    if (isHttpApiConfigured()) return httpApi.markAllMailboxRead();
+    return localStore.markAllMailboxRead();
+  },
+
+  async deleteMailboxMessage(messageId: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.deleteMailboxMessage(messageId);
+    return localStore.deleteMailboxMessage(messageId);
+  },
+
+  async deleteAllMailboxMessages(): Promise<number> {
+    if (isHttpApiConfigured()) return httpApi.deleteAllMailboxMessages();
+    return localStore.deleteAllMailboxMessages();
   },
 
   async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
@@ -559,7 +576,48 @@ export const api = {
   },
 
   async submitCustomerInquiry(message: string): Promise<void> {
+    if (isHttpApiConfigured()) return httpApi.submitCustomerInquiry(message);
     return localStore.submitCustomerInquiry(message);
+  },
+
+  async adminListUsers(query?: string): Promise<AdminUserSummary[]> {
+    if (isHttpApiConfigured()) return httpApi.adminListUsers(query);
+    return localStore.adminListUsers(query);
+  },
+
+  async adminGrantStars(userId: string, amount: number, reason?: string): Promise<{ stars: number }> {
+    if (isHttpApiConfigured()) return httpApi.adminGrantStars(userId, amount, reason);
+    return localStore.adminGrantStars(userId, amount, reason);
+  },
+
+  async adminListInquiries(): Promise<CustomerInquiry[]> {
+    if (isHttpApiConfigured()) return httpApi.adminListInquiries();
+    return localStore.adminListInquiries();
+  },
+
+  async adminResolveInquiry(inquiryId: string): Promise<CustomerInquiry> {
+    if (isHttpApiConfigured()) return httpApi.adminResolveInquiry(inquiryId);
+    return localStore.adminResolveInquiry(inquiryId);
+  },
+
+  async adminSendMailbox(input: {
+    userId: string;
+    title: string;
+    body: string;
+    type?: 'notice' | 'notification';
+  }): Promise<MailboxMessage> {
+    if (isHttpApiConfigured()) return httpApi.adminSendMailbox(input);
+    return localStore.adminSendMailbox(input);
+  },
+
+  async adminBroadcastMailbox(input: {
+    title: string;
+    body: string;
+    userIds?: string[];
+    type?: 'notice' | 'notification';
+  }): Promise<{ sent: number }> {
+    if (isHttpApiConfigured()) return httpApi.adminBroadcastMailbox(input);
+    return localStore.adminBroadcastMailbox(input);
   },
 
   async deleteAccount(): Promise<void> {

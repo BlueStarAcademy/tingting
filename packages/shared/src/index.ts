@@ -1,4 +1,5 @@
 export * from './types';
+export * from './admin';
 export * from './regions';
 export * from './region-stations';
 export * from './places';

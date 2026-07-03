@@ -95,6 +95,8 @@ export interface PublicExperiencePost {
   recommendCount?: number;
 }
 
+export type UserRole = 'user' | 'admin';
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -102,6 +104,9 @@ export interface UserProfile {
   stars: number;
   onboardingComplete: boolean;
   visitedRegions: string[];
+  role?: UserRole;
+  /** Convenience flag mirrored from role === 'admin' */
+  isAdmin?: boolean;
   photoUri?: string;
   birthday?: string;
   mbti?: string;
@@ -126,6 +131,26 @@ export interface UserProfile {
 export type MailboxMessageType = 'notice' | 'notification' | 'group_invite';
 
 export type GroupInviteStatus = 'pending' | 'accepted' | 'declined';
+
+export interface CustomerInquiry {
+  id: string;
+  userId?: string;
+  userEmail?: string;
+  userDisplayName?: string;
+  message: string;
+  status: 'open' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  displayName: string;
+  stars: number;
+  role?: UserRole;
+  createdAt?: string;
+}
 
 export interface MailboxMessage {
   id: string;

@@ -9,18 +9,28 @@ interface Props {
   visible: boolean;
   cost: number;
   loading?: boolean;
+  titleKey?: 'group.starUse' | 'group.memberSlotUnlockTitle';
+  messageKey?: 'group.starUseMessage' | 'group.memberSlotUnlockMessage';
   onClose: () => void;
   onConfirm: () => void;
 }
 
-export function GroupSlotPurchaseModal({ visible, cost, loading, onClose, onConfirm }: Props) {
+export function GroupSlotPurchaseModal({
+  visible,
+  cost,
+  loading,
+  titleKey = 'group.starUse',
+  messageKey = 'group.starUseMessage',
+  onClose,
+  onConfirm,
+}: Props) {
   const { t } = useLocale();
 
   return (
     <AppModal visible={visible} animationType="fade" onRequestClose={onClose} variant="center">
       <View style={styles.sheet}>
         <View style={styles.header}>
-          <Text style={styles.title}>{t('group.starUse')}</Text>
+          <Text style={styles.title}>{t(titleKey)}</Text>
           <PremiumIconButton
             icon="close"
             onPress={onClose}
@@ -31,10 +41,10 @@ export function GroupSlotPurchaseModal({ visible, cost, loading, onClose, onConf
           />
         </View>
 
-        <Text style={styles.message}>{t('group.starUseMessage', { cost })}</Text>
+        <Text style={styles.message}>{t(messageKey, { cost })}</Text>
 
         <View style={styles.costBox}>
-          <Text style={styles.costLabel}>{t('reward.amountLabel')}</Text>
+          <Text style={styles.costLabel}>{t('group.starCostLabel')}</Text>
           <Text style={styles.costValue}>✦ {cost.toLocaleString()}</Text>
         </View>
 

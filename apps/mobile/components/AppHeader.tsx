@@ -1,7 +1,8 @@
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
 import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isAdminProfile } from '@tingting/shared';
 import { StarChip } from '@/components/StarChip';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useAuth } from '@/hooks/useAuth';
@@ -95,6 +96,15 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
                 onPress={() => router.push('/(tabs)/shop' as Href)}
               />
             ) : null}
+            {profile && isAdminProfile(profile) ? (
+              <Pressable
+                style={styles.adminBtn}
+                onPress={() => router.push('/admin' as Href)}
+                accessibilityLabel={t('header.admin')}
+              >
+                <Text style={styles.adminBtnText}>{t('header.admin')}</Text>
+              </Pressable>
+            ) : null}
             <PremiumIconButton
               icon="mail-outline"
               onPress={() => router.push('/mailbox' as Href)}
@@ -163,4 +173,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   iconSpacer: { width: 38, height: 38 },
+  adminBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(79,107,149,0.12)',
+    borderWidth: 1,
+    borderColor: theme.colors.primaryLight,
+  },
+  adminBtnText: {
+    color: theme.colors.primaryDark,
+    fontSize: 12,
+    fontWeight: '800',
+  },
 });

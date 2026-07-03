@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { TabPage } from '@/components/TabPage';
 import { PremiumButton } from '@/components/PremiumButton';
 import { StarChip } from '@/components/StarChip';
@@ -13,17 +14,28 @@ type ShopProduct = {
   id: string;
   name?: string;
   starAmount?: number;
+  bonus?: number;
   desc?: string;
   actionTitle: string;
   onPress: () => void;
 };
 
 const STAR_PRODUCTS = [
-  { id: 's100', amount: 100, price: '₩1,100', desc: '' },
-  { id: 's200', amount: 250, price: '₩2,200', desc: '+50 보너스' },
-  { id: 's500', amount: 650, price: '₩5,500', desc: '+150 보너스' },
-  { id: 's1000', amount: 1500, price: '₩9,900', desc: '+500 보너스' },
+  { id: 's100', amount: 100, price: '₩1,900' },
+  { id: 's200', amount: 200, price: '₩3,900', bonus: 50 },
+  { id: 's500', amount: 500, price: '₩8,900', bonus: 150 },
+  { id: 's1000', amount: 1000, price: '₩17,900', bonus: 500 },
 ];
+
+function ShopStarBonus({ amount }: { amount: number }) {
+  const { t } = useLocale();
+  return (
+    <View style={styles.bonusRow}>
+      <Ionicons name="star" size={14} color={theme.colors.star} />
+      <Text style={styles.bonusText}>{t('shop.bonusLabel', { amount })}</Text>
+    </View>
+  );
+}
 
 const PACKAGES = [
   { id: 'p1', name: '여행 스타터', price: '₩9,900', desc: '스타 300 + AI 필터 2종' },
@@ -50,13 +62,17 @@ export default function ShopTabScreen() {
   const renderProductCard = (product: ShopProduct, fullWidth = false) => (
     <View key={product.id} style={[styles.card, fullWidth && styles.cardFull, cardSurface()]}>
       {product.starAmount != null ? (
-        <StarChip stars={product.starAmount} />
+        <View style={styles.starAmountWrap}>
+          <StarChip stars={product.starAmount} />
+        </View>
       ) : (
         <Text style={[styles.name, fullWidth && styles.nameFull]} numberOfLines={fullWidth ? 2 : 1}>
           {product.name}
         </Text>
       )}
-      {product.desc ? (
+      {product.bonus != null && product.bonus > 0 ? (
+        <ShopStarBonus amount={product.bonus} />
+      ) : product.desc ? (
         <Text style={[styles.desc, fullWidth && styles.descFull]} numberOfLines={fullWidth ? undefined : 3}>
           {product.desc}
         </Text>
@@ -94,7 +110,7 @@ export default function ShopTabScreen() {
             STAR_PRODUCTS.map((p) => ({
               id: p.id,
               starAmount: p.amount,
-              desc: p.desc,
+              bonus: p.bonus,
               actionTitle: p.price,
               onPress: comingSoon,
             })),
@@ -158,6 +174,15 @@ const styles = StyleSheet.create({
   },
   name: { color: theme.colors.text, fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
   nameFull: { fontSize: 18 },
+  starAmountWrap: { alignItems: 'center', alignSelf: 'stretch' },
+  bonusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  bonusText: { color: theme.colors.star, fontSize: 13, fontWeight: '700', letterSpacing: 0.1 },
   descSpacer: { flex: 1 },
   desc: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
   descFull: { fontSize: 14, lineHeight: 20 },

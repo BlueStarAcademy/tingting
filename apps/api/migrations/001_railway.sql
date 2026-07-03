@@ -118,3 +118,19 @@ CREATE TABLE IF NOT EXISTS mailbox_messages (
 
 CREATE INDEX IF NOT EXISTS idx_mailbox_messages_user_created
   ON mailbox_messages (user_id, created_at DESC);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+
+CREATE TABLE IF NOT EXISTS customer_inquiries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  user_email TEXT,
+  user_display_name TEXT,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_inquiries_status_created
+  ON customer_inquiries (status, created_at DESC);

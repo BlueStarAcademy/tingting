@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   MBTI_TEST_REWARD,
   MINIGAME_DAILY_STAR_CAP,
-  MINIGAME_STAGE_STAR_REWARD,
   MINIGAME_MAX_STAGE,
+  rollMinigameFinalStarReward,
   getGroupSlotUnlockCost,
   getGroupMemberSlotUnlockCost,
   getGallerySlotUnlockCost,
@@ -26,9 +26,17 @@ import {
   buildGroupStationQuestId,
   GROUP_STATION_QUEST_GALLERY_REWARD,
   pickRecommendedPlaces,
+  ADMIN_EMAIL,
+  ADMIN_DISPLAY_NAME,
+  ADMIN_SEED_PASSWORD,
+  normalizeAdminLoginEmail,
+  isAdminProfile,
+  buildAdminFeaturePasses,
 } from '@tingting/shared';
 import type {
+  AdminUserSummary,
   AuthSession,
+  CustomerInquiry,
   Group,
   GroupChatMessage,
   GroupMember,
@@ -214,13 +222,19 @@ function buildQuests(places: Place[]): Quest[] {
 
 function normalizeProfile(profile: UserProfile, groups: Group[]): UserProfile {
   let unlocked = profile.unlockedGroupSlots ?? 1;
-  unlocked = Math.max(1, Math.min(MAX_GROUP_SLOTS, unlocked));
-  const ownedSlots = groups.filter((g) => g.ownerId === profile.id).map((g) => g.slotIndex ?? 0);
-  const maxUsed = ownedSlots.length ? Math.max(...ownedSlots) + 1 : 1;
-  unlocked = Math.max(unlocked, maxUsed);
+  if (isAdminProfile(profile)) {
+    unlocked = MAX_GROUP_SLOTS;
+  } else {
+    unlocked = Math.max(1, Math.min(MAX_GROUP_SLOTS, unlocked));
+    const ownedSlots = groups.filter((g) => g.ownerId === profile.id).map((g) => g.slotIndex ?? 0);
+    const maxUsed = ownedSlots.length ? Math.max(...ownedSlots) + 1 : 1;
+    unlocked = Math.max(unlocked, maxUsed);
+  }
   return {
     ...profile,
     unlockedGroupSlots: unlocked,
+    role: isAdminProfile(profile) ? 'admin' : profile.role,
+    isAdmin: isAdminProfile(profile),
     mbtiTestCompleted: profile.mbtiTestCompleted ?? false,
     displayNameChangeCount: profile.displayNameChangeCount ?? 0,
     phoneVerified: profile.phoneVerified ?? false,
@@ -401,22 +415,45 @@ export const localStore = {
     return readJson<AuthSession | null>(KEYS.session, null);
   },
 
-  async signIn(email: string, _password: string): Promise<AuthSession> {
+  async signIn(email: string, password: string): Promise<AuthSession> {
+    const normalizedEmail = normalizeAdminLoginEmail(email);
+    if (normalizedEmail === ADMIN_EMAIL) {
+      if (password !== ADMIN_SEED_PASSWORD) throw new Error('비밀번호가 올바르지 않습니다');
+      const session: AuthSession = { userId: 'tingadmin-user', email: ADMIN_EMAIL, isDemo: false };
+      const profile: UserProfile = {
+        id: session.userId,
+        email: ADMIN_EMAIL,
+        displayName: ADMIN_DISPLAY_NAME,
+        stars: 999999,
+        onboardingComplete: true,
+        visitedRegions: REGIONS.map((region) => region.code),
+        role: 'admin',
+        isAdmin: true,
+        unlockedGroupSlots: MAX_GROUP_SLOTS,
+        mbtiTestCompleted: true,
+        phoneVerified: true,
+      };
+      await writeJson(KEYS.session, session);
+      await writeJson(KEYS.profile, profile);
+      await writeJson(KEYS.accountPassword, ADMIN_SEED_PASSWORD);
+      return session;
+    }
+
     const existing = await readJson<UserProfile | null>(KEYS.profile, null);
-    if (existing && existing.email === email) {
-      const session: AuthSession = { userId: existing.id, email, isDemo: false };
+    if (existing && existing.email === normalizedEmail) {
+      const session: AuthSession = { userId: existing.id, email: normalizedEmail, isDemo: false };
       await writeJson(KEYS.session, session);
       return session;
     }
 
-    const session: AuthSession = { userId: uid(), email, isDemo: false };
+    const session: AuthSession = { userId: uid(), email: normalizedEmail, isDemo: false };
     await writeJson(KEYS.session, session);
     let profile = existing;
     if (!profile) {
       profile = {
         id: session.userId,
-        email,
-        displayName: email.split('@')[0],
+        email: normalizedEmail,
+        displayName: normalizedEmail.split('@')[0],
         stars: INITIAL_STARS,
         onboardingComplete: false,
         visitedRegions: [],
@@ -574,8 +611,12 @@ export const localStore = {
     const unlocked = profile.unlockedGroupSlots ?? 1;
     if (unlocked >= MAX_GROUP_SLOTS) throw new Error('모든 슬롯이 해금되었습니다');
     const cost = getGroupSlotUnlockCost(unlocked);
-    if (profile.stars < cost) throw new Error('스타가 부족합니다');
-    const updated = { ...profile, stars: profile.stars - cost, unlockedGroupSlots: unlocked + 1 };
+    if (!isAdminProfile(profile) && profile.stars < cost) throw new Error('스타가 부족합니다');
+    const updated = {
+      ...profile,
+      stars: isAdminProfile(profile) ? profile.stars : profile.stars - cost,
+      unlockedGroupSlots: unlocked + 1,
+    };
     await writeJson(KEYS.profile, updated);
     return updated;
   },
@@ -755,15 +796,28 @@ export const localStore = {
 
   async searchUserByPhone(
     phone: string
-  ): Promise<{ userId: string; displayName: string; phone: string } | null> {
+  ): Promise<{ userId: string; displayName: string; phone: string; profile: UserProfile } | null> {
     const normalized = normalizePhone(phone);
     if (!isValidPhone(normalized)) return null;
     const users = await readSearchableUsers();
     const found = users.find(
       (u) => u.phoneVerified && !u.blockPhoneInvite && normalizePhone(u.phone) === normalized
     );
-    if (!found) return null;
-    return { userId: found.userId, displayName: found.displayName, phone: found.phone };
+    if (!found) throw new Error('USER_NOT_FOUND');
+
+    const all = await readJson<Record<string, UserProfile>>(KEYS.userProfiles, {});
+    const rawProfile = all[found.userId] ?? DEMO_USER_PROFILES[found.userId];
+    if (!rawProfile || rawProfile.profilePublic === false) throw new Error('PROFILE_PRIVATE');
+
+    const profile = await this.getUserProfile(found.userId);
+    if (!profile) return null;
+
+    return {
+      userId: found.userId,
+      displayName: found.displayName,
+      phone: found.phone,
+      profile,
+    };
   },
 
   async sendPhoneVerificationCode(phone: string): Promise<void> {
@@ -845,6 +899,49 @@ export const localStore = {
     await writeMailbox(all);
   },
 
+  async markAllMailboxRead(): Promise<number> {
+    const session = await this.getSession();
+    if (!session) return 0;
+    const all = await readMailbox();
+    let count = 0;
+    const now = new Date().toISOString();
+    for (let i = 0; i < all.length; i += 1) {
+      const message = all[i];
+      if (message.userId !== session.userId || message.readAt) continue;
+      if (message.type === 'group_invite' && message.inviteStatus === 'pending') continue;
+      all[i] = { ...message, readAt: now };
+      count += 1;
+    }
+    if (count > 0) await writeMailbox(all);
+    return count;
+  },
+
+  async deleteMailboxMessage(messageId: string): Promise<void> {
+    const session = await this.getSession();
+    if (!session) return;
+    const all = await readMailbox();
+    const message = all.find((m) => m.id === messageId && m.userId === session.userId);
+    if (!message) throw new Error('우편을 찾을 수 없습니다');
+    if (message.type === 'group_invite' && message.inviteStatus === 'pending') {
+      throw new Error('처리 대기 중인 초대장은 거절 후 삭제할 수 있습니다');
+    }
+    await writeMailbox(all.filter((m) => !(m.id === messageId && m.userId === session.userId)));
+  },
+
+  async deleteAllMailboxMessages(): Promise<number> {
+    const session = await this.getSession();
+    if (!session) return 0;
+    const all = await readMailbox();
+    const kept = all.filter(
+      (m) =>
+        m.userId !== session.userId ||
+        (m.type === 'group_invite' && m.inviteStatus === 'pending')
+    );
+    const removed = all.length - kept.length;
+    if (removed > 0) await writeMailbox(kept);
+    return removed;
+  },
+
   async respondToGroupInvite(messageId: string, accept: boolean): Promise<Group | null> {
     const session = await this.getSession();
     const profile = await this.getProfile();
@@ -869,8 +966,7 @@ export const localStore = {
 
     if (accept) {
       if (members.some((m) => m.id === session.userId)) {
-        all[msgIdx] = { ...message, inviteStatus: 'accepted', readAt: message.readAt ?? new Date().toISOString() };
-        await writeMailbox(all);
+        await writeMailbox(all.filter((_, i) => i !== msgIdx));
         return group;
       }
 
@@ -917,12 +1013,7 @@ export const localStore = {
       });
     }
 
-    all[msgIdx] = {
-      ...message,
-      inviteStatus: accept ? 'accepted' : 'declined',
-      readAt: message.readAt ?? new Date().toISOString(),
-    };
-    await writeMailbox(all);
+    await writeMailbox(all.filter((_, i) => i !== msgIdx));
     return accept ? group : null;
   },
 
@@ -1368,6 +1459,7 @@ export const localStore = {
   async spendStars(amount: number, _reason: string): Promise<number> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
+    if (isAdminProfile(profile)) return profile.stars;
     if (profile.stars < amount) throw new Error('스타가 부족합니다');
     const stars = profile.stars - amount;
     await writeJson(KEYS.profile, { ...profile, stars });
@@ -1381,6 +1473,9 @@ export const localStore = {
   },
 
   async getFeaturePasses(): Promise<FeaturePass[]> {
+    const profile = await this.getProfile();
+    if (isAdminProfile(profile)) return buildAdminFeaturePasses();
+
     const stored = await readJson<FeaturePass[]>(KEYS.featurePasses, []);
     if (stored.length > 0) return stored;
 
@@ -1530,8 +1625,10 @@ export const localStore = {
     return {
       match: { clearedStage: stored.match?.clearedStage ?? 0 },
       quiz: { clearedStage: stored.quiz?.clearedStage ?? 0 },
-      tap: { clearedStage: stored.tap?.clearedStage ?? 0 },
+      slime: { clearedStage: stored.slime?.clearedStage ?? stored.tap?.clearedStage ?? 0 },
       memory: { clearedStage: stored.memory?.clearedStage ?? 0 },
+      guess: { clearedStage: stored.guess?.clearedStage ?? 0 },
+      code: { clearedStage: stored.code?.clearedStage ?? 0 },
     };
   },
 
@@ -1556,6 +1653,7 @@ export const localStore = {
     starsEarnedToday: number;
     dailyCap: number;
     clearedStage: number;
+    isFinalStageReward: boolean;
   }> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
@@ -1570,12 +1668,28 @@ export const localStore = {
         starsEarnedToday: (await this.getMinigameDailyState()).starsEarnedToday,
         dailyCap: MINIGAME_DAILY_STAR_CAP,
         clearedStage,
+        isFinalStageReward: false,
+      };
+    }
+
+    const isNewClear = stage > clearedStage;
+    if (!isNewClear) {
+      const daily = await this.getMinigameDailyState();
+      return {
+        reward: 0,
+        stars: profile.stars,
+        starsEarnedToday: daily.starsEarnedToday,
+        dailyCap: MINIGAME_DAILY_STAR_CAP,
+        clearedStage,
+        isFinalStageReward: false,
       };
     }
 
     const daily = await this.getMinigameDailyState();
     const remaining = Math.max(0, MINIGAME_DAILY_STAR_CAP - daily.starsEarnedToday);
-    const reward = Math.min(MINIGAME_STAGE_STAR_REWARD, remaining);
+    const isFinalStageReward = stage === MINIGAME_MAX_STAGE;
+    const rolled = isFinalStageReward ? rollMinigameFinalStarReward() : 0;
+    const reward = isFinalStageReward ? Math.min(rolled, remaining) : 0;
     const nextClearedStage = Math.max(clearedStage, Math.min(stage, MINIGAME_MAX_STAGE));
 
     progress[gameId] = { clearedStage: nextClearedStage };
@@ -1593,6 +1707,7 @@ export const localStore = {
       starsEarnedToday,
       dailyCap: MINIGAME_DAILY_STAR_CAP,
       clearedStage: nextClearedStage,
+      isFinalStageReward,
     };
   },
 
@@ -1744,9 +1859,116 @@ export const localStore = {
 
   async submitCustomerInquiry(message: string): Promise<void> {
     if (!message.trim()) throw new Error('문의 내용을 입력해 주세요');
-    const inquiries = await readJson<Array<{ id: string; message: string; at: string }>>('@tingting/inquiries', []);
-    inquiries.unshift({ id: uid(), message: message.trim(), at: new Date().toISOString() });
-    await writeJson('@tingting/inquiries', inquiries.slice(0, 50));
+    const profile = await this.getProfile();
+    const inquiries = await readJson<CustomerInquiry[]>('@tingting/inquiries', []);
+    inquiries.unshift({
+      id: uid(),
+      userId: profile?.id,
+      userEmail: profile?.email,
+      userDisplayName: profile?.displayName,
+      message: message.trim(),
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    });
+    await writeJson('@tingting/inquiries', inquiries.slice(0, 100));
+  },
+
+  async adminListUsers(query?: string): Promise<AdminUserSummary[]> {
+    const current = await this.getProfile();
+    const stored = await readJson<UserProfile[]>(KEYS.userProfiles, []);
+    const merged = new Map<string, UserProfile>();
+    for (const profile of stored) merged.set(profile.id, profile);
+    if (current) merged.set(current.id, current);
+    const q = query?.trim().toLowerCase();
+    return [...merged.values()]
+      .filter((profile) =>
+        !q || profile.email.toLowerCase().includes(q) || profile.displayName.toLowerCase().includes(q)
+      )
+      .map((profile) => ({
+        id: profile.id,
+        email: profile.email,
+        displayName: profile.displayName,
+        stars: profile.stars,
+        role: profile.role,
+      }));
+  },
+
+  async adminGrantStars(userId: string, amount: number, _reason?: string): Promise<{ stars: number }> {
+    const current = await this.getProfile();
+    if (!current?.isAdmin && current?.role !== 'admin') throw new Error('관리자만 사용할 수 있습니다');
+    if (!Number.isFinite(amount) || amount === 0) throw new Error('유효하지 않은 수량입니다');
+
+    if (current.id === userId) {
+      const stars = Math.max(0, current.stars + amount);
+      await writeJson(KEYS.profile, { ...current, stars });
+      return { stars };
+    }
+
+    const profiles = await readJson<UserProfile[]>(KEYS.userProfiles, []);
+    const idx = profiles.findIndex((profile) => profile.id === userId);
+    if (idx < 0) throw new Error('사용자를 찾을 수 없습니다');
+    const stars = Math.max(0, profiles[idx].stars + amount);
+    profiles[idx] = { ...profiles[idx], stars };
+    await writeJson(KEYS.userProfiles, profiles);
+    return { stars };
+  },
+
+  async adminListInquiries(): Promise<CustomerInquiry[]> {
+    return readJson<CustomerInquiry[]>('@tingting/inquiries', []);
+  },
+
+  async adminResolveInquiry(inquiryId: string): Promise<CustomerInquiry> {
+    const inquiries = await readJson<CustomerInquiry[]>('@tingting/inquiries', []);
+    const idx = inquiries.findIndex((item) => item.id === inquiryId);
+    if (idx < 0) throw new Error('문의를 찾을 수 없습니다');
+    inquiries[idx] = {
+      ...inquiries[idx],
+      status: 'resolved',
+      resolvedAt: new Date().toISOString(),
+    };
+    await writeJson('@tingting/inquiries', inquiries);
+    return inquiries[idx];
+  },
+
+  async adminSendMailbox(input: {
+    userId: string;
+    title: string;
+    body: string;
+    type?: 'notice' | 'notification';
+  }): Promise<MailboxMessage> {
+    const message: MailboxMessage = {
+      id: uid(),
+      userId: input.userId,
+      type: input.type ?? 'notice',
+      title: input.title.trim(),
+      body: input.body.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    await pushMailboxMessage(message);
+    return message;
+  },
+
+  async adminBroadcastMailbox(input: {
+    title: string;
+    body: string;
+    userIds?: string[];
+    type?: 'notice' | 'notification';
+  }): Promise<{ sent: number }> {
+    const users = await this.adminListUsers();
+    const targets = input.userIds?.length
+      ? users.filter((user) => input.userIds!.includes(user.id))
+      : users;
+    for (const user of targets) {
+      await pushMailboxMessage({
+        id: uid(),
+        userId: user.id,
+        type: input.type ?? 'notice',
+        title: input.title.trim(),
+        body: input.body.trim(),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    return { sent: targets.length };
   },
 
   async deleteAccount(): Promise<void> {

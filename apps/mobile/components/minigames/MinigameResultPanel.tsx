@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { GameResultOverlay } from '@/components/minigames/GameResultOverlay';
-import { StarRewardModal } from '@/components/StarRewardModal';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
@@ -23,6 +22,9 @@ interface Props {
   stageResult: MinigameStageResult['result'];
   onRestart: () => void;
   onProgressUpdated?: () => void;
+  onNextStage?: () => void;
+  nextStageLabel?: string;
+  nextOrExitOnly?: boolean;
 }
 
 export function MinigameResultPanel({
@@ -35,18 +37,21 @@ export function MinigameResultPanel({
   stageResult,
   onRestart,
   onProgressUpdated,
+  onNextStage,
+  nextStageLabel,
+  nextOrExitOnly = false,
 }: Props) {
   const { t } = useLocale();
   const router = useRouter();
   const { refresh } = useAuth();
   const cleared = finished ? evaluateStageClear(gameId, stage, stageResult) : false;
   const resultKey = finished ? JSON.stringify(stageResult) : '';
+  const isFinalStage = stage === MINIGAME_MAX_STAGE;
   const [claimLoading, setClaimLoading] = useState(false);
   const [starReward, setStarReward] = useState(0);
+  const [showFinalStarRoll, setShowFinalStarRoll] = useState(false);
   const [starsEarnedToday, setStarsEarnedToday] = useState(0);
   const [dailyCapReached, setDailyCapReached] = useState(false);
-  const [showStarModal, setShowStarModal] = useState(false);
-  const [totalStars, setTotalStars] = useState<number | undefined>();
   const claimedRef = useRef<string | null>(null);
 
   const target = formatStageTarget(gameId, stage);
@@ -69,9 +74,8 @@ export function MinigameResultPanel({
         setStarReward(result.reward);
         setStarsEarnedToday(result.starsEarnedToday);
         setDailyCapReached(result.reward === 0 && result.starsEarnedToday >= result.dailyCap);
-        setTotalStars(result.stars);
+        setShowFinalStarRoll(result.isFinalStageReward && result.reward > 0);
         if (result.reward > 0) {
-          setShowStarModal(true);
           await refresh();
         }
         onProgressUpdated?.();
@@ -90,37 +94,41 @@ export function MinigameResultPanel({
   const handleRestart = () => {
     claimedRef.current = null;
     setStarReward(0);
-    setShowStarModal(false);
+    setShowFinalStarRoll(false);
     onRestart();
   };
 
   return (
-    <>
-      <GameResultOverlay
-        cleared={cleared}
-        stage={stage}
-        maxStage={MINIGAME_MAX_STAGE}
-        scoreLabel={scoreLabel}
-        scoreValue={scoreValue}
-        detail={detail}
-        targetDetail={targetDetail}
-        starReward={starReward}
-        starsEarnedToday={starsEarnedToday}
-        dailyCapReached={dailyCapReached}
-        loading={cleared && claimLoading}
-        playAgainLabel={t('minigames.playAgain')}
-        exitLabel={t('minigames.exit')}
-        onPlayAgain={handleRestart}
-        onExit={() => router.back()}
-      />
-      <StarRewardModal
-        visible={showStarModal}
-        amount={starReward}
-        totalStars={totalStars}
-        title={t('minigames.stageClear', { stage })}
-        subtitle={t('minigames.starEarned', { amount: starReward })}
-        onClose={() => setShowStarModal(false)}
-      />
-    </>
+    <GameResultOverlay
+      cleared={cleared}
+      stage={stage}
+      maxStage={MINIGAME_MAX_STAGE}
+      isFinalStage={isFinalStage}
+      scoreLabel={scoreLabel}
+      scoreValue={scoreValue}
+      detail={detail}
+      targetDetail={targetDetail}
+      starReward={starReward}
+      showFinalStarRoll={showFinalStarRoll}
+      starsEarnedToday={starsEarnedToday}
+      dailyCapReached={dailyCapReached}
+      loading={cleared && claimLoading}
+      playAgainLabel={t('minigames.playAgain')}
+      nextStageLabel={nextStageLabel}
+      exitLabel={t('minigames.exit')}
+      onPlayAgain={handleRestart}
+      onNextStage={
+        cleared && onNextStage
+          ? () => {
+              claimedRef.current = null;
+              setStarReward(0);
+              setShowFinalStarRoll(false);
+              onNextStage();
+            }
+          : undefined
+      }
+      onExit={() => router.back()}
+      nextOrExitOnly={nextOrExitOnly}
+    />
   );
 }

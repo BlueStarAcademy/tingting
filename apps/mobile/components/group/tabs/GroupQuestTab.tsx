@@ -3,10 +3,19 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Quest } from '@tingting/shared';
 import {
   GROUP_STATION_QUEST_GALLERY_REWARD,
+  REGION_PHOTO_REVIEW_QUEST_TARGET,
+  REGION_PHOTO_REVIEW_QUEST_REWARD,
+  REGION_PUBLIC_REVIEW_QUEST_TARGET,
+  REGION_PUBLIC_REVIEW_QUEST_REWARD,
+  buildRegionActivityQuestId,
   getRegion,
+  type Place,
+  type Visit,
 } from '@tingting/shared';
 import { api } from '@/lib/api';
 import { getCurrentCoords } from '@/lib/location';
+import { isPhotoReviewVisit } from '@/lib/travel-progress';
+import { StarAmount } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
@@ -14,15 +23,25 @@ interface Props {
   groupId: string;
   regionCode: string;
   quests: Quest[];
+  visits: Visit[];
+  places: Place[];
   onUpdated: () => void;
 }
 
-export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props) {
+export function GroupQuestTab({ groupId, regionCode, quests, visits, places, onUpdated }: Props) {
   const { t } = useLocale();
 
-  const displayQuests = quests.filter(
-    (q) => q.regionCode === regionCode
-  );
+  const regionActivityQuests = buildFallbackActivityQuests(regionCode, visits, places);
+  const existingQuestIds = new Set(quests.map((q) => q.id));
+  const displayQuests = [
+    ...quests.filter((q) => q.regionCode === regionCode),
+    ...regionActivityQuests.filter((q) => !existingQuestIds.has(q.id)),
+  ].sort((a, b) => {
+    const aStation = a.isStationQuest ? 0 : 1;
+    const bStation = b.isStationQuest ? 0 : 1;
+    if (aStation !== bStation) return aStation - bStation;
+    return (a.questKind ?? '').localeCompare(b.questKind ?? '');
+  });
 
   const verify = async (quest: Quest) => {
     try {
@@ -31,7 +50,7 @@ export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props)
       if (result.rewardStars) {
         Alert.alert(
           '퀘스트 완료!',
-          `✦ ${result.rewardStars} 스타를 획득했습니다!`
+          `${result.rewardStars} 스타를 획득했습니다!`
         );
       } else {
         Alert.alert(
@@ -54,6 +73,9 @@ export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props)
   };
 
   const getQuestMethod = (q: Quest) => {
+    if (q.questKind === 'photo_reviews' || q.questKind === 'public_review') {
+      return q.description;
+    }
     if (q.isStationQuest && q.regionCode) {
       const name = getRegion(q.regionCode)?.name ?? q.regionCode;
       return `${name} 내에서 GPS 인증하기`;
@@ -69,6 +91,9 @@ export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props)
         displayQuests.map((q) => {
           const completed = q.completed;
           const isGallery = q.rewardType === 'gallery_slots';
+          const isActivity = q.questKind === 'photo_reviews' || q.questKind === 'public_review';
+          const progressCount = q.progressCount ?? 0;
+          const targetCount = q.targetCount ?? 1;
           return (
             <View key={q.id} style={[styles.card, completed && styles.cardCompleted]}>
               {/* Row 1: title / method */}
@@ -87,11 +112,17 @@ export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props)
                   </View>
                 ) : (
                   <View style={styles.rewardChip}>
-                    <Text style={styles.starRewardText}>✦ {q.rewardStars}</Text>
+                    <StarAmount amount={q.rewardStars} compact textStyle={styles.starRewardText} />
                   </View>
                 )}
                 {completed ? (
                   <Text style={styles.doneLabel}>{t('group.questCompleteLabel')}</Text>
+                ) : isActivity ? (
+                  <View style={styles.progressChip}>
+                    <Text style={styles.progressText}>
+                      {t('group.questProgressCount', { current: progressCount, target: targetCount })}
+                    </Text>
+                  </View>
                 ) : (
                   <View style={styles.btnRow}>
                     <Pressable style={styles.verifyBtn} onPress={() => verify(q)}>
@@ -107,6 +138,52 @@ export function GroupQuestTab({ groupId, regionCode, quests, onUpdated }: Props)
       )}
     </View>
   );
+}
+
+function buildFallbackActivityQuests(regionCode: string, visits: Visit[], places: Place[]): Quest[] {
+  const region = getRegion(regionCode);
+  const regionPlaceIds = new Set(places.filter((place) => place.regionCode === regionCode).map((place) => place.id));
+  const regionReviews = visits.filter(
+    (visit) => visit.groupId && regionPlaceIds.has(visit.placeId) && isPhotoReviewVisit(visit),
+  );
+  const publicReviews = regionReviews.filter((visit) => visit.isPublic === true);
+  const stationPlace = places.find((place) => place.regionCode === regionCode) ?? places[0];
+  const placeId = stationPlace?.id ?? regionCode;
+  const baseLat = stationPlace?.lat ?? 0;
+  const baseLng = stationPlace?.lng ?? 0;
+  const regionName = region?.name ?? regionCode;
+  return [
+    {
+      id: buildRegionActivityQuestId(regionCode, 'photo_reviews'),
+      placeId,
+      title: `${regionName} 사진 후기 3개`,
+      description: `${regionName} 여행 사진과 후기를 3개 남기세요.`,
+      rewardStars: REGION_PHOTO_REVIEW_QUEST_REWARD,
+      targetLat: baseLat,
+      targetLng: baseLng,
+      radiusMeters: 0,
+      regionCode,
+      questKind: 'photo_reviews',
+      targetCount: REGION_PHOTO_REVIEW_QUEST_TARGET,
+      progressCount: Math.min(regionReviews.length, REGION_PHOTO_REVIEW_QUEST_TARGET),
+      completed: regionReviews.length >= REGION_PHOTO_REVIEW_QUEST_TARGET,
+    },
+    {
+      id: buildRegionActivityQuestId(regionCode, 'public_review'),
+      placeId,
+      title: `${regionName} 공개 후기`,
+      description: `${regionName} 여행 후기를 공개로 1개 올리세요.`,
+      rewardStars: REGION_PUBLIC_REVIEW_QUEST_REWARD,
+      targetLat: baseLat,
+      targetLng: baseLng,
+      radiusMeters: 0,
+      regionCode,
+      questKind: 'public_review',
+      targetCount: REGION_PUBLIC_REVIEW_QUEST_TARGET,
+      progressCount: Math.min(publicReviews.length, REGION_PUBLIC_REVIEW_QUEST_TARGET),
+      completed: publicReviews.length >= REGION_PUBLIC_REVIEW_QUEST_TARGET,
+    },
+  ];
 }
 
 const styles = StyleSheet.create({
@@ -146,8 +223,17 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.full,
   },
   rewardText: { color: theme.colors.primaryLight, fontSize: 11, fontWeight: '800' },
-  starRewardText: { color: theme.colors.star, fontSize: 11, fontWeight: '800' },
+  starRewardText: { fontSize: 11, fontWeight: '800' },
   doneLabel: { color: theme.colors.success, fontSize: 11, fontWeight: '700' },
+  progressChip: {
+    backgroundColor: theme.colors.surfaceElevated,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  progressText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
   btnRow: { flexDirection: 'row', gap: 6 },
   verifyBtn: {
     flexDirection: 'row',

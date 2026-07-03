@@ -8,11 +8,12 @@ export type RegionSegment = 'places' | 'gallery' | 'quest' | 'schedule';
 interface Props {
   active: RegionSegment;
   onChange: (segment: RegionSegment) => void;
+  questAttention?: boolean;
 }
 
 const SEGMENTS: RegionSegment[] = ['places', 'gallery', 'quest', 'schedule'];
 
-export function RegionSegmentBar({ active, onChange }: Props) {
+export function RegionSegmentBar({ active, onChange, questAttention = false }: Props) {
   const { t } = useLocale();
 
   const labels: Record<RegionSegment, string> = {
@@ -40,6 +41,7 @@ export function RegionSegmentBar({ active, onChange }: Props) {
             >
               {labels[segment]}
             </Text>
+            {segment === 'quest' && questAttention ? <View style={styles.dot} /> : null}
           </Pressable>
         );
       })}
@@ -54,7 +56,16 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 2,
   },
-  item: { flex: 1, alignItems: 'center', paddingHorizontal: 6 },
+  item: { flex: 1, alignItems: 'center', paddingHorizontal: 6, position: 'relative' },
   text: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '600' },
   textActive: { color: theme.colors.primaryDark, fontWeight: '800' },
+  dot: {
+    position: 'absolute',
+    top: 5,
+    right: 12,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: theme.colors.error,
+  },
 });

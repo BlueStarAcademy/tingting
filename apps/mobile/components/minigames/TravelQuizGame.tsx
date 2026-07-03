@@ -4,26 +4,25 @@ import { PremiumButton } from '@/components/PremiumButton';
 import { ComboBanner } from '@/components/minigames/ComboBanner';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
 import { scoreQuizCorrect } from '@/lib/minigames/quiz-scoring';
-import { formatStageTarget, getQuizStageConfig } from '@/lib/minigames/stages';
+import { getQuizStageConfig } from '@/lib/minigames/stages';
 import { pickQuizQuestions, pickLocalizedOptions, pickLocalizedText } from '@/lib/minigames/travel-quiz-data';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
-export function TravelQuizGame() {
-  const { t, locale } = useLocale();
+export function TravelQuizGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray, locale } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('quiz');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const initialStageSynced = useRef(false);
   const answeredCorrectlyRef = useRef<Set<string>>(new Set());
+  const [showHelp, setShowHelp] = useState(false);
 
   const stageConfig = useMemo(() => getQuizStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('quiz', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [round, setRound] = useState(0);
   const questions = useMemo(
@@ -48,9 +47,9 @@ export function TravelQuizGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback(
     (stage = activeStage) => {
@@ -166,14 +165,22 @@ export function TravelQuizGame() {
 
   return (
     <View style={styles.wrap}>
-      <GameStatsBar
-        stats={[
-          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-          { label: t('minigames.score'), value: displayScore },
-          { label: t('minigames.question'), value: `${index + 1}/${total}` },
-        ]}
-      />
-      <Text style={styles.target}>{targetLabel}</Text>
+      <View style={styles.headerRow}>
+        <GameStatsBar
+          stats={[
+            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+            { label: t('minigames.score'), value: displayScore },
+            { label: t('minigames.question'), value: `${index + 1}/${total}` },
+          ]}
+        />
+      </View>
+      <View style={styles.helpRow}>
+        <MinigameHelpButton
+          accessibilityLabel={t('minigames.howToPlay')}
+          label={t('minigames.howToPlay')}
+          onPress={() => setShowHelp(true)}
+        />
+      </View>
       <ComboBanner combo={combo} label={comboLabel} minCombo={2} />
       <View style={styles.card}>
         <Text style={styles.question}>{pickLocalizedText(current.question, locale)}</Text>
@@ -245,18 +252,27 @@ export function TravelQuizGame() {
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}
       />
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesQuiz')}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -theme.spacing.xs,
     marginBottom: theme.spacing.sm,
-    textAlign: 'center',
   },
   card: {
     backgroundColor: theme.colors.surfaceElevated,

@@ -14,6 +14,7 @@ import type { AdminUserSummary, CustomerInquiry } from '@tingting/shared';
 import { isAdminProfile } from '@tingting/shared';
 import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount } from '@/components/StarAmount';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/lib/api';
@@ -172,7 +173,7 @@ export default function AdminScreen() {
                 <Text style={styles.userChipMeta} numberOfLines={1}>
                   {user.email}
                 </Text>
-                <Text style={styles.userChipMeta}>✦ {user.stars}</Text>
+                <StarAmount amount={user.stars} compact textStyle={styles.userChipMeta} />
               </Pressable>
             );
           })}

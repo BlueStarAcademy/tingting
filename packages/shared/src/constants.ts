@@ -79,6 +79,22 @@ export const GROUP_STATION_QUEST_SKIP_PRICE_KRW = 2900;
 
 export const GROUP_STATION_QUEST_SKIP_PRODUCT_ID = 'gallery_quest_skip';
 
+/** 그룹 지역 여행 진행도: 사진 포함 후기 1개당 5%, 20개면 100% */
+export const GROUP_REGION_REVIEW_PROGRESS_PERCENT = 5;
+export const GROUP_REGION_REVIEW_PROGRESS_TARGET = 20;
+
+/** 지역별 활동 퀘스트 */
+export const REGION_PHOTO_REVIEW_QUEST_TARGET = 3;
+export const REGION_PHOTO_REVIEW_QUEST_REWARD = 20;
+export const REGION_PUBLIC_REVIEW_QUEST_TARGET = 1;
+export const REGION_PUBLIC_REVIEW_QUEST_REWARD = 30;
+
+export type RegionActivityQuestKind = 'photo_reviews' | 'public_review';
+
+export function buildRegionActivityQuestId(regionCode: string, kind: RegionActivityQuestKind): string {
+  return `region-activity-${regionCode}-${kind}`;
+}
+
 /** 닉네임 변경 비용 (설정 모달 첫 저장은 무료, 이후 변경은 고정) */
 export function getDisplayNameChangeCost(_priorChangeCount: number): number {
   return NICKNAME_CHANGE_COST;

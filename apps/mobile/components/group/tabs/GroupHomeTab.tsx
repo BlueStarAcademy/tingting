@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   type Group,
@@ -9,8 +9,9 @@ import {
 } from '@tingting/shared';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
-import { daysUntil, formatDday } from '@/lib/schedule-utils';
 import { theme } from '@/constants/theme';
+
+const SCHEDULE_CARD_HEIGHT = 58;
 
 interface Props {
   group: Group;
@@ -104,22 +105,25 @@ export function GroupHomeTab({ group, isOwner, schedules, onUpdated }: Props) {
       <View style={styles.scheduleSection}>
         <Text style={styles.scheduleTitle}>{t('group.upcomingSchedules')}</Text>
         {upcomingSchedules.length > 0 ? (
-          upcomingSchedules.map((schedule) => {
-            const dday = daysUntil(schedule.date);
-            const emoji = getStickerById(schedule.stickerId ?? DEFAULT_STICKER_ID)?.emoji ?? '❤️';
-            return (
-              <View key={schedule.id} style={styles.scheduleCard}>
-                <Text style={styles.scheduleSticker}>{emoji}</Text>
-                <View style={styles.scheduleMain}>
-                  <Text style={styles.scheduleCardTitle} numberOfLines={1}>{schedule.title}</Text>
-                  <Text style={styles.scheduleDate}>{formatDate(schedule.date)}</Text>
+          <ScrollView
+            style={styles.scheduleList}
+            contentContainerStyle={styles.scheduleListContent}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={upcomingSchedules.length > 2}
+          >
+            {upcomingSchedules.map((schedule) => {
+              const emoji = getStickerById(schedule.stickerId ?? DEFAULT_STICKER_ID)?.emoji ?? '❤️';
+              return (
+                <View key={schedule.id} style={styles.scheduleCard}>
+                  <Text style={styles.scheduleSticker}>{emoji}</Text>
+                  <View style={styles.scheduleMain}>
+                    <Text style={styles.scheduleCardTitle} numberOfLines={1}>{schedule.title}</Text>
+                    <Text style={styles.scheduleDate}>{formatDate(schedule.date)}</Text>
+                  </View>
                 </View>
-                <Text style={[styles.scheduleDday, dday === 0 && styles.scheduleDdayToday]}>
-                  {dday === 0 ? t('group.ddayToday') : formatDday(dday)}
-                </Text>
-              </View>
-            );
-          })
+              );
+            })}
+          </ScrollView>
         ) : (
           <View style={styles.scheduleEmptyCard}>
             <Ionicons name="calendar-outline" size={24} color={theme.colors.textMuted} />
@@ -177,10 +181,17 @@ const styles = StyleSheet.create({
   statText: { color: theme.colors.text, fontSize: 12, fontWeight: '600' },
   scheduleSection: { gap: theme.spacing.sm },
   scheduleTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
+  scheduleList: {
+    maxHeight: SCHEDULE_CARD_HEIGHT * 2 + theme.spacing.sm,
+  },
+  scheduleListContent: {
+    gap: theme.spacing.sm,
+  },
   scheduleCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
+    height: SCHEDULE_CARD_HEIGHT,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     padding: 12,
@@ -191,8 +202,6 @@ const styles = StyleSheet.create({
   scheduleMain: { flex: 1, gap: 2 },
   scheduleCardTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
   scheduleDate: { color: theme.colors.textMuted, fontSize: 11 },
-  scheduleDday: { color: theme.colors.primaryLight, fontSize: 13, fontWeight: '800' },
-  scheduleDdayToday: { color: theme.colors.success },
   scheduleEmptyCard: {
     alignItems: 'center',
     justifyContent: 'center',

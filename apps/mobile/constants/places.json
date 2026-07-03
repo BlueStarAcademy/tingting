@@ -880,6 +880,516 @@
     "imageUrl": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
+    "id": "p-seo-changdeokgung",
+    "regionCode": "SEO",
+    "name": "창덕궁",
+    "description": "유네스코 세계유산으로 등재된 조선 궁궐",
+    "lat": 37.5794,
+    "lng": 126.991,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1548115184-bc6544d06a58?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-ddp",
+    "regionCode": "SEO",
+    "name": "동대문디자인플라자",
+    "description": "전시와 야경이 유명한 서울 대표 디자인 랜드마크",
+    "lat": 37.5665,
+    "lng": 127.0094,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-seo-seoul-forest",
+    "regionCode": "SEO",
+    "name": "서울숲",
+    "description": "성수동과 함께 걷기 좋은 도심 생태공원",
+    "lat": 37.5444,
+    "lng": 127.0374,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-yonggungsa",
+    "regionCode": "BUS",
+    "name": "해동용궁사",
+    "description": "바다 절벽 위에 자리한 부산 대표 사찰",
+    "lat": 35.1883,
+    "lng": 129.2232,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-gwangalli",
+    "regionCode": "BUS",
+    "name": "광안리해수욕장",
+    "description": "광안대교 야경으로 유명한 부산 해변",
+    "lat": 35.1532,
+    "lng": 129.1187,
+    "category": "beach",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-bus-taejongdae",
+    "regionCode": "BUS",
+    "name": "태종대",
+    "description": "영도 해안 절벽과 등대 전망이 아름다운 명승지",
+    "lat": 35.0511,
+    "lng": 129.0871,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-modern-alley",
+    "regionCode": "DAE",
+    "name": "대구 근대골목",
+    "description": "근대 문화유산을 따라 걷는 대구 대표 도보 코스",
+    "lat": 35.8691,
+    "lng": 128.5906,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-seomun-market",
+    "regionCode": "DAE",
+    "name": "서문시장",
+    "description": "먹거리와 야시장으로 유명한 대구 전통시장",
+    "lat": 35.8699,
+    "lng": 128.5814,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-dae-apsan",
+    "regionCode": "DAE",
+    "name": "앞산전망대",
+    "description": "대구 시내를 한눈에 내려다보는 야경 명소",
+    "lat": 35.8328,
+    "lng": 128.5882,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-chinatown",
+    "regionCode": "ICN",
+    "name": "인천 차이나타운",
+    "description": "개항장 역사와 음식 문화를 함께 만나는 거리",
+    "lat": 37.4756,
+    "lng": 126.6189,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-songdo-central-park",
+    "regionCode": "ICN",
+    "name": "송도센트럴파크",
+    "description": "수상택시와 야경이 있는 송도 국제도시 공원",
+    "lat": 37.3927,
+    "lng": 126.6374,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-icn-jeondeungsa",
+    "regionCode": "ICN",
+    "name": "강화 전등사",
+    "description": "강화 정족산성 안에 자리한 고찰",
+    "lat": 37.632,
+    "lng": 126.4849,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-acc",
+    "regionCode": "GWJ",
+    "name": "국립아시아문화전당",
+    "description": "전시와 공연이 열리는 광주 대표 복합문화공간",
+    "lat": 35.1468,
+    "lng": 126.9199,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1506157785271-0d7858b9f57e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-yangnim",
+    "regionCode": "GWJ",
+    "name": "양림동 역사문화마을",
+    "description": "근대 건축과 골목 산책이 어우러진 문화마을",
+    "lat": 35.1408,
+    "lng": 126.9147,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwj-songjeong-market",
+    "regionCode": "GWJ",
+    "name": "1913송정역시장",
+    "description": "청년 상점과 오래된 시장이 함께 있는 광주 명소",
+    "lat": 35.1375,
+    "lng": 126.7917,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-gyejoksan",
+    "regionCode": "DJN",
+    "name": "계족산 황톳길",
+    "description": "맨발 걷기로 유명한 대전 숲길 여행지",
+    "lat": 36.3961,
+    "lng": 127.4392,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-jangtaesan",
+    "regionCode": "DJN",
+    "name": "장태산자연휴양림",
+    "description": "메타세쿼이아 숲길과 스카이웨이가 있는 휴양림",
+    "lat": 36.2186,
+    "lng": 127.3417,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-djn-daecheongho",
+    "regionCode": "DJN",
+    "name": "대청호오백리길",
+    "description": "호수 풍경을 따라 걷는 대전 대표 생태길",
+    "lat": 36.3708,
+    "lng": 127.4809,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-taehwagang-garden",
+    "regionCode": "ULS",
+    "name": "태화강 국가정원",
+    "description": "십리대숲과 계절정원이 펼쳐지는 도심 국가정원",
+    "lat": 35.5489,
+    "lng": 129.2961,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-ganjeolgot",
+    "regionCode": "ULS",
+    "name": "간절곶",
+    "description": "한반도에서 해가 일찍 뜨는 울산 일출 명소",
+    "lat": 35.3592,
+    "lng": 129.3601,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-uls-bangudae",
+    "regionCode": "ULS",
+    "name": "반구대 암각화",
+    "description": "선사시대 생활상을 새긴 국보 암각화 유적",
+    "lat": 35.6092,
+    "lng": 129.1738,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-arboretum",
+    "regionCode": "SJG",
+    "name": "국립세종수목원",
+    "description": "사계절 전시온실과 정원이 있는 국내 첫 도심형 수목원",
+    "lat": 36.4987,
+    "lng": 127.2871,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-central-park",
+    "regionCode": "SJG",
+    "name": "세종중앙공원",
+    "description": "호수공원과 이어지는 세종 대표 대형 공원",
+    "lat": 36.4976,
+    "lng": 127.2729,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjg-beartree",
+    "regionCode": "SJG",
+    "name": "베어트리파크",
+    "description": "수목원과 동물 관람을 함께 즐기는 세종 가족 여행지",
+    "lat": 36.6704,
+    "lng": 127.2082,
+    "category": "park",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-korean-folk-village",
+    "regionCode": "GGD",
+    "name": "한국민속촌",
+    "description": "전통 생활문화와 공연을 체험하는 용인 대표 명소",
+    "lat": 37.2592,
+    "lng": 127.1212,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-dumulmeori",
+    "regionCode": "GGD",
+    "name": "양평 두물머리",
+    "description": "북한강과 남한강이 만나는 물안개 명소",
+    "lat": 37.5395,
+    "lng": 127.3118,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ggd-gwangmyeong-cave",
+    "regionCode": "GGD",
+    "name": "광명동굴",
+    "description": "폐광을 문화 관광지로 재탄생시킨 경기 명소",
+    "lat": 37.4265,
+    "lng": 126.8647,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-namiseom",
+    "regionCode": "GWN",
+    "name": "남이섬",
+    "description": "메타세쿼이아 길과 강변 풍경으로 유명한 섬 여행지",
+    "lat": 37.7915,
+    "lng": 127.5257,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-coffee-street",
+    "regionCode": "GWN",
+    "name": "강릉 커피거리",
+    "description": "안목해변을 따라 카페와 바다를 함께 즐기는 거리",
+    "lat": 37.7716,
+    "lng": 128.9484,
+    "category": "culture",
+    "imageUrl": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-gwn-birch-forest",
+    "regionCode": "GWN",
+    "name": "원대리 자작나무숲",
+    "description": "하얀 자작나무가 이어지는 인제 대표 숲길",
+    "lat": 37.9882,
+    "lng": 128.2014,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-dodamsambong",
+    "regionCode": "NCB",
+    "name": "도담삼봉",
+    "description": "남한강 위 세 봉우리가 어우러진 단양 명승",
+    "lat": 36.9972,
+    "lng": 128.3433,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-cheongnamdae",
+    "regionCode": "NCB",
+    "name": "청남대",
+    "description": "대청호를 품은 옛 대통령 별장과 산책 코스",
+    "lat": 36.4621,
+    "lng": 127.4912,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ncb-mancheonha",
+    "regionCode": "NCB",
+    "name": "만천하스카이워크",
+    "description": "단양 강 절경을 내려다보는 전망형 관광지",
+    "lat": 36.9765,
+    "lng": 128.3652,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-kkotji",
+    "regionCode": "SCB",
+    "name": "꽃지해수욕장",
+    "description": "할미·할아비바위 낙조로 유명한 태안 해변",
+    "lat": 36.5013,
+    "lng": 126.3368,
+    "category": "beach",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-busosanseong",
+    "regionCode": "SCB",
+    "name": "부여 부소산성",
+    "description": "백제 사비 시대의 역사를 품은 산성 유적",
+    "lat": 36.2795,
+    "lng": 126.9145,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-scb-hyeonchungsa",
+    "regionCode": "SCB",
+    "name": "현충사",
+    "description": "이순신 장군을 기리는 아산 대표 역사 명소",
+    "lat": 36.8071,
+    "lng": 126.9814,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-maisan",
+    "regionCode": "NJB",
+    "name": "마이산도립공원",
+    "description": "말 귀 모양의 두 봉우리와 탑사가 유명한 진안 명소",
+    "lat": 35.7565,
+    "lng": 127.4124,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-naejangsan",
+    "regionCode": "NJB",
+    "name": "내장산국립공원",
+    "description": "가을 단풍으로 손꼽히는 전북 대표 국립공원",
+    "lat": 35.4784,
+    "lng": 126.8872,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-njb-gogunsan",
+    "regionCode": "NJB",
+    "name": "고군산군도",
+    "description": "새만금과 이어지는 섬 드라이브 여행지",
+    "lat": 35.8157,
+    "lng": 126.4325,
+    "category": "sea",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-juknokwon",
+    "regionCode": "SJB",
+    "name": "담양 죽녹원",
+    "description": "대나무 숲길을 따라 걷는 담양 대표 여행지",
+    "lat": 35.3268,
+    "lng": 126.9879,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-odongdo",
+    "regionCode": "SJB",
+    "name": "여수 오동도",
+    "description": "동백꽃과 해안 산책로가 아름다운 여수 섬",
+    "lat": 34.7449,
+    "lng": 127.7668,
+    "category": "sea",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sjb-boseong-tea",
+    "regionCode": "SJB",
+    "name": "보성 녹차밭",
+    "description": "초록 차밭 능선이 펼쳐지는 전남 대표 풍경",
+    "lat": 34.7156,
+    "lng": 127.0801,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-bulguksa",
+    "regionCode": "NGB",
+    "name": "불국사",
+    "description": "석굴암과 함께 세계유산으로 등재된 경주 사찰",
+    "lat": 35.7901,
+    "lng": 129.332,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-hahoe",
+    "regionCode": "NGB",
+    "name": "안동 하회마을",
+    "description": "낙동강이 감싸는 유네스코 세계유산 전통마을",
+    "lat": 36.5393,
+    "lng": 128.5188,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-ngb-spacewalk",
+    "regionCode": "NGB",
+    "name": "포항 스페이스워크",
+    "description": "환호공원 언덕 위를 걷는 체험형 전망 명소",
+    "lat": 36.0708,
+    "lng": 129.378,
+    "category": "landmark",
+    "imageUrl": "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-jinjuseong",
+    "regionCode": "SGB",
+    "name": "진주성",
+    "description": "남강을 따라 이어지는 경남 대표 역사 유적",
+    "lat": 35.1895,
+    "lng": 128.0802,
+    "category": "heritage",
+    "imageUrl": "https://images.unsplash.com/photo-1528360983277-13d401cdc186?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-oedo",
+    "regionCode": "SGB",
+    "name": "외도 보타니아",
+    "description": "거제 바다 위 정원으로 유명한 섬 관광지",
+    "lat": 34.7691,
+    "lng": 128.7125,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-sgb-hwangmaesan",
+    "regionCode": "SGB",
+    "name": "황매산군립공원",
+    "description": "철쭉 군락과 억새 풍경이 유명한 합천 산 여행지",
+    "lat": 35.4979,
+    "lng": 127.9743,
+    "category": "mountain",
+    "imageUrl": "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-udo",
+    "regionCode": "JEJ",
+    "name": "우도",
+    "description": "성산항에서 배로 닿는 제주 동쪽 섬 여행지",
+    "lat": 33.5064,
+    "lng": 126.9559,
+    "category": "sea",
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-bijarim",
+    "regionCode": "JEJ",
+    "name": "비자림",
+    "description": "천년 비자나무 숲길을 걷는 제주 힐링 명소",
+    "lat": 33.4913,
+    "lng": 126.8115,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
+    "id": "p-jej-saryeoni",
+    "regionCode": "JEJ",
+    "name": "사려니숲길",
+    "description": "삼나무와 편백 숲이 이어지는 제주 대표 숲길",
+    "lat": 33.4075,
+    "lng": 126.6281,
+    "category": "nature",
+    "imageUrl": "https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&h=400&q=80"
+  },
+  {
     "id": "p-seo-station",
     "regionCode": "SEO",
     "name": "서울역",
@@ -957,7 +1467,7 @@
     "name": "수원역",
     "description": "경기 대표 기차역 · KTX·ITX",
     "lat": 37.2659,
-    "lng": 127.0,
+    "lng": 127,
     "category": "station"
   },
   {

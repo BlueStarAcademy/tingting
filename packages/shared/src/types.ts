@@ -49,6 +49,8 @@ export interface Group {
   unlockedMemberSlots?: number;
   /** 해금된 갤러리 슬롯 수 (레거시·스타 구매용, 지역별 슬롯은 퀘스트 완료로 해금) */
   unlockedGallerySlots?: number;
+  /** 공용 갤러리 업로드 권한을 위임받은 멤버 ID. 없으면 방장만 업로드 가능 */
+  sharedGalleryUploaderId?: string;
 }
 
 /** 그룹 여행 일정 (지역별) */
@@ -79,6 +81,10 @@ export interface Visit {
   filter?: string;
   /** 추천 피드에 공개 여부 */
   isPublic?: boolean;
+  /** 그룹 공용 갤러리 사진 여부 */
+  isSharedGallery?: boolean;
+  /** 업로드한 사용자 닉네임 (공용 갤러리) */
+  uploaderName?: string;
 }
 
 /** 다른 유저가 공개한 여행 체험 후기 */
@@ -186,6 +192,10 @@ export interface Quest {
   /** 그룹 대표역 방문 퀘스트 */
   isStationQuest?: boolean;
   regionCode?: string;
+  /** 자동 완료되는 지역 활동 퀘스트 */
+  questKind?: 'photo_reviews' | 'public_review' | 'station_gps';
+  targetCount?: number;
+  progressCount?: number;
 }
 
 export interface ShopItem {

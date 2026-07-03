@@ -5,6 +5,7 @@ import { useRouter, type Href } from 'expo-router';
 import type { Group, UserProfile } from '@tingting/shared';
 import { getGroupSlotUnlockCost, MAX_GROUP_SLOTS } from '@tingting/shared';
 import { GroupSlotPurchaseModal } from '@/components/GroupSlotPurchaseModal';
+import { StarAmount } from '@/components/StarAmount';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/lib/api';
@@ -125,7 +126,7 @@ export function GroupSlotGrid({ profile, groups, onUpdated }: Props) {
                   <>
                     <Ionicons name="lock-closed" size={24} color={theme.colors.textMuted} />
                     {showPrice ? (
-                      <Text style={styles.price}>✦ {cost}</Text>
+                      <StarAmount amount={cost} compact textStyle={styles.price} />
                     ) : (
                       <Text style={styles.locked}>{t('profile.locked')}</Text>
                     )}

@@ -9,6 +9,7 @@ import {
 } from '@tingting/shared';
 import { TabPage } from '@/components/TabPage';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarIcon } from '@/components/StarAmount';
 import { StarChip } from '@/components/StarChip';
 import { cardSurface, tabPill } from '@/lib/ui';
 import { api } from '@/lib/api';
@@ -40,7 +41,7 @@ function ShopStarBonus({ amount }: { amount: number }) {
   const { t } = useLocale();
   return (
     <View style={styles.bonusRow}>
-      <Ionicons name="star" size={14} color={theme.colors.star} />
+      <StarIcon size={14} />
       <Text style={styles.bonusText}>{t('shop.bonusLabel', { amount })}</Text>
     </View>
   );
@@ -77,11 +78,11 @@ export default function ShopTabScreen() {
     Alert.alert(
       t('group.stickerPackTitle'),
       t('group.stickerPackDesc', { name: sticker.emoji + ' ' + sticker.label, count: pack.count }) +
-        `\n\n✦ ${pack.starCost}`,
+        `\n\n${pack.starCost} 스타`,
       [
         { text: t('header.cancel'), style: 'cancel' },
         {
-          text: `✦ ${pack.starCost} ${t('shop.purchase')}`,
+          text: `${pack.starCost} 스타 ${t('shop.purchase')}`,
           onPress: async () => {
             try {
               await api.purchaseStickers(sticker.id, pack.id);
@@ -169,7 +170,7 @@ export default function ShopTabScreen() {
                   {STICKER_PACK_OPTIONS.map((pack) => (
                     <PremiumButton
                       key={pack.id}
-                      title={`${pack.count}개 ✦${pack.starCost}`}
+                      title={`${pack.count}개 · ${pack.starCost}스타`}
                       size="sm"
                       onPress={() => buySticker(sticker, pack)}
                     />

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Animated, Easing, Alert } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount } from '@/components/StarAmount';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
@@ -45,6 +46,13 @@ function labelPoint(index: number) {
   return polar(CX, CY, OUTER_R * 0.62, mid);
 }
 
+function starPath(cx: number, cy: number, outerR: number, innerR: number) {
+  return Array.from({ length: 10 }, (_, i) => {
+    const point = polar(cx, cy, i % 2 === 0 ? outerR : innerR, i * 36);
+    return `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`;
+  }).join(' ') + ' Z';
+}
+
 function getSpinTargetRotation(reward: number, currentDeg: number): number {
   const index = reward - 1;
   const segmentCenter = index * SEGMENT_ANGLE + SEGMENT_ANGLE / 2;
@@ -69,16 +77,7 @@ function RouletteWheelSvg() {
         const { x, y } = labelPoint(i);
         return (
           <G key={`label-${star}`}>
-            <SvgText
-              x={x}
-              y={y - 6}
-              fill="#78350F"
-              fontSize={13}
-              fontWeight="700"
-              textAnchor="middle"
-            >
-              ✦
-            </SvgText>
+            <Path d={starPath(x, y - 11, 8, 3.6)} fill="#78350F" />
             <SvgText
               x={x}
               y={y + 12}
@@ -200,7 +199,7 @@ export function StepRouletteModal({
         {phase === 'result' && reward !== null ? (
           <>
             <Text style={styles.resultLabel}>{t('steps.rouletteWon')}</Text>
-            <Text style={styles.resultValue}>✦ {reward}</Text>
+            <StarAmount amount={reward} iconSize={34} textStyle={styles.resultValue} />
             <PremiumButton title={t('common.continue')} onPress={handleContinue} />
           </>
         ) : (
@@ -262,5 +261,5 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   resultLabel: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
-  resultValue: { color: theme.colors.star, fontSize: 48, fontWeight: '900' },
+  resultValue: { fontSize: 48, fontWeight: '900' },
 });

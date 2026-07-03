@@ -2,19 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
-import { PremiumButton } from '@/components/PremiumButton';
+import { NumberPad } from '@/components/minigames/NumberPad';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
-import { formatStageTarget, getCodeStageConfig } from '@/lib/minigames/stages';
+import { getCodeStageConfig } from '@/lib/minigames/stages';
 import {
   CODE_DIGIT_COUNT,
   evaluateCodeGuess,
@@ -25,6 +24,7 @@ import {
   type CodeGuessEntry,
 } from '@/lib/minigames/code-logic';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
+import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
 import { theme } from '@/constants/theme';
 
 function feedbackStyle(feedback: CodeFeedback) {
@@ -67,16 +67,16 @@ function DigitCells({
   );
 }
 
-export function DigitPopGame() {
-  const { t } = useLocale();
+export function DigitPopGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray } = useLocale();
   const { width: windowWidth } = useWindowDimensions();
   const { currentStage, loading, refresh } = useMinigameProgress('code');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const initialStageSynced = useRef(false);
   const hasLoadedOnce = useRef(false);
   const bootedStageRef = useRef<number | null>(null);
-  const inputRef = useRef<TextInput>(null);
   const historyScrollRef = useRef<ScrollView>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const digitGap = 5;
   const digitCellSize = useMemo(() => {
@@ -86,10 +86,6 @@ export function DigitPopGame() {
   }, [windowWidth]);
 
   const stageConfig = useMemo(() => getCodeStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('code', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [secret, setSecret] = useState(() => rollSecretCode(stageConfig.digitCount));
   const [input, setInput] = useState('');
@@ -113,9 +109,9 @@ export function DigitPopGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback((stage = activeStage) => {
     const config = getCodeStageConfig(stage);
@@ -137,9 +133,7 @@ export function DigitPopGame() {
   const scrollHistoryToEnd = useCallback(() => {
     const node = historyScrollRef.current;
     if (!node) return;
-
     const scroll = (animated: boolean) => node.scrollToEnd({ animated });
-
     scroll(false);
     requestAnimationFrame(() => {
       scroll(true);
@@ -151,12 +145,6 @@ export function DigitPopGame() {
     if (history.length === 0) return;
     scrollHistoryToEnd();
   }, [history, scrollHistoryToEnd]);
-
-  useEffect(() => {
-    if (loading || finished) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 300);
-    return () => clearTimeout(timer);
-  }, [loading, finished, activeStage]);
 
   const applyGuess = useCallback(
     (raw: string) => {
@@ -187,16 +175,26 @@ export function DigitPopGame() {
     [finished, secret, stageConfig.maxAttempts, t],
   );
 
-  const handleInputChange = (value: string) => {
-    const next = value.replace(/\D/g, '').slice(0, CODE_DIGIT_COUNT);
-    setInput(next);
-    setInputError(null);
-    if (next.length === CODE_DIGIT_COUNT) {
-      applyGuess(next);
-    }
-  };
+  const handleDigit = useCallback((digit: string) => {
+    if (finished) return;
+    setInput((prev) => {
+      if (prev.length >= CODE_DIGIT_COUNT) return prev;
+      const next = prev + digit;
+      if (next.length === CODE_DIGIT_COUNT) {
+        setTimeout(() => applyGuess(next), 50);
+      }
+      return next;
+    });
+  }, [finished, applyGuess]);
 
-  const submitGuess = () => applyGuess(input);
+  const handleDelete = useCallback(() => {
+    setInput((prev) => prev.slice(0, -1));
+    setInputError(null);
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    applyGuess(input);
+  }, [applyGuess, input]);
 
   const handleNextStage = useCallback(async () => {
     await refresh();
@@ -218,20 +216,23 @@ export function DigitPopGame() {
 
   return (
     <View style={styles.wrap}>
-      <KeyboardAvoidingView
-        style={styles.body}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
-      >
-        <GameStatsBar
-          stats={[
-            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-            { label: t('minigames.attempts'), value: `${attemptsUsed}/${stageConfig.maxAttempts}` },
-            { label: t('minigames.remaining'), value: attemptsLeft },
-          ]}
-        />
-        <Text style={styles.target}>{targetLabel}</Text>
-        <Text style={styles.hint}>{t('minigames.codeHint')}</Text>
+      <View style={styles.body}>
+        <View style={styles.headerRow}>
+          <GameStatsBar
+            stats={[
+              { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+              { label: t('minigames.attempts'), value: `${attemptsUsed}/${stageConfig.maxAttempts}` },
+              { label: t('minigames.remaining'), value: attemptsLeft },
+            ]}
+          />
+        </View>
+        <View style={styles.helpRow}>
+          <MinigameHelpButton
+            accessibilityLabel={t('minigames.howToPlay')}
+            label={t('minigames.howToPlay')}
+            onPress={() => setShowHelp(true)}
+          />
+        </View>
 
         <View style={styles.legendRow}>
           <View style={styles.legendItem}>
@@ -305,25 +306,17 @@ export function DigitPopGame() {
                 </View>
               ))}
             </View>
-            <TextInput
-              ref={inputRef}
-              value={input}
-              onChangeText={handleInputChange}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              style={styles.codeInput}
-              maxLength={CODE_DIGIT_COUNT}
-              placeholder={t('minigames.codePlaceholder')}
-              placeholderTextColor={theme.colors.textSubtle}
-              returnKeyType="done"
-              onSubmitEditing={submitGuess}
-              autoFocus
-            />
             {inputError ? <Text style={styles.error}>{inputError}</Text> : null}
-            <PremiumButton title={t('minigames.codeSubmit')} onPress={submitGuess} fullWidth size="sm" />
+            <NumberPad
+              onDigit={handleDigit}
+              onDelete={handleDelete}
+              onSubmit={handleSubmit}
+              submitLabel={t('minigames.codeSubmit')}
+              disabled={finished}
+            />
           </View>
         ) : null}
-      </KeyboardAvoidingView>
+      </View>
 
       <MinigameResultPanel
         gameId="code"
@@ -343,27 +336,29 @@ export function DigitPopGame() {
         nextStageLabel={t('minigames.nextStage')}
         nextOrExitOnly
       />
+
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesCode')}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
-  body: { flex: 1, minHeight: 0, paddingBottom: theme.spacing.xl },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
+  body: { flex: 1, minHeight: 0 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
   },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -theme.spacing.xs,
     marginBottom: theme.spacing.sm,
-    lineHeight: 19,
-    paddingHorizontal: theme.spacing.sm,
   },
   legendRow: {
     flexDirection: 'row',
@@ -391,9 +386,9 @@ const styles = StyleSheet.create({
   historyScroll: {
     flexGrow: 1,
     flexShrink: 1,
-    maxHeight: 280,
-    minHeight: 100,
-    marginBottom: theme.spacing.md,
+    maxHeight: 200,
+    minHeight: 80,
+    marginBottom: theme.spacing.sm,
   },
   historyContent: {
     paddingTop: theme.spacing.sm,
@@ -458,22 +453,8 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   inputArea: {
-    gap: theme.spacing.sm,
-    paddingTop: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-  },
-  codeInput: {
-    backgroundColor: theme.colors.surfaceElevated,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 12,
-    fontSize: 22,
-    fontWeight: '800',
-    color: theme.colors.text,
-    textAlign: 'center',
-    letterSpacing: 8,
+    gap: theme.spacing.xs,
+    paddingBottom: MAIN_TAB_BAR_HEIGHT + theme.spacing.sm,
   },
   error: {
     color: theme.colors.error,

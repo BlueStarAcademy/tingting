@@ -3,6 +3,8 @@ import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
 import {
@@ -17,7 +19,7 @@ import {
   tryPlaceStone,
   type SlimeStone,
 } from '@/lib/minigames/slime-battle-logic';
-import { formatStageTarget, getSlimeStageConfig } from '@/lib/minigames/stages';
+import { getSlimeStageConfig } from '@/lib/minigames/stages';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
@@ -56,6 +58,10 @@ function SlimeSlot({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessible={false}
+      focusable={false}
+      // @ts-ignore — suppress web tabIndex
+      tabIndex={-1}
       style={[styles.slot, isLast && styles.slotLast]}
     >
       {isEmpty ? (
@@ -103,19 +109,16 @@ function SlimeStoneView({ color, pulse }: { color: SlimeStone; pulse?: boolean }
   );
 }
 
-export function SlimeBattleGame() {
-  const { t } = useLocale();
+export function SlimeBattleGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('slime');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
+  const [showHelp, setShowHelp] = useState(false);
   const initialStageSynced = useRef(false);
   const bootedStageRef = useRef<number | null>(null);
   const hasLoadedOnce = useRef(false);
 
   const stageConfig = useMemo(() => getSlimeStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('slime', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [board, setBoard] = useState<SlimeStone[]>(() => createSlimeBoard());
   const [playerCaptures, setPlayerCaptures] = useState(0);
@@ -127,6 +130,7 @@ export function SlimeBattleGame() {
   const [lastMove, setLastMove] = useState<number | null>(null);
   const [pulseIndex, setPulseIndex] = useState<number | null>(null);
   const [koPoint, setKoPoint] = useState<number | null>(null);
+  const [koWarning, setKoWarning] = useState(false);
 
   const busyRef = useRef(false);
 
@@ -136,9 +140,9 @@ export function SlimeBattleGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback((stage = activeStage) => {
     void getSlimeStageConfig(stage);
@@ -229,6 +233,13 @@ export function SlimeBattleGame() {
   const handleCellPress = useCallback(
     async (index: number) => {
       if (finished || busy || turn !== 'player') return;
+
+      if (index === koPoint && board[index] === SLIME_EMPTY) {
+        setKoWarning(true);
+        setTimeout(() => setKoWarning(false), 3000);
+        return;
+      }
+
       const result = tryPlaceStone(board, index, SLIME_PLAYER, koPoint);
       if (!result.valid) return;
 
@@ -278,18 +289,25 @@ export function SlimeBattleGame() {
 
   return (
     <View style={styles.wrap}>
-      <GameStatsBar
-        stats={[
-          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-          {
-            label: t('minigames.slimePlayerScore'),
-            value: `${playerCaptures}/${stageConfig.playerTarget}`,
-          },
-          { label: t('minigames.slimeAiScore'), value: `${aiCaptures}/${SLIME_AI_WIN_TARGET}` },
-        ]}
-      />
-      <Text style={styles.target}>{targetLabel}</Text>
-      <Text style={styles.hint}>{t('minigames.slimeHint')}</Text>
+      <View style={styles.headerRow}>
+        <GameStatsBar
+          stats={[
+            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+            {
+              label: t('minigames.slimePlayerScore'),
+              value: `${playerCaptures}/${stageConfig.playerTarget}`,
+            },
+            { label: t('minigames.slimeAiScore'), value: `${aiCaptures}/${SLIME_AI_WIN_TARGET}` },
+          ]}
+        />
+      </View>
+      <View style={styles.helpRow}>
+        <MinigameHelpButton
+          accessibilityLabel={t('minigames.howToPlay')}
+          label={t('minigames.howToPlay')}
+          onPress={() => setShowHelp(true)}
+        />
+      </View>
       <Text style={styles.turnLabel}>
         {finished
           ? won
@@ -334,6 +352,14 @@ export function SlimeBattleGame() {
         </LinearGradient>
       </View>
 
+      <View style={styles.belowBoard}>
+        {koWarning ? (
+          <View style={styles.koWarning}>
+            <Text style={styles.koWarningText}>방금 잡은곳은 바로 다시 잡을 수 없습니다.</Text>
+          </View>
+        ) : null}
+      </View>
+
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
@@ -362,24 +388,27 @@ export function SlimeBattleGame() {
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}
       />
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesSlime')}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0, position: 'relative' },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
   },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
   },
   turnLabel: {
     color: theme.colors.primary,
@@ -387,6 +416,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: theme.spacing.sm,
+  },
+  koWarning: {
+    backgroundColor: 'rgba(217,112,112,0.12)',
+    borderRadius: theme.radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(217,112,112,0.3)',
+  },
+  koWarningText: {
+    color: theme.colors.error,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  belowBoard: {
+    minHeight: 36,
+    marginTop: theme.spacing.sm,
+    alignItems: 'center',
   },
   boardFrame: {
     alignSelf: 'center',
@@ -411,6 +459,9 @@ const styles = StyleSheet.create({
   },
   arenaGrid: {
     position: 'relative',
+    // @ts-ignore — suppress text cursor on web
+    userSelect: 'none',
+    cursor: 'default',
   },
   arenaBubble: {
     position: 'absolute',
@@ -428,6 +479,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: CELL / 2,
+    // @ts-ignore — suppress text cursor on web
+    userSelect: 'none',
+    cursor: 'pointer',
+    outlineStyle: 'none',
   },
   slotEmpty: {
     ...StyleSheet.absoluteFillObject,

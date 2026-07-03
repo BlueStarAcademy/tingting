@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount, StarIcon } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { shadow } from '@/lib/ui';
 import { theme } from '@/constants/theme';
@@ -42,7 +43,7 @@ export function StarRewardModal({ visible, amount, totalStars, title, subtitle, 
               end={{ x: 1, y: 1 }}
               style={styles.iconCircle}
             >
-              <Ionicons name="star" size={42} color="#FFFFFF" />
+              <StarIcon size={42} color="#FFFFFF" />
             </LinearGradient>
             <View style={styles.iconRing} />
           </View>
@@ -56,7 +57,7 @@ export function StarRewardModal({ visible, amount, totalStars, title, subtitle, 
               style={styles.amountGradient}
             >
               <Text style={styles.amountLabel}>{t('reward.amountLabel')}</Text>
-              <Text style={styles.amountValue}>✦ {amount.toLocaleString()}</Text>
+              <StarAmount amount={amount} iconSize={34} textStyle={styles.amountValue} />
             </LinearGradient>
           </View>
 
@@ -153,7 +154,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   amountValue: {
-    color: theme.colors.star,
     fontSize: 40,
     fontWeight: '900',
     letterSpacing: -0.5,

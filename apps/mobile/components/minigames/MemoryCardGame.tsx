@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
-import { formatStageTarget, getMemoryStageConfig, MEMORY_PAIR_EMOJIS } from '@/lib/minigames/stages';
+import { getMemoryStageConfig, MEMORY_PAIR_EMOJIS } from '@/lib/minigames/stages';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
@@ -13,6 +15,8 @@ interface Card {
   pairId: number;
   emoji: string;
 }
+
+const MEMORY_TIME_SECONDS = 60;
 
 function buildDeck(pairCount: number): Card[] {
   const emojis = MEMORY_PAIR_EMOJIS.slice(0, pairCount);
@@ -24,22 +28,21 @@ function buildDeck(pairCount: number): Card[] {
   return cards.sort(() => Math.random() - 0.5);
 }
 
-export function MemoryCardGame() {
-  const { t } = useLocale();
+export function MemoryCardGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('memory');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const initialStageSynced = useRef(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const stageConfig = useMemo(() => getMemoryStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('memory', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [deck, setDeck] = useState<Card[]>(() => buildDeck(stageConfig.pairCount));
   const [flipped, setFlipped] = useState<number[]>([]);
   const [matched, setMatched] = useState<Set<number>>(new Set());
   const [moves, setMoves] = useState(0);
+  const [finalMoves, setFinalMoves] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(MEMORY_TIME_SECONDS);
   const [lock, setLock] = useState(false);
   const [finished, setFinished] = useState(false);
 
@@ -49,9 +52,9 @@ export function MemoryCardGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback(
     (stage = activeStage) => {
@@ -60,6 +63,8 @@ export function MemoryCardGame() {
       setFlipped([]);
       setMatched(new Set());
       setMoves(0);
+      setFinalMoves(0);
+      setTimeLeft(MEMORY_TIME_SECONDS);
       setLock(false);
       setFinished(false);
     },
@@ -71,6 +76,23 @@ export function MemoryCardGame() {
     restart(activeStage);
   }, [activeStage, loading, restart]);
 
+  useEffect(() => {
+    if (loading || finished) return;
+    if (timeLeft <= 0) {
+      setFinalMoves(moves);
+      setFinished(true);
+      setLock(false);
+      setFlipped([]);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [finished, loading, moves, timeLeft]);
+
   const handleFlip = (card: Card) => {
     if (lock || finished) return;
     if (flipped.includes(card.id) || matched.has(card.pairId)) return;
@@ -80,7 +102,8 @@ export function MemoryCardGame() {
 
     if (nextFlipped.length < 2) return;
 
-    setMoves((value) => value + 1);
+    const nextMoves = moves + 1;
+    setMoves(nextMoves);
     setLock(true);
 
     const [firstId, secondId] = nextFlipped;
@@ -94,6 +117,7 @@ export function MemoryCardGame() {
       setFlipped([]);
       setLock(false);
       if (nextMatched.size >= totalPairs) {
+        setFinalMoves(nextMoves);
         setFinished(true);
       }
       return;
@@ -114,20 +138,29 @@ export function MemoryCardGame() {
   const rows = useMemo(() => Math.ceil(deck.length / gridCols), [deck.length, gridCols]);
   const cardSize = gridCols >= 5 ? 64 : 72;
   const canAdvance = activeStage < MINIGAME_MAX_STAGE;
+  const resultMoves = finished ? finalMoves : moves;
+  const allMatched = matchedCount >= totalPairs;
 
   if (loading) return null;
 
   return (
     <View style={styles.wrap}>
-      <GameStatsBar
-        stats={[
-          { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-          { label: t('minigames.moves'), value: moves },
-          { label: t('minigames.pairs'), value: `${matchedCount}/${totalPairs}` },
-        ]}
-      />
-      <Text style={styles.target}>{targetLabel}</Text>
-      <Text style={styles.hint}>{t('minigames.memoryHint')}</Text>
+      <View style={styles.headerRow}>
+        <GameStatsBar
+          stats={[
+            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+            { label: t('minigames.moves'), value: moves },
+            { label: t('minigames.time'), value: `${timeLeft}s` },
+          ]}
+        />
+      </View>
+      <View style={styles.helpRow}>
+        <MinigameHelpButton
+          accessibilityLabel={t('minigames.howToPlay')}
+          label={t('minigames.howToPlay')}
+          onPress={() => setShowHelp(true)}
+        />
+      </View>
       <View style={[styles.grid, { minHeight: rows * (cardSize + 8) }]}>
         {deck.map((card) => {
           const isOpen = flipped.includes(card.id) || matched.has(card.pairId);
@@ -135,7 +168,9 @@ export function MemoryCardGame() {
             <Pressable
               key={card.id}
               onPress={() => handleFlip(card)}
-              disabled={lock || isOpen}
+              disabled={lock || finished || isOpen}
+              accessible={false}
+              {...({ focusable: false, tabIndex: -1 } as any)}
               style={[
                 styles.card,
                 { width: cardSize, height: cardSize },
@@ -155,9 +190,9 @@ export function MemoryCardGame() {
         stage={activeStage}
         finished={finished}
         scoreLabel={t('minigames.finalScore')}
-        scoreValue={String(moves)}
-        detail={t('minigames.memoryResult', { moves })}
-        stageResult={{ moves, allMatched: matchedCount >= totalPairs }}
+        scoreValue={String(resultMoves)}
+        detail={allMatched ? t('minigames.memoryResult', { moves: resultMoves }) : t('minigames.retryStage')}
+        stageResult={{ moves: resultMoves, allMatched }}
         onRestart={(stage) => {
           const target = stage ?? 1;
           if (target !== activeStage) setActiveStage(target);
@@ -167,30 +202,37 @@ export function MemoryCardGame() {
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}
       />
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesMemory')}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
   },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -theme.spacing.xs,
     marginBottom: theme.spacing.sm,
-    textAlign: 'center',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     justifyContent: 'center',
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    cursor: 'default',
   },
   card: {
     borderRadius: theme.radius.md,
@@ -199,6 +241,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.colors.primaryDark,
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    cursor: 'pointer',
+    // @ts-ignore web
+    outlineStyle: 'none',
   },
   cardOpen: {
     backgroundColor: theme.colors.surfaceElevated,

@@ -4,6 +4,7 @@ import { FEATURE_PASS_COSTS, FEATURE_PASS_TIERS } from '@tingting/shared';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
+import { StarAmount } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
@@ -55,7 +56,7 @@ export function FeaturePassModal({ visible, feature, onClose, onPurchase, loadin
               disabled={loading}
             >
               <Text style={styles.tierLabel}>{t(TIER_LABEL_KEYS[tier])}</Text>
-              <Text style={styles.tierCost}>✦ {FEATURE_PASS_COSTS[tier]}</Text>
+              <StarAmount amount={FEATURE_PASS_COSTS[tier]} textStyle={styles.tierCost} />
             </Pressable>
           ))}
         </View>
@@ -85,5 +86,5 @@ const styles = StyleSheet.create({
   },
   tierRowPressed: { opacity: 0.85 },
   tierLabel: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
-  tierCost: { color: theme.colors.star, fontSize: 15, fontWeight: '800' },
+  tierCost: { fontSize: 15, fontWeight: '800' },
 });

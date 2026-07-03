@@ -1,4 +1,9 @@
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_uri TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_public BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE visits ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (lower(email));
+CREATE INDEX IF NOT EXISTS idx_visits_public_recent ON visits (is_public, visited_at DESC);

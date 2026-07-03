@@ -27,6 +27,8 @@ import { theme } from '@/constants/theme';
 
 const QUICK_EMOJIS = ['😀', '😂', '❤️', '👍', '🎉', '✈️', '📸', '🗺️', '⭐', '🍜', '🏨', '🌸'];
 const CHAT_PANEL_HEIGHT = 220;
+const CHAT_LAYER_Z_INDEX = 1000;
+const CHAT_LAYER_ELEVATION = 64;
 const BRAND_NAME = 'TingTalk';
 
 interface Props {
@@ -352,8 +354,12 @@ const styles = StyleSheet.create({
   bubbleWrap: {
     position: 'absolute',
     right: theme.spacing.md,
-    zIndex: 20,
+    zIndex: CHAT_LAYER_Z_INDEX,
+    elevation: CHAT_LAYER_ELEVATION,
     overflow: 'visible',
+    ...Platform.select({
+      web: { position: 'fixed', zIndex: CHAT_LAYER_Z_INDEX } as any,
+    }),
   },
   bubble: {
     flexDirection: 'row',
@@ -366,7 +372,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: CHAT_LAYER_ELEVATION,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
     position: 'relative',
@@ -396,8 +402,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    zIndex: 20,
+    zIndex: CHAT_LAYER_Z_INDEX,
+    elevation: CHAT_LAYER_ELEVATION,
     paddingHorizontal: theme.spacing.sm,
+    ...Platform.select({
+      web: { position: 'fixed', zIndex: CHAT_LAYER_Z_INDEX } as any,
+    }),
   },
   card: {
     backgroundColor: theme.colors.surfaceGlass,

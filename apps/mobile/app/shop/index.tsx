@@ -2,15 +2,16 @@ import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount } from '@/components/StarAmount';
 import { cardSurface } from '@/lib/ui';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 const STAR_PRODUCTS = [
-  { name: '✦ 100', price: '₩1,900', desc: '스타 100개' },
-  { name: '✦ 200', price: '₩3,900', desc: '스타 200개 (+50 보너스)' },
-  { name: '✦ 500', price: '₩8,900', desc: '스타 500개 (+150 보너스)' },
-  { name: '✦ 1,000', price: '₩17,900', desc: '스타 1,000개 (+500 보너스)' },
+  { amount: 100, price: '₩1,900', desc: '스타 100개' },
+  { amount: 200, price: '₩3,900', desc: '스타 200개 (+50 보너스)' },
+  { amount: 500, price: '₩8,900', desc: '스타 500개 (+150 보너스)' },
+  { amount: 1000, price: '₩17,900', desc: '스타 1,000개 (+500 보너스)' },
 ];
 
 export default function ShopScreen() {
@@ -22,8 +23,8 @@ export default function ShopScreen() {
     <AppScreen title={t('shop.title')} showBack>
       <Text style={styles.sub}>{t('shop.tabStars')}</Text>
       {STAR_PRODUCTS.map((item) => (
-        <View key={item.name} style={[styles.card, cardSurface()]}>
-          <Text style={styles.name}>{item.name}</Text>
+        <View key={item.amount} style={[styles.card, cardSurface()]}>
+          <StarAmount amount={item.amount} iconSize={20} textStyle={styles.name} />
           <Text style={styles.desc}>{item.desc}</Text>
           <PremiumButton title={item.price} onPress={comingSoon} />
         </View>

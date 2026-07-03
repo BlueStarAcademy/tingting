@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -6,7 +6,7 @@ import { getRegion, REGIONS } from '@tingting/shared';
 import { AppHeader } from '@/components/AppHeader';
 import { GroupTabBar, type GroupTab } from '@/components/group/GroupTabBar';
 import { RegionSegmentBar, type RegionSegment } from '@/components/group/RegionSegmentBar';
-import { GroupChatBar } from '@/components/group/GroupChatBar';
+import { useGroupChatOverlay } from '@/components/group/GroupChatOverlay';
 import { GroupNameEditModal } from '@/components/group/GroupNameEditModal';
 import { GroupHomeTab } from '@/components/group/tabs/GroupHomeTab';
 import { GroupMembersTab } from '@/components/group/tabs/GroupMembersTab';
@@ -22,6 +22,7 @@ export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, locale } = useLocale();
   const { session, profile, refresh: refreshAuth } = useAuth();
+  const { setGroupId: setChatGroupId } = useGroupChatOverlay();
   const [tab, setTab] = useState<GroupTab>('home');
   const [selectedRegionCode, setSelectedRegionCode] = useState('SEO');
   const [regionOpen, setRegionOpen] = useState(false);
@@ -55,6 +56,11 @@ export default function GroupDetailScreen() {
     }, [id])
   );
 
+  useEffect(() => {
+    setChatGroupId(id ?? null);
+    return () => setChatGroupId(null);
+  }, [id, setChatGroupId]);
+
   if (!group) {
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -74,6 +80,13 @@ export default function GroupDetailScreen() {
   ];
 
   const selectedRegion = getRegion(selectedRegionCode) ?? REGIONS[0];
+  const questAttention = quests.some(
+    (quest) =>
+      quest.regionCode === selectedRegionCode &&
+      !quest.completed &&
+      (quest.rewardStars > 0 || (quest.rewardGallerySlots ?? 0) > 0) &&
+      (quest.progressCount ?? 0) >= (quest.targetCount ?? Number.POSITIVE_INFINITY)
+  );
   const travelRegionLabel =
     prefersEnglishContent(locale) && selectedRegion.nameEn
       ? selectedRegion.nameEn
@@ -94,7 +107,7 @@ export default function GroupDetailScreen() {
         onRegionPress={() => setRegionOpen(true)}
       />
       {tab === 'travel' ? (
-        <RegionSegmentBar active={segment} onChange={setSegment} />
+        <RegionSegmentBar active={segment} onChange={setSegment} questAttention={questAttention} />
       ) : null}
       <View style={styles.body}>
         {tab === 'travel' ? (
@@ -127,14 +140,13 @@ export default function GroupDetailScreen() {
               <GroupMembersTab
                 group={group}
                 isOwner={isOwner}
-                currentUserId={session?.userId}
+                currentUserId={profile?.id ?? session?.userId}
                 onUpdated={load}
                 onLeft={() => {}}
               />
             </View>
           </ScrollView>
         )}
-        <GroupChatBar groupId={id} />
       </View>
       <GroupNameEditModal
         visible={nameEditOpen}
@@ -152,7 +164,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, minHeight: 0, position: 'relative' },
   scroll: { flex: 1, minHeight: 0 },
   scrollContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
-  homeSections: { gap: theme.spacing.xl },
+  homeSections: { gap: theme.spacing.sm },
   travelBody: { flex: 1, minHeight: 0, padding: theme.spacing.lg, paddingBottom: theme.spacing.md },
   loading: { color: theme.colors.text, padding: theme.spacing.lg },
 });

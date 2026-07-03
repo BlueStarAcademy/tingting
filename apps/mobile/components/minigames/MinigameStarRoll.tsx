@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MINIGAME_FINAL_STAR_MAX, MINIGAME_FINAL_STAR_MIN } from '@tingting/shared';
+import { StarIcon } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
@@ -66,7 +66,7 @@ export function MinigameStarRoll({ amount }: Props) {
       >
         <Animated.View style={[styles.glowRing, { opacity: glowOpacity }]} />
         <Animated.View style={[styles.valueRow, { transform: [{ scale }] }]}>
-          <Ionicons name="star" size={28} color={theme.colors.star} />
+          <StarIcon size={28} />
           <Text style={[styles.value, rolling && styles.valueRolling]}>{display}</Text>
         </Animated.View>
         {!rolling ? (
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   glowRing: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(251,191,36,0.12)',
   },
   valueRow: {

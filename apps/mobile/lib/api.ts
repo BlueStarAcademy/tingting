@@ -23,6 +23,7 @@ import { getAuthRedirectUrl, getSupabase, isSupabaseConfigured } from './supabas
 import { httpApi, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
 import type { MinigameId } from '@/lib/minigames/stages';
+import type { MinigameBetQuestion, MinigameBetTicket } from '@/lib/minigame-bets';
 
 export { isSupabaseConfigured, isHttpApiConfigured };
 
@@ -299,6 +300,11 @@ export const api = {
     return localStore.updateGroup(groupId, patch);
   },
 
+  async setGroupSharedGalleryUploader(groupId: string, memberId: string | null): Promise<Group> {
+    if (isHttpApiConfigured()) return httpApi.setGroupSharedGalleryUploader(groupId, memberId);
+    return localStore.setGroupSharedGalleryUploader(groupId, memberId);
+  },
+
   async removeGroupMember(groupId: string, memberId: string): Promise<Group> {
     if (isHttpApiConfigured()) return httpApi.removeGroupMember(groupId, memberId);
     return localStore.removeGroupMember(groupId, memberId);
@@ -382,6 +388,7 @@ export const api = {
       group_id: input.groupId,
       photo_uri: input.photoUri,
       note: input.note,
+      is_public: input.isPublic ?? false,
       lat: input.lat,
       lng: input.lng,
     }).select().single();
@@ -397,6 +404,7 @@ export const api = {
       edited_photo_uri: patch.editedPhotoUri,
       filter: patch.filter,
       note: patch.note,
+      is_public: patch.isPublic,
     };
     if (patch.photoUri) {
       body.photo_uri = patch.photoUri;
@@ -461,8 +469,23 @@ export const api = {
     return localStore.skipGroupStationQuestPurchase(groupId, questId);
   },
 
+  async getMinigameBetState(): Promise<{ questions: MinigameBetQuestion[]; tickets: MinigameBetTicket[] }> {
+    return localStore.getMinigameBetState();
+  },
+
+  async placeMinigameBet(
+    questionId: string,
+    choiceId: string,
+    stake: number,
+  ): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+    return localStore.placeMinigameBet(questionId, choiceId, stake);
+  },
+
+  async claimMinigameBetReward(ticketId: string): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+    return localStore.claimMinigameBetReward(ticketId);
+  },
+
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
-    if (isHttpApiConfigured()) return httpApi.getGroupSchedules(groupId);
     return localStore.getGroupSchedules(groupId);
   },
 
@@ -474,12 +497,10 @@ export const api = {
     note?: string;
     stickerId?: string;
   }): Promise<GroupSchedule> {
-    if (isHttpApiConfigured()) return httpApi.createGroupSchedule(input);
     return localStore.createGroupSchedule(input);
   },
 
   async deleteGroupSchedule(scheduleId: string): Promise<void> {
-    if (isHttpApiConfigured()) return httpApi.deleteGroupSchedule(scheduleId);
     return localStore.deleteGroupSchedule(scheduleId);
   },
 
@@ -692,6 +713,7 @@ function mapGroup(row: Record<string, unknown>): Group {
     ownerId: row.owner_id as string,
     memberIds: (row.member_ids as string[]) ?? [],
     createdAt: row.created_at as string,
+    sharedGalleryUploaderId: row.shared_gallery_uploader_id as string | undefined,
   };
 }
 
@@ -721,5 +743,6 @@ function mapVisit(row: Record<string, unknown>): Visit {
     lat: row.lat as number | undefined,
     lng: row.lng as number | undefined,
     filter: row.filter as string | undefined,
+    isPublic: (row.is_public as boolean | undefined) ?? (row.isPublic as boolean | undefined) ?? false,
   };
 }

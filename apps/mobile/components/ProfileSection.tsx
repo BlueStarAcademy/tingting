@@ -23,6 +23,7 @@ import {
 import { useLocale } from '@/hooks/useLocale';
 import { MbtiQuizModal } from '@/components/MbtiQuizModal';
 import { MbtiResultModal } from '@/components/MbtiResultModal';
+import { StarIcon } from '@/components/StarAmount';
 import { StarRewardModal } from '@/components/StarRewardModal';
 import { ProfileEditModal } from '@/components/ProfileEditModal';
 import { accentCard, sectionTitleStyle } from '@/lib/ui';
@@ -238,7 +239,7 @@ export function ProfileSection({
                   <Text style={styles.mbtiEmpty}>{t('profile.mbtiNotTaken')}</Text>
                 ) : (
                   <View style={styles.mbtiRewardRow}>
-                    <Ionicons name="star" size={16} color={theme.colors.star} />
+                    <StarIcon />
                     <Text style={styles.mbtiRewardNum}>{MBTI_TEST_REWARD}</Text>
                   </View>
                 )}

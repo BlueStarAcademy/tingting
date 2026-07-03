@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { GameResultOverlay } from '@/components/minigames/GameResultOverlay';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
-import { useAdFree, showRewardedAd } from '@/hooks/useAdFree';
+import { useAdFree } from '@/hooks/useAdFree';
 import { api } from '@/lib/api';
 import {
   evaluateStageClear,
@@ -101,20 +101,10 @@ export function MinigameResultPanel({
   };
 
   const handleContinueWithAd = async () => {
-    if (adFree) {
-      claimedRef.current = null;
-      setStarReward(0);
-      setShowFinalStarRoll(false);
-      onRestart(stage);
-      return;
-    }
-    const watched = await showRewardedAd();
-    if (watched) {
-      claimedRef.current = null;
-      setStarReward(0);
-      setShowFinalStarRoll(false);
-      onRestart(stage);
-    }
+    claimedRef.current = null;
+    setStarReward(0);
+    setShowFinalStarRoll(false);
+    onRestart(stage);
   };
 
   return (

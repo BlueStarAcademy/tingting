@@ -39,6 +39,11 @@ import {
   REGION_QUEST_TEMPLATES,
   buildRegionQuestId,
   renderQuestTemplate,
+  REGION_PHOTO_REVIEW_QUEST_TARGET,
+  REGION_PHOTO_REVIEW_QUEST_REWARD,
+  REGION_PUBLIC_REVIEW_QUEST_TARGET,
+  REGION_PUBLIC_REVIEW_QUEST_REWARD,
+  buildRegionActivityQuestId,
 } from '@tingting/shared';
 import type {
   AdminUserSummary,
@@ -77,6 +82,13 @@ import {
 } from '@/lib/timezone';
 import PLACES_JSON from '@/constants/places.json';
 import { SEED_PUBLIC_EXPERIENCE_POSTS } from '@/lib/public-feed-seed';
+import {
+  buildDailyBetQuestions,
+  getBetDayKey,
+  getDemoWinningChoiceId,
+  type MinigameBetQuestion,
+  type MinigameBetTicket,
+} from '@/lib/minigame-bets';
 
 const KEYS = {
   session: '@tingting/session',
@@ -102,6 +114,7 @@ const KEYS = {
   feedRecommendations: '@tingting/feedRecommendations',
   minigameProgress: '@tingting/minigame-progress',
   minigameDaily: '@tingting/minigame-daily',
+  minigameBets: '@tingting/minigame-bets',
 };
 
 interface FeedRecommendStore {
@@ -236,6 +249,61 @@ function buildRegionStarQuests(completedIds: Set<string>): Quest[] {
     }
   }
   return quests;
+}
+
+function hasPhotoReview(visit: Visit): boolean {
+  return Boolean((visit.editedPhotoUri ?? visit.photoUri) && visit.note?.trim());
+}
+
+function buildGroupActivityQuests(
+  groupId: string,
+  visits: Visit[],
+  places: Place[],
+  completedIds: Set<string>,
+): Quest[] {
+  return REGIONS.flatMap((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
+    if (!station) return [];
+    const regionVisits = visits.filter((visit) => {
+      if (visit.groupId !== groupId || !hasPhotoReview(visit)) return false;
+      return places.find((p) => p.id === visit.placeId)?.regionCode === region.code;
+    });
+    const publicVisits = regionVisits.filter((visit) => visit.isPublic === true);
+    const photoQuestId = buildRegionActivityQuestId(region.code, 'photo_reviews');
+    const publicQuestId = buildRegionActivityQuestId(region.code, 'public_review');
+    return [
+      {
+        id: photoQuestId,
+        placeId: station.placeId,
+        title: `${region.name} 사진 후기 3개`,
+        description: `${region.name} 여행 사진과 후기를 3개 남기세요.`,
+        rewardStars: REGION_PHOTO_REVIEW_QUEST_REWARD,
+        targetLat: station.lat,
+        targetLng: station.lng,
+        radiusMeters: 0,
+        regionCode: region.code,
+        questKind: 'photo_reviews' as const,
+        targetCount: REGION_PHOTO_REVIEW_QUEST_TARGET,
+        progressCount: Math.min(regionVisits.length, REGION_PHOTO_REVIEW_QUEST_TARGET),
+        completed: completedIds.has(photoQuestId),
+      },
+      {
+        id: publicQuestId,
+        placeId: station.placeId,
+        title: `${region.name} 공개 후기`,
+        description: `${region.name} 여행 후기를 공개로 1개 올리세요.`,
+        rewardStars: REGION_PUBLIC_REVIEW_QUEST_REWARD,
+        targetLat: station.lat,
+        targetLng: station.lng,
+        radiusMeters: 0,
+        regionCode: region.code,
+        questKind: 'public_review' as const,
+        targetCount: REGION_PUBLIC_REVIEW_QUEST_TARGET,
+        progressCount: Math.min(publicVisits.length, REGION_PUBLIC_REVIEW_QUEST_TARGET),
+        completed: completedIds.has(publicQuestId),
+      },
+    ];
+  });
 }
 
 function buildQuests(places: Place[]): Quest[] {
@@ -401,8 +469,14 @@ function sanitizePublicProfile(profile: UserProfile): UserProfile {
 }
 
 function normalizeGroup(group: Group): Group {
+  const memberIds = group.memberIds ?? group.members?.map((member) => member.id) ?? [];
+  const sharedGalleryUploaderId =
+    group.sharedGalleryUploaderId && memberIds.includes(group.sharedGalleryUploaderId)
+      ? group.sharedGalleryUploaderId
+      : undefined;
   return {
     ...group,
+    sharedGalleryUploaderId,
     unlockedMemberSlots: group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT,
     unlockedGallerySlots: group.unlockedGallerySlots ?? 0,
   };
@@ -1085,7 +1159,7 @@ export const localStore = {
     let group = migrateGroupMembers(groups[idx], profile);
     if (group.ownerId !== session.userId) throw new Error('방장만 슬롯을 해금할 수 있습니다');
 
-    const unlocked = group.unlockedGallerySlots ?? FREE_GALLERY_SLOTS;
+    const unlocked = group.unlockedGallerySlots ?? 0;
     const cost = getGallerySlotUnlockCost();
     if (profile.stars < cost) throw new Error('스타가 부족합니다');
 
@@ -1115,6 +1189,32 @@ export const localStore = {
     return groups[idx];
   },
 
+  async setGroupSharedGalleryUploader(groupId: string, memberId: string | null): Promise<Group> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const groups = await readJson<Group[]>(KEYS.groups, []);
+    const idx = groups.findIndex((g) => g.id === groupId);
+    if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
+
+    const group = migrateGroupMembers(groups[idx]);
+    if (group.ownerId !== session.userId) throw new Error('방장만 업로드 권한을 위임할 수 있습니다');
+
+    const nextUploaderId = memberId ?? undefined;
+    if (nextUploaderId) {
+      const memberIds = group.memberIds ?? group.members?.map((member) => member.id) ?? [];
+      if (nextUploaderId === group.ownerId) throw new Error('방장은 기본 업로드 권한자입니다');
+      if (!memberIds.includes(nextUploaderId)) throw new Error('그룹 멤버에게만 권한을 줄 수 있습니다');
+    }
+
+    const updatedGroup = normalizeGroup({
+      ...group,
+      sharedGalleryUploaderId: nextUploaderId,
+    });
+    groups[idx] = updatedGroup;
+    await writeJson(KEYS.groups, groups);
+    return updatedGroup;
+  },
+
   async removeGroupMember(groupId: string, memberId: string): Promise<Group> {
     const session = await this.getSession();
     if (!session) throw new Error('로그인이 필요합니다');
@@ -1130,10 +1230,12 @@ export const localStore = {
       ...group,
       members,
       memberIds: members.map((m) => m.id),
+      sharedGalleryUploaderId:
+        group.sharedGalleryUploaderId === memberId ? undefined : group.sharedGalleryUploaderId,
     };
-    groups[idx] = updated;
+    groups[idx] = normalizeGroup(updated);
     await writeJson(KEYS.groups, groups);
-    return updated;
+    return groups[idx];
   },
 
   async leaveGroup(groupId: string): Promise<void> {
@@ -1151,7 +1253,10 @@ export const localStore = {
       ...group,
       members,
       memberIds: members.map((m) => m.id),
+      sharedGalleryUploaderId:
+        group.sharedGalleryUploaderId === session.userId ? undefined : group.sharedGalleryUploaderId,
     };
+    groups[idx] = normalizeGroup(groups[idx]);
     await writeJson(KEYS.groups, groups);
   },
 
@@ -1233,6 +1338,8 @@ export const localStore = {
     photoUri: string;
     groupId?: string;
     note?: string;
+    isPublic?: boolean;
+    isSharedGallery?: boolean;
     lat?: number;
     lng?: number;
   }): Promise<Visit> {
@@ -1245,20 +1352,29 @@ export const localStore = {
     if (input.groupId) {
       const visits = await readJson<Visit[]>(KEYS.visits, []);
       const places = await ensurePlaces();
-      const groupQuests = await this.getGroupQuests(input.groupId);
-      const stationQuest = groupQuests.find(
-        (q) => q.isStationQuest && q.regionCode === place.regionCode
+      const group = await this.getGroup(input.groupId);
+      if (input.isSharedGallery) {
+        const allowedUploaderId = group?.sharedGalleryUploaderId ?? group?.ownerId;
+        if (allowedUploaderId !== session.userId) {
+          throw new Error('현재 공용 갤러리 업로드 권한이 없습니다');
+        }
+      }
+      const completions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+      const stationQuestCompleted = (completions[input.groupId] ?? []).includes(
+        buildGroupStationQuestId(place.regionCode),
       );
+      const unlocked = (stationQuestCompleted ? FREE_GALLERY_SLOTS : 0) + (group?.unlockedGallerySlots ?? 0);
       const regionVisitCount = visits.filter((v) => {
         if (v.groupId !== input.groupId) return false;
+        if (input.isSharedGallery) {
+          if (!v.isSharedGallery) return false;
+        } else if (v.isSharedGallery || v.userId !== session.userId) {
+          return false;
+        }
         const visitPlace = places.find((p) => p.id === v.placeId);
         return visitPlace?.regionCode === place.regionCode;
       }).length;
-      const regionUnlocked = stationQuest?.completed === true || regionVisitCount > 0;
-      if (!regionUnlocked) {
-        throw new Error('GPS 인증 퀘스트 완료 후 갤러리에 사진을 추가할 수 있어요');
-      }
-      if (regionVisitCount >= GALLERY_SLOT_BATCH_SIZE) {
+      if (regionVisitCount >= unlocked) {
         throw new Error('갤러리 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
       }
     }
@@ -1270,6 +1386,9 @@ export const localStore = {
       groupId: input.groupId,
       photoUri: input.photoUri,
       note: input.note,
+      isPublic: input.isPublic ?? false,
+      isSharedGallery: input.isSharedGallery ?? false,
+      uploaderName: input.isSharedGallery ? (profile.displayName ?? '') : undefined,
       visitedAt: new Date().toISOString(),
       lat: input.lat,
       lng: input.lng,
@@ -1280,6 +1399,7 @@ export const localStore = {
     const regions = new Set(profile.visitedRegions);
     regions.add(place.regionCode);
     await writeJson(KEYS.profile, { ...profile, visitedRegions: Array.from(regions) });
+    if (input.groupId) await this.awardCompletedActivityQuests(input.groupId);
     return visit;
   },
 
@@ -1289,6 +1409,7 @@ export const localStore = {
     if (idx < 0) throw new Error('방문 기록을 찾을 수 없습니다');
     visits[idx] = { ...visits[idx], ...patch };
     await writeJson(KEYS.visits, visits);
+    if (visits[idx].groupId) await this.awardCompletedActivityQuests(visits[idx].groupId);
     return visits[idx];
   },
 
@@ -1370,8 +1491,27 @@ export const localStore = {
     const completedIds = new Set(allCompletions[groupId] ?? []);
 
     const stationQuests = buildGroupStationQuests(visitedRegionCodes, completedIds);
-    const regionQuests = buildRegionStarQuests(completedIds);
-    return [...stationQuests, ...regionQuests];
+    const activityQuests = buildGroupActivityQuests(groupId, visits, places, completedIds);
+    return [...stationQuests, ...activityQuests];
+  },
+
+  async awardCompletedActivityQuests(groupId: string): Promise<void> {
+    const profile = await this.getProfile();
+    if (!profile) return;
+    const visits = await readJson<Visit[]>(KEYS.visits, []);
+    const places = await ensurePlaces();
+    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+    const completed = allCompletions[groupId] ?? [];
+    const completedIds = new Set(completed);
+    const quests = buildGroupActivityQuests(groupId, visits, places, completedIds);
+    const newlyCompleted = quests.filter(
+      (quest) => !quest.completed && (quest.progressCount ?? 0) >= (quest.targetCount ?? 1),
+    );
+    if (newlyCompleted.length === 0) return;
+    allCompletions[groupId] = [...completed, ...newlyCompleted.map((quest) => quest.id)];
+    await writeJson(KEYS.groupQuestCompletions, allCompletions);
+    const reward = newlyCompleted.reduce((sum, quest) => sum + quest.rewardStars, 0);
+    await writeJson(KEYS.profile, { ...profile, stars: profile.stars + reward });
   },
 
   async completeGroupQuest(
@@ -1719,6 +1859,104 @@ export const localStore = {
       await writeJson(KEYS.minigameDaily, state);
     }
     return state;
+  },
+
+  async settleMinigameBets(): Promise<{ tickets: MinigameBetTicket[]; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const todayKey = getBetDayKey();
+    const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
+    let changed = false;
+
+    const settled = tickets.map((ticket) => {
+      if (ticket.status !== 'pending' || ticket.resolveDate > todayKey) return ticket;
+      const question = buildDailyBetQuestions(ticket.questionId.slice(0, 10)).find((q) => q.id === ticket.questionId);
+      if (!question) return ticket;
+      const won = getDemoWinningChoiceId(question) === ticket.choiceId;
+      const payout = won ? ticket.stake * 2 : 0;
+      changed = true;
+      return {
+        ...ticket,
+        status: won ? 'won' as const : 'lost' as const,
+        payout,
+        settledAt: new Date().toISOString(),
+      };
+    });
+
+    if (changed) {
+      await writeJson(KEYS.minigameBets, settled);
+    }
+
+    return { tickets: settled, stars: profile.stars };
+  },
+
+  async getMinigameBetState(): Promise<{ questions: MinigameBetQuestion[]; tickets: MinigameBetTicket[] }> {
+    await this.settleMinigameBets();
+    const questions = buildDailyBetQuestions();
+    const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
+    return { questions, tickets };
+  },
+
+  async placeMinigameBet(
+    questionId: string,
+    choiceId: string,
+    stake: number,
+  ): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const amount = Math.floor(stake);
+    if (amount < 1 || amount > 10) throw new Error('1~10스타 사이로 걸어주세요');
+    if (profile.stars < amount) throw new Error('스타가 부족합니다');
+
+    const questions = buildDailyBetQuestions();
+    const question = questions.find((q) => q.id === questionId);
+    if (!question) throw new Error('오늘 참여할 수 없는 내기입니다');
+    if (!question.choices.some((choice) => choice.id === choiceId)) throw new Error('선택지를 확인해 주세요');
+
+    const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
+    if (tickets.some((ticket) => ticket.questionId === questionId && ticket.status === 'pending')) {
+      throw new Error('이미 이 문제에 내기를 걸었습니다');
+    }
+
+    const ticket: MinigameBetTicket = {
+      id: uid(),
+      questionId,
+      choiceId,
+      stake: amount,
+      status: 'pending',
+      placedAt: new Date().toISOString(),
+      resolveDate: question.resolveDate,
+    };
+    const stars = profile.stars - amount;
+    await writeJson(KEYS.minigameBets, [ticket, ...tickets]);
+    await writeJson(KEYS.profile, { ...profile, stars });
+    return { ticket, stars };
+  },
+
+  async claimMinigameBetReward(ticketId: string): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    await this.settleMinigameBets();
+
+    const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
+    const idx = tickets.findIndex((ticket) => ticket.id === ticketId);
+    if (idx < 0) throw new Error('내기 기록을 찾을 수 없습니다');
+
+    const ticket = tickets[idx];
+    if (ticket.status !== 'won') throw new Error('수령 가능한 내기가 아닙니다');
+    if (ticket.claimedAt) throw new Error('이미 수령했습니다');
+
+    const payout = ticket.payout ?? ticket.stake * 2;
+    const updatedTicket: MinigameBetTicket = {
+      ...ticket,
+      payout,
+      claimedAt: new Date().toISOString(),
+    };
+    const stars = profile.stars + payout;
+    tickets[idx] = updatedTicket;
+    await writeJson(KEYS.minigameBets, tickets);
+    await writeJson(KEYS.profile, { ...profile, stars });
+    return { ticket: updatedTicket, stars };
   },
 
   async claimMinigameStageClear(

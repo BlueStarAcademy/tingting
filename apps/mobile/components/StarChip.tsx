@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet, Pressable } from 'react-native';
+import { StarAmount } from '@/components/StarAmount';
 import { shadow } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
@@ -13,10 +13,7 @@ export function StarChip({
   compact?: boolean;
 }) {
   const content = (
-    <>
-      <Ionicons name="star" size={compact ? 14 : 16} color={theme.colors.star} />
-      <Text style={[styles.text, compact && styles.textCompact]}>{stars.toLocaleString()}</Text>
-    </>
+    <StarAmount amount={stars} compact={compact} />
   );
   const chipStyle = [styles.chip, shadow('sm'), compact && styles.chipCompact];
   if (onPress) {
@@ -47,6 +44,4 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   pressed: { opacity: 0.9 },
-  text: { color: theme.colors.star, fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
-  textCompact: { fontSize: 13 },
 });

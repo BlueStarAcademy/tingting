@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
-import { PremiumButton } from '@/components/PremiumButton';
+import { NumberPad } from '@/components/minigames/NumberPad';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
-import { formatStageTarget, getGuessStageConfig } from '@/lib/minigames/stages';
+import { getGuessStageConfig } from '@/lib/minigames/stages';
 import {
   evaluateGuess,
   GUESS_NUMBER_MAX,
@@ -24,6 +18,7 @@ import {
   type GuessHint,
 } from '@/lib/minigames/guess-logic';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
+import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
 import { theme } from '@/constants/theme';
 
 function hintLabel(t: (key: string) => string, hint: GuessHint): string {
@@ -38,30 +33,41 @@ function hintStyle(hint: GuessHint) {
   return styles.hintCorrect;
 }
 
-export function UpDownGame() {
-  const { t } = useLocale();
+export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('guess');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const initialStageSynced = useRef(false);
   const hasLoadedOnce = useRef(false);
   const bootedStageRef = useRef<number | null>(null);
   const historyScrollRef = useRef<ScrollView>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const stageConfig = useMemo(() => getGuessStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('guess', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [secret, setSecret] = useState(() => rollSecretNumber());
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<GuessEntry[]>([]);
   const [won, setWon] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [inputError, setInputError] = useState<string | null>(null);
 
   const attemptsUsed = history.length;
   const attemptsLeft = Math.max(0, stageConfig.maxAttempts - attemptsUsed);
+  const narrowedRange = useMemo(() => {
+    return history.reduce(
+      (range, entry) => {
+        if (entry.hint === 'up') {
+          return { ...range, min: Math.max(range.min, entry.value + 1) };
+        }
+        if (entry.hint === 'down') {
+          return { ...range, max: Math.min(range.max, entry.value - 1) };
+        }
+        return { min: entry.value, max: entry.value };
+      },
+      { min: GUESS_NUMBER_MIN, max: GUESS_NUMBER_MAX },
+    );
+  }, [history]);
+  const rangeLabel = `${narrowedRange.min}~${narrowedRange.max}`;
 
   useEffect(() => {
     if (!loading) hasLoadedOnce.current = true;
@@ -69,9 +75,9 @@ export function UpDownGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback((stage = activeStage) => {
     setSecret(rollSecretNumber());
@@ -79,7 +85,6 @@ export function UpDownGame() {
     setHistory([]);
     setWon(false);
     setFinished(false);
-    setInputError(null);
   }, [activeStage]);
 
   useEffect(() => {
@@ -97,19 +102,11 @@ export function UpDownGame() {
     return () => clearTimeout(timer);
   }, [history]);
 
-  const scrollHistoryToEnd = useCallback(() => {
-    historyScrollRef.current?.scrollToEnd({ animated: true });
-  }, []);
-
-  const submitGuess = () => {
+  const submitGuess = useCallback(() => {
     if (finished) return;
     const value = parseGuessInput(input);
-    if (value === null) {
-      setInputError(t('minigames.guessInvalid', { min: GUESS_NUMBER_MIN, max: GUESS_NUMBER_MAX }));
-      return;
-    }
+    if (value === null) return;
 
-    setInputError(null);
     const hint = evaluateGuess(secret, value);
     const nextHistory = [...history, { value, hint }];
     setHistory(nextHistory);
@@ -124,7 +121,19 @@ export function UpDownGame() {
     if (nextHistory.length >= stageConfig.maxAttempts) {
       setFinished(true);
     }
-  };
+  }, [finished, input, secret, history, stageConfig.maxAttempts]);
+
+  const handleDigit = useCallback((digit: string) => {
+    if (finished) return;
+    setInput((prev) => {
+      if (prev.length >= 3) return prev;
+      return prev + digit;
+    });
+  }, [finished]);
+
+  const handleDelete = useCallback(() => {
+    setInput((prev) => prev.slice(0, -1));
+  }, []);
 
   const handleNextStage = useCallback(async () => {
     await refresh();
@@ -146,26 +155,28 @@ export function UpDownGame() {
 
   return (
     <View style={styles.wrap}>
-      <KeyboardAvoidingView
-        style={styles.body}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
-      >
-        <GameStatsBar
-          stats={[
-            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-            { label: t('minigames.attempts'), value: `${attemptsUsed}/${stageConfig.maxAttempts}` },
-            { label: t('minigames.remaining'), value: attemptsLeft },
-          ]}
-        />
-        <Text style={styles.target}>{targetLabel}</Text>
-        <Text style={styles.hint}>{t('minigames.guessHint')}</Text>
+      <View style={styles.body}>
+        <View style={styles.headerRow}>
+          <GameStatsBar
+            stats={[
+              { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+              { label: t('minigames.attempts'), value: `${attemptsUsed}/${stageConfig.maxAttempts}` },
+              { label: t('minigames.remaining'), value: attemptsLeft },
+            ]}
+          />
+        </View>
+        <View style={styles.helpRow}>
+          <MinigameHelpButton
+            accessibilityLabel={t('minigames.howToPlay')}
+            label={t('minigames.howToPlay')}
+            onPress={() => setShowHelp(true)}
+          />
+        </View>
 
         <ScrollView
           ref={historyScrollRef}
           style={styles.historyScroll}
           contentContainerStyle={styles.historyContent}
-          onContentSizeChange={scrollHistoryToEnd}
           showsVerticalScrollIndicator={false}
         >
           {history.length === 0 ? (
@@ -190,22 +201,19 @@ export function UpDownGame() {
 
         {!finished ? (
           <View style={styles.inputArea}>
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              keyboardType="number-pad"
-              placeholder={t('minigames.guessPlaceholder', { min: GUESS_NUMBER_MIN, max: GUESS_NUMBER_MAX })}
-              placeholderTextColor={theme.colors.textSubtle}
-              style={styles.input}
-              maxLength={3}
-              returnKeyType="done"
-              onSubmitEditing={submitGuess}
+            <View style={styles.displayRow}>
+              <Text style={styles.displayText}>{input || rangeLabel}</Text>
+            </View>
+            <NumberPad
+              onDigit={handleDigit}
+              onDelete={handleDelete}
+              onSubmit={submitGuess}
+              submitLabel={t('minigames.guessSubmit')}
+              disabled={finished}
             />
-            {inputError ? <Text style={styles.error}>{inputError}</Text> : null}
-            <PremiumButton title={t('minigames.guessSubmit')} onPress={submitGuess} fullWidth size="sm" />
           </View>
         ) : null}
-      </KeyboardAvoidingView>
+      </View>
 
       <MinigameResultPanel
         gameId="guess"
@@ -225,27 +233,29 @@ export function UpDownGame() {
         nextStageLabel={t('minigames.nextStage')}
         nextOrExitOnly
       />
+
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesGuess')}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
-  body: { flex: 1, minHeight: 0, paddingBottom: theme.spacing.xl },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: theme.spacing.xs,
-    textAlign: 'center',
+  body: { flex: 1, minHeight: 0 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
   },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -theme.spacing.xs,
     marginBottom: theme.spacing.sm,
-    lineHeight: 19,
-    paddingHorizontal: theme.spacing.sm,
   },
   hintUp: {
     backgroundColor: 'rgba(79,107,149,0.12)',
@@ -262,9 +272,9 @@ const styles = StyleSheet.create({
   historyScroll: {
     flexGrow: 1,
     flexShrink: 1,
-    maxHeight: 300,
-    minHeight: 120,
-    marginBottom: theme.spacing.md,
+    maxHeight: 220,
+    minHeight: 80,
+    marginBottom: theme.spacing.sm,
   },
   historyContent: {
     gap: 8,
@@ -321,26 +331,22 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   inputArea: {
-    gap: theme.spacing.sm,
-    paddingTop: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
+    gap: theme.spacing.xs,
+    paddingBottom: MAIN_TAB_BAR_HEIGHT + theme.spacing.sm,
   },
-  input: {
+  displayRow: {
     backgroundColor: theme.colors.surfaceElevated,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
     paddingVertical: 12,
-    fontSize: 22,
-    fontWeight: '800',
-    color: theme.colors.text,
-    textAlign: 'center',
+    alignItems: 'center',
   },
-  error: {
-    color: theme.colors.error,
-    fontSize: 12,
-    fontWeight: '600',
+  displayText: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: theme.colors.text,
+    minWidth: 60,
     textAlign: 'center',
   },
 });

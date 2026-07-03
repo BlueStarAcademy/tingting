@@ -7,6 +7,7 @@ import { SlimeBattleGame } from '@/components/minigames/SlimeBattleGame';
 import { TravelQuizGame } from '@/components/minigames/TravelQuizGame';
 import { UpDownGame } from '@/components/minigames/UpDownGame';
 import { DigitPopGame } from '@/components/minigames/DigitPopGame';
+import { MinigameStageGate } from '@/components/minigames/MinigameStageGate';
 import { PremiumButton } from '@/components/PremiumButton';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
@@ -27,6 +28,17 @@ const TITLE_KEYS: Record<GameId, string> = {
   code: 'minigames.code',
 };
 
+function GameContent({ id, startStage }: { id: GameId; startStage: number | undefined }) {
+  switch (id) {
+    case 'match': return <MatchPuzzleGame initialStage={startStage} />;
+    case 'quiz': return <TravelQuizGame initialStage={startStage} />;
+    case 'slime': return <SlimeBattleGame initialStage={startStage} />;
+    case 'memory': return <MemoryCardGame initialStage={startStage} />;
+    case 'guess': return <UpDownGame initialStage={startStage} />;
+    case 'code': return <DigitPopGame initialStage={startStage} />;
+  }
+}
+
 export default function MinigamePlayScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -45,12 +57,9 @@ export default function MinigamePlayScreen() {
 
   return (
     <AppScreen title={t(TITLE_KEYS[id])} showBack scroll={false} contentStyle={styles.content}>
-      {id === 'match' ? <MatchPuzzleGame /> : null}
-      {id === 'quiz' ? <TravelQuizGame /> : null}
-      {id === 'slime' ? <SlimeBattleGame /> : null}
-      {id === 'memory' ? <MemoryCardGame /> : null}
-      {id === 'guess' ? <UpDownGame /> : null}
-      {id === 'code' ? <DigitPopGame /> : null}
+      <MinigameStageGate gameId={id}>
+        {(startStage) => <GameContent id={id} startStage={startStage} />}
+      </MinigameStageGate>
     </AppScreen>
   );
 }

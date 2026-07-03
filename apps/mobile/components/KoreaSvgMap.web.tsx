@@ -66,6 +66,7 @@ function renderVisualRegion(
   visited: Set<string>,
   selectedCode: string | null | undefined,
   showLabels: boolean,
+  regionProgress?: Record<string, number>,
 ) {
   const region = REGION_BY_CODE[code];
   if (!region) return null;
@@ -76,7 +77,12 @@ function renderVisualRegion(
   const isVisited = visited.has(code);
   const text = labelText(region);
   const fontSize = labelFontSize(code, selectedCode);
-  const { w, h } = labelPillSize(text, fontSize);
+  const progressPct = regionProgress?.[code];
+  const hasProgress = progressPct !== undefined && progressPct > 0;
+  const progressText = hasProgress ? `${Math.round(progressPct)}%` : '';
+  const combinedText = hasProgress ? text : text;
+  const { w, h } = labelPillSize(combinedText, fontSize);
+  const pillH = hasProgress ? h + fontSize * 0.7 : h;
 
   return createElement(
     'g',
@@ -96,10 +102,10 @@ function renderVisualRegion(
           { pointerEvents: 'none' },
           createElement('rect', {
             x: label.cx - w / 2,
-            y: label.cy - h / 2 + 1,
+            y: label.cy - pillH / 2 + 1,
             width: w,
-            height: h,
-            rx: h / 2,
+            height: pillH,
+            rx: pillH / 2,
             fill: theme.colors.mapLabelBg,
             stroke: 'rgba(255,255,255,0.35)',
             strokeWidth: 0.6,
@@ -108,7 +114,7 @@ function renderVisualRegion(
             'text',
             {
               x: label.cx,
-              y: label.cy + fontSize * 0.34,
+              y: hasProgress ? label.cy + fontSize * 0.1 : label.cy + fontSize * 0.34,
               fill: theme.colors.mapLabel,
               fontSize,
               fontWeight: 700,
@@ -116,6 +122,20 @@ function renderVisualRegion(
             },
             text,
           ),
+          hasProgress
+            ? createElement(
+                'text',
+                {
+                  x: label.cx,
+                  y: label.cy + fontSize * 0.8,
+                  fill: theme.colors.primaryLight,
+                  fontSize: fontSize * 0.72,
+                  fontWeight: 800,
+                  textAnchor: 'middle',
+                },
+                progressText,
+              )
+            : null,
         )
       : null,
   );
@@ -131,6 +151,7 @@ interface Props {
   interactive?: boolean;
   frameless?: boolean;
   pins?: MapPin[];
+  regionProgress?: Record<string, number>;
 }
 
 export function KoreaSvgMap({
@@ -143,6 +164,7 @@ export function KoreaSvgMap({
   interactive = true,
   frameless = false,
   pins = [],
+  regionProgress,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const mapWidth = width ?? Math.min(windowWidth - 32, 360);
@@ -174,7 +196,7 @@ export function KoreaSvgMap({
           ),
           createElement('rect', { key: 'bg', x: '0', y: '0', width: '1000', height: '1000', fill: 'url(#mapSea)' }),
           ...getMapRegionsForRender()
-            .map((entry) => renderVisualRegion(entry, visited, selectedCode, showLabels))
+            .map((entry) => renderVisualRegion(entry, visited, selectedCode, showLabels, regionProgress))
             .filter(Boolean),
           ...pins.map((pin, i) => renderMapPin(pin, `pin-${i}`)),
           ...(interactive && onRegionPress

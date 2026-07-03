@@ -7,6 +7,7 @@ import {
   Alert,
   ScrollView,
   Pressable,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -24,8 +25,6 @@ import { getIntlTag } from '@/lib/i18n/locale';
 import {
   buildMonthGrid,
   dateKeyFromParts,
-  daysUntil,
-  formatDday,
   toDateKey,
 } from '@/lib/schedule-utils';
 import { theme } from '@/constants/theme';
@@ -34,7 +33,7 @@ interface Props {
   groupId: string;
   regionCode: string;
   schedules: GroupSchedule[];
-  onUpdated: () => void;
+  onUpdated: () => void | Promise<void>;
 }
 
 export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: Props) {
@@ -48,6 +47,8 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [selectedStickerId, setSelectedStickerId] = useState(DEFAULT_STICKER_ID);
+  const [deleteTarget, setDeleteTarget] = useState<GroupSchedule | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const ownedStickers: Record<string, number> = (profile as any)?.ownedStickers ?? {};
 
@@ -134,17 +135,25 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
   };
 
   const confirmDelete = (schedule: GroupSchedule) => {
-    Alert.alert(t('group.scheduleDelete'), t('group.scheduleDeleteConfirm'), [
-      { text: t('header.cancel'), style: 'cancel' },
-      {
-        text: t('group.scheduleDelete'),
-        style: 'destructive',
-        onPress: async () => {
-          await api.deleteGroupSchedule(schedule.id);
-          onUpdated();
-        },
-      },
-    ]);
+    setDeleteTarget(schedule);
+  };
+
+  const closeDeleteModal = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+  };
+
+  const runDelete = async (schedule: GroupSchedule) => {
+    setDeleting(true);
+    try {
+      await api.deleteGroupSchedule(schedule.id);
+      await onUpdated();
+      setDeleteTarget(null);
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const todayKey = toDateKey(today);
@@ -186,7 +195,6 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
             const isSelected = day === selectedDay;
             const isToday = dateKey === todayKey;
             const stickerEmoji = getFirstStickerForDate(dateKey);
-            const dday = daysUntil(dateKey);
             return (
               <Pressable
                 key={dateKey}
@@ -206,9 +214,6 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
                 {stickerEmoji ? (
                   <Text style={styles.stickerEmoji}>{stickerEmoji}</Text>
                 ) : null}
-                {stickerEmoji && isSelected && dday >= 0 ? (
-                  <Text style={styles.miniDday}>{formatDday(dday)}</Text>
-                ) : null}
               </Pressable>
             );
           })}
@@ -227,7 +232,6 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
         <Text style={styles.empty}>{t('group.scheduleEmptyDay')}</Text>
       ) : (
         daySchedules.map((schedule) => {
-          const dday = daysUntil(schedule.date);
           const emoji = getStickerById(schedule.stickerId ?? DEFAULT_STICKER_ID)?.emoji ?? '❤️';
           return (
             <View key={schedule.id} style={styles.card}>
@@ -237,9 +241,6 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
                 {schedule.note ? <Text style={styles.cardNote}>{schedule.note}</Text> : null}
               </View>
               <View style={styles.cardMeta}>
-                <Text style={[styles.dday, dday === 0 && styles.ddayToday]}>
-                  {dday === 0 ? t('group.ddayToday') : formatDday(dday)}
-                </Text>
                 <Pressable onPress={() => confirmDelete(schedule)} hitSlop={8}>
                   <Ionicons name="trash-outline" size={18} color={theme.colors.textMuted} />
                 </Pressable>
@@ -268,9 +269,11 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
                   key={sticker.id}
                   style={[styles.stickerItem, isActive && styles.stickerItemActive]}
                   onPress={() => setSelectedStickerId(sticker.id)}
+                  accessible={false}
+                  {...(Platform.OS === 'web' ? { focusable: false, tabIndex: -1 } as any : {})}
                 >
-                  <Text style={styles.stickerItemEmoji}>{sticker.emoji}</Text>
-                  <Text style={[styles.stickerCount, count === 0 && styles.stickerCountZero]}>
+                  <Text style={[styles.stickerItemEmoji, Platform.OS === 'web' && { userSelect: 'none' } as any]}>{sticker.emoji}</Text>
+                  <Text style={[styles.stickerCount, count === 0 && styles.stickerCountZero, Platform.OS === 'web' && { userSelect: 'none' } as any]}>
                     {sticker.free ? '∞' : count}
                   </Text>
                 </Pressable>
@@ -301,6 +304,34 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
           </View>
         </ScrollView>
       </AppModal>
+
+      <AppModal
+        visible={deleteTarget != null}
+        animationType="fade"
+        onRequestClose={closeDeleteModal}
+        variant="center"
+      >
+        <View style={styles.deleteModal}>
+          <Text style={styles.deleteTitle}>{t('group.scheduleDelete')}</Text>
+          <Text style={styles.deleteMessage}>{t('group.scheduleDeleteConfirm')}</Text>
+          <View style={styles.modalActions}>
+            <PremiumButton
+              title={t('header.cancel')}
+              variant="outline"
+              onPress={closeDeleteModal}
+              disabled={deleting}
+              style={styles.modalActionBtn}
+            />
+            <PremiumButton
+              title={t('group.scheduleDelete')}
+              variant="danger"
+              onPress={() => deleteTarget && void runDelete(deleteTarget)}
+              loading={deleting}
+              style={styles.modalActionBtn}
+            />
+          </View>
+        </View>
+      </AppModal>
     </View>
   );
 }
@@ -327,7 +358,7 @@ const styles = StyleSheet.create({
   weekSat: { color: theme.colors.primaryLight },
   dayCell: {
     flex: 1,
-    aspectRatio: 1,
+    paddingVertical: 6,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: theme.radius.sm,
@@ -339,7 +370,6 @@ const styles = StyleSheet.create({
   dayNum: { color: theme.colors.text, fontSize: 12, fontWeight: '600' },
   dayNumSelected: { color: theme.colors.primaryDark, fontWeight: '800' },
   stickerEmoji: { fontSize: 12 },
-  miniDday: { fontSize: 7, color: theme.colors.primaryLight, fontWeight: '700' },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,8 +396,6 @@ const styles = StyleSheet.create({
   cardTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
   cardNote: { color: theme.colors.textMuted, fontSize: 12 },
   cardMeta: { alignItems: 'flex-end', gap: 8 },
-  dday: { color: theme.colors.primaryLight, fontSize: 13, fontWeight: '800' },
-  ddayToday: { color: theme.colors.success },
   modalContent: { gap: theme.spacing.sm, padding: theme.spacing.md },
   modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800' },
   modalDate: { color: theme.colors.textMuted, fontSize: 14 },
@@ -384,6 +412,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
     backgroundColor: theme.colors.surface,
+    ...Platform.select({
+      web: { outlineStyle: 'none', cursor: 'pointer' } as any,
+    }),
   },
   stickerItemActive: {
     borderColor: theme.colors.primaryLight,
@@ -405,4 +436,7 @@ const styles = StyleSheet.create({
   noteInput: { minHeight: 72, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   modalActionBtn: { flex: 1 },
+  deleteModal: { gap: theme.spacing.md, padding: theme.spacing.lg },
+  deleteTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  deleteMessage: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
 });

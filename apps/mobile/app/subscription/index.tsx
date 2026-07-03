@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount } from '@/components/StarAmount';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import {
@@ -67,7 +68,7 @@ export default function SubscriptionScreen() {
           </View>
           {plan.perks.map((perk) => (
             <Text key={perk} style={styles.perk}>
-              ✦ {perk}
+              • {perk}
             </Text>
           ))}
           <PremiumButton title={t('subscription.comingSoon')} onPress={() => handlePlus(plan.id)} />
@@ -79,7 +80,7 @@ export default function SubscriptionScreen() {
       {starPacks.map((pack) => (
         <View key={pack.id} style={styles.starRow}>
           <View>
-            <Text style={styles.starName}>✦ {pack.stars.toLocaleString()} 스타</Text>
+            <StarAmount amount={pack.stars} suffix="스타" textStyle={styles.starName} />
             {pack.bonus ? <Text style={styles.bonus}>{pack.bonus} 보너스</Text> : null}
           </View>
           <PremiumButton title={pack.priceLabel} onPress={() => handleStars(pack.id)} variant="outline" />

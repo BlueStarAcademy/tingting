@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import type { Locale, LocalePreference } from '@/lib/i18n/translations';
-import { translate } from '@/lib/i18n/translations';
+import { translate, translateArray } from '@/lib/i18n/translations';
 import {
   loadLocalePreference,
   resolveLocale,
@@ -13,6 +13,7 @@ interface LocaleContextValue {
   preference: LocalePreference;
   setPreference: (pref: LocalePreference) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
+  tArray: (key: string) => string[];
   formatDate: (date: string | Date) => string;
   ready: boolean;
 }
@@ -22,6 +23,7 @@ const LocaleContext = createContext<LocaleContextValue>({
   preference: 'system',
   setPreference: async () => {},
   t: (key) => key,
+  tArray: () => [],
   formatDate: (d) => String(d),
   ready: false,
 });
@@ -51,10 +53,15 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     [locale]
   );
 
+  const tArray = useCallback(
+    (key: string) => translateArray(locale, key),
+    [locale]
+  );
+
   const formatDate = useCallback((date: string | Date) => formatDateFn(locale, date), [locale]);
 
   return (
-    <LocaleContext.Provider value={{ locale, preference, setPreference, t, formatDate, ready }}>
+    <LocaleContext.Provider value={{ locale, preference, setPreference, t, tArray, formatDate, ready }}>
       {children}
     </LocaleContext.Provider>
   );

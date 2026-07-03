@@ -19,6 +19,8 @@ import {
   mergeFeaturePass,
   FEATURE_PASS_TIERS,
   FREE_GROUP_MEMBER_COUNT,
+  GALLERY_SLOT_BATCH_SIZE,
+  getGallerySlotUnlockCost,
   getGroupMemberInviteCost,
   pickRecommendedPlaces,
   REGION_MAIN_STATIONS,
@@ -53,6 +55,14 @@ const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
 const KAKAO_APP_ID = process.env.KAKAO_APP_ID ? Number(process.env.KAKAO_APP_ID) : null;
+const REGION_PHOTO_REVIEW_QUEST_TARGET = 3;
+const REGION_PHOTO_REVIEW_QUEST_REWARD = 20;
+const REGION_PUBLIC_REVIEW_QUEST_TARGET = 1;
+const REGION_PUBLIC_REVIEW_QUEST_REWARD = 30;
+
+function buildRegionActivityQuestId(regionCode: string, kind: 'photo_reviews' | 'public_review'): string {
+  return `region-activity-${regionCode}-${kind}`;
+}
 
 if (!DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -71,6 +81,12 @@ interface AuthPayload {
 interface AuthedRequest extends Request {
   user?: AuthPayload;
 }
+
+type ActivityQuest = Quest & {
+  questKind: 'photo_reviews' | 'public_review';
+  targetCount: number;
+  progressCount: number;
+};
 
 const app = express();
 app.use(cors({ origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(','), credentials: true }));
@@ -163,6 +179,23 @@ function mapUser(row: Record<string, unknown>) {
     unlockedGroupSlots: role === 'admin' ? MAX_GROUP_SLOTS : undefined,
     displayNameChangeCount: Number(row.display_name_change_count ?? 0),
     emailVerified: Boolean(row.email_verified),
+    photoUri: row.photo_uri ?? undefined,
+    birthday: row.birthday ?? undefined,
+    profilePublic: row.profile_public !== false,
+  };
+}
+
+function mapPublicUser(row: Record<string, unknown>, viewerId?: string) {
+  const profile = mapUser(row);
+  if (viewerId === String(row.id) || profile.profilePublic !== false) return profile;
+  return {
+    ...profile,
+    email: '',
+    birthday: undefined,
+    mbti: undefined,
+    mbtiTestCompleted: false,
+    phone: undefined,
+    profilePublic: false,
   };
 }
 
@@ -470,6 +503,61 @@ app.post('/auth/onboarding', authMiddleware, async (req: AuthedRequest, res) => 
   }
 });
 
+app.patch('/profile', authMiddleware, async (req: AuthedRequest, res) => {
+  try {
+    const { photoUri, birthday, profilePublic } = req.body as {
+      photoUri?: unknown;
+      birthday?: unknown;
+      profilePublic?: unknown;
+    };
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'photoUri')) {
+      values.push(typeof photoUri === 'string' && photoUri.trim() ? photoUri.trim() : null);
+      updates.push(`photo_uri = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'birthday')) {
+      values.push(typeof birthday === 'string' && birthday.trim() ? birthday.trim() : null);
+      updates.push(`birthday = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'profilePublic')) {
+      if (typeof profilePublic !== 'boolean') {
+        res.status(400).json({ error: 'profilePublic must be boolean' });
+        return;
+      }
+      values.push(profilePublic);
+      updates.push(`profile_public = $${values.length}`);
+    }
+
+    if (updates.length === 0) {
+      const user = await getUserById(req.user!.userId);
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      res.json({ profile: mapUser(user) });
+      return;
+    }
+
+    values.push(req.user!.userId);
+    const { rows } = await pool.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING *`,
+      values,
+    );
+    if (!rows[0]) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    res.json({ profile: mapUser(rows[0]) });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Profile update failed' });
+  }
+});
+
 app.post('/profile/display-name', authMiddleware, async (req: AuthedRequest, res) => {
   try {
     const { displayName } = req.body as { displayName?: string };
@@ -514,6 +602,15 @@ app.post('/profile/display-name', authMiddleware, async (req: AuthedRequest, res
   }
 });
 
+app.get('/users/:userId/profile', authMiddleware, async (req: AuthedRequest, res) => {
+  const user = await getUserById(req.params.userId);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  res.json(mapPublicUser(user, req.user!.userId));
+});
+
 // --- Dashboard ---
 
 app.get('/dashboard', authMiddleware, async (req: AuthedRequest, res) => {
@@ -542,14 +639,7 @@ app.get('/dashboard', authMiddleware, async (req: AuthedRequest, res) => {
 
   res.json({
     profile: mapUser(user),
-    groups: groupsResult.rows.map((g) => ({
-      id: g.id,
-      name: g.name,
-      description: g.description,
-      ownerId: g.owner_id,
-      memberIds: g.member_ids ?? [],
-      createdAt: g.created_at,
-    })),
+    groups: groupsResult.rows.map(mapGroupRow),
     recentVisits: visitsResult.rows.map(mapVisit),
     regionProgress: REGIONS.map((r) => ({ code: r.code, visited: visitedSet.has(r.code) })),
     totalRegions: REGIONS.length,
@@ -567,10 +657,7 @@ app.get('/groups', authMiddleware, async (req: AuthedRequest, res) => {
      GROUP BY g.id ORDER BY g.created_at DESC`,
     [req.user!.userId]
   );
-  res.json(rows.map((g) => ({
-    id: g.id, name: g.name, description: g.description, ownerId: g.owner_id,
-    memberIds: g.member_ids ?? [], createdAt: g.created_at,
-  })));
+  res.json(rows.map(mapGroupRow));
 });
 
 app.post('/groups', authMiddleware, async (req: AuthedRequest, res) => {
@@ -605,7 +692,7 @@ app.post('/groups', authMiddleware, async (req: AuthedRequest, res) => {
     await client.query('INSERT INTO group_members (group_id, user_id) VALUES ($1,$2)', [group.id, userId]);
     await client.query('COMMIT');
     res.json({
-      group: { id: group.id, name: group.name, description: group.description, ownerId: group.owner_id, memberIds: [userId], createdAt: group.created_at },
+      group: mapGroupRow({ ...group, member_ids: [userId] }),
       cost,
     });
   } catch (e) {
@@ -627,7 +714,106 @@ app.get('/groups/:id', authMiddleware, async (req: AuthedRequest, res) => {
     res.status(404).json({ error: 'Group not found' });
     return;
   }
-  res.json({ id: g.id, name: g.name, description: g.description, ownerId: g.owner_id, memberIds: g.member_ids ?? [], createdAt: g.created_at });
+  res.json(mapGroupRow(g));
+});
+
+app.post('/groups/:id/shared-gallery-uploader', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  const { memberId } = req.body as { memberId?: string | null };
+  const groupResult = await pool.query('SELECT * FROM groups WHERE id = $1', [groupId]);
+  const group = groupResult.rows[0];
+  if (!group) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  if (group.owner_id !== userId) {
+    res.status(403).json({ error: 'Only owner can delegate shared gallery uploads' });
+    return;
+  }
+
+  const nextUploaderId = typeof memberId === 'string' && memberId.trim() ? memberId.trim() : null;
+  if (nextUploaderId) {
+    if (nextUploaderId === group.owner_id) {
+      res.status(400).json({ error: 'Owner already has upload permission by default' });
+      return;
+    }
+    const memberResult = await pool.query(
+      'SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2',
+      [groupId, nextUploaderId],
+    );
+    if (!memberResult.rows[0]) {
+      res.status(400).json({ error: 'Upload permission can only be delegated to a group member' });
+      return;
+    }
+  }
+
+  await pool.query('UPDATE groups SET shared_gallery_uploader_id = $1 WHERE id = $2', [nextUploaderId, groupId]);
+  const { rows } = await pool.query(
+    `SELECT g.*, array_agg(gm.user_id) AS member_ids
+     FROM groups g
+     JOIN group_members gm ON gm.group_id = g.id
+     WHERE g.id = $1
+     GROUP BY g.id`,
+    [groupId],
+  );
+  res.json(mapGroupRow(rows[0]));
+});
+
+app.post('/groups/:id/unlock-gallery-slots', authMiddleware, async (req: AuthedRequest, res) => {
+  const groupId = req.params.id;
+  const userId = req.user!.userId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const groupResult = await client.query('SELECT * FROM groups WHERE id = $1 FOR UPDATE', [groupId]);
+    const group = groupResult.rows[0];
+    if (!group) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'Group not found' });
+      return;
+    }
+    if (group.owner_id !== userId) {
+      await client.query('ROLLBACK');
+      res.status(403).json({ error: 'Only owner can unlock gallery slots' });
+      return;
+    }
+    const isAdmin = await userIsAdmin(userId);
+    const cost = isAdmin ? 0 : getGallerySlotUnlockCost();
+    const userResult = await client.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    if (!isAdmin && Number(userResult.rows[0]?.stars ?? 0) < cost) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'Insufficient stars' });
+      return;
+    }
+    if (cost > 0) {
+      await client.query('UPDATE users SET stars = stars - $1 WHERE id = $2', [cost, userId]);
+      await client.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+        userId,
+        -cost,
+        'unlock_gallery_slots',
+      ]);
+    }
+    await client.query(
+      'UPDATE groups SET unlocked_gallery_slots = COALESCE(unlocked_gallery_slots, 0) + $1 WHERE id = $2',
+      [GALLERY_SLOT_BATCH_SIZE, groupId],
+    );
+    const { rows } = await client.query(
+      `SELECT g.*, array_agg(gm.user_id) AS member_ids
+       FROM groups g
+       JOIN group_members gm ON gm.group_id = g.id
+       WHERE g.id = $1
+       GROUP BY g.id`,
+      [groupId],
+    );
+    await client.query('COMMIT');
+    res.json({ group: mapGroupRow(rows[0]), cost });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Unlock gallery slots failed' });
+  } finally {
+    client.release();
+  }
 });
 
 async function isGroupMember(groupId: string, userId: string): Promise<boolean> {
@@ -735,7 +921,11 @@ app.get('/groups/:id/quests', authMiddleware, async (req: AuthedRequest, res) =>
     [groupId]
   );
   const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
-  res.json(buildGroupStationQuests(visitedRegions, completedIds));
+  const activityCounts = await getGroupRegionReviewCounts(groupId);
+  res.json([
+    ...buildGroupStationQuests(visitedRegions, completedIds),
+    ...buildGroupActivityQuests(activityCounts, completedIds),
+  ]);
 });
 
 app.post('/groups/:id/quests/:questId/complete', authMiddleware, async (req: AuthedRequest, res) => {
@@ -821,7 +1011,30 @@ app.get('/places/:id', async (req, res) => {
 });
 
 app.get('/feed/experiences', async (_req, res) => {
-  res.json(SEED_PUBLIC_EXPERIENCE_POSTS);
+  const { rows } = await pool.query(
+    `SELECT v.*, u.display_name, u.photo_uri AS user_photo_uri, p.name AS place_name, p.region_code
+     FROM visits v
+     JOIN users u ON u.id = v.user_id
+     JOIN places p ON p.id = v.place_id
+     WHERE v.is_public = true
+       AND COALESCE(v.photo_uri, v.edited_photo_uri) IS NOT NULL
+       AND COALESCE(NULLIF(TRIM(v.note), ''), '') <> ''
+     ORDER BY v.visited_at DESC
+     LIMIT 100`,
+  );
+  const fromVisits = rows.map((row) => ({
+    id: String(row.id),
+    userId: String(row.user_id),
+    displayName: String(row.display_name ?? '여행러'),
+    userPhotoUri: row.user_photo_uri ? String(row.user_photo_uri) : undefined,
+    placeId: String(row.place_id),
+    placeName: String(row.place_name ?? row.place_id),
+    regionCode: String(row.region_code ?? ''),
+    photoUri: String(row.edited_photo_uri ?? row.photo_uri),
+    note: row.note ? String(row.note) : undefined,
+    visitedAt: row.visited_at as string,
+  }));
+  res.json([...fromVisits, ...SEED_PUBLIC_EXPERIENCE_POSTS]);
 });
 
 // --- Visits ---
@@ -832,7 +1045,7 @@ app.get('/visits', authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 app.post('/visits', authMiddleware, async (req: AuthedRequest, res) => {
-  const { placeId, photoUri, groupId, note, lat, lng } = req.body as Record<string, unknown>;
+  const { placeId, photoUri, groupId, note, lat, lng, isPublic, isSharedGallery } = req.body as Record<string, unknown>;
   if (!placeId || !photoUri) {
     res.status(400).json({ error: 'placeId and photoUri required' });
     return;
@@ -844,10 +1057,27 @@ app.post('/visits', authMiddleware, async (req: AuthedRequest, res) => {
     return;
   }
   const userId = req.user!.userId;
+  const groupIdValue = typeof groupId === 'string' && groupId.trim() ? groupId.trim() : null;
+  if (groupIdValue && !(await isGroupMember(groupIdValue, userId))) {
+    res.status(404).json({ error: 'Group not found' });
+    return;
+  }
+  if (groupIdValue && isSharedGallery === true) {
+    const groupResult = await pool.query('SELECT owner_id, shared_gallery_uploader_id FROM groups WHERE id = $1', [
+      groupIdValue,
+    ]);
+    const group = groupResult.rows[0];
+    const allowedUploaderId = group?.shared_gallery_uploader_id ?? group?.owner_id;
+    if (allowedUploaderId !== userId) {
+      res.status(403).json({ error: 'No shared gallery upload permission' });
+      return;
+    }
+  }
+  const noteValue = typeof note === 'string' && note.trim() ? note.trim() : null;
   const visitResult = await pool.query(
-    `INSERT INTO visits (user_id, place_id, group_id, photo_uri, note, lat, lng)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [userId, placeId, groupId ?? null, photoUri, note ?? null, lat ?? null, lng ?? null]
+    `INSERT INTO visits (user_id, place_id, group_id, photo_uri, note, lat, lng, is_public, is_shared_gallery)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [userId, placeId, groupIdValue, photoUri, noteValue, lat ?? null, lng ?? null, isPublic === true, isSharedGallery === true]
   );
   await pool.query(
     `UPDATE users SET visited_regions = (
@@ -855,37 +1085,53 @@ app.post('/visits', authMiddleware, async (req: AuthedRequest, res) => {
      ) WHERE id = $2`,
     [[place.region_code], userId]
   );
+  if (groupIdValue) {
+    await awardCompletedActivityQuests(groupIdValue, userId);
+  }
   res.json(mapVisit(visitResult.rows[0]));
 });
 
 app.patch('/visits/:id', authMiddleware, async (req: AuthedRequest, res) => {
-  const { editedPhotoUri, filter, note, photoUri } = req.body as Record<string, unknown>;
+  const { editedPhotoUri, filter, note, photoUri, isPublic } = req.body as Record<string, unknown>;
   const userId = req.user!.userId;
   const visitId = req.params.id;
+  const noteValue = typeof note === 'string' && note.trim() ? note.trim() : null;
+  const hasIsPublic = Object.prototype.hasOwnProperty.call(req.body, 'isPublic');
 
   if (photoUri) {
     const { rows } = await pool.query(
-      `UPDATE visits SET photo_uri = $1, edited_photo_uri = NULL, filter = NULL, note = COALESCE($2, note)
-       WHERE id = $3 AND user_id = $4 RETURNING *`,
-      [photoUri, note ?? null, visitId, userId]
+      `UPDATE visits SET
+         photo_uri = $1,
+         edited_photo_uri = NULL,
+         filter = NULL,
+         note = COALESCE($2, note),
+         is_public = CASE WHEN $3::boolean IS NULL THEN is_public ELSE $3::boolean END
+       WHERE id = $4 AND user_id = $5 RETURNING *`,
+      [photoUri, noteValue, hasIsPublic ? isPublic === true : null, visitId, userId]
     );
     if (!rows[0]) {
       res.status(404).json({ error: 'Visit not found' });
       return;
     }
+    if (rows[0].group_id) await awardCompletedActivityQuests(rows[0].group_id, userId);
     res.json(mapVisit(rows[0]));
     return;
   }
 
   const { rows } = await pool.query(
-    `UPDATE visits SET edited_photo_uri = COALESCE($1, edited_photo_uri), filter = COALESCE($2, filter), note = COALESCE($3, note)
-     WHERE id = $4 AND user_id = $5 RETURNING *`,
-    [editedPhotoUri ?? null, filter ?? null, note ?? null, visitId, userId]
+    `UPDATE visits SET
+       edited_photo_uri = COALESCE($1, edited_photo_uri),
+       filter = COALESCE($2, filter),
+       note = COALESCE($3, note),
+       is_public = CASE WHEN $4::boolean IS NULL THEN is_public ELSE $4::boolean END
+     WHERE id = $5 AND user_id = $6 RETURNING *`,
+    [editedPhotoUri ?? null, filter ?? null, noteValue, hasIsPublic ? isPublic === true : null, visitId, userId]
   );
   if (!rows[0]) {
     res.status(404).json({ error: 'Visit not found' });
     return;
   }
+  if (rows[0].group_id) await awardCompletedActivityQuests(rows[0].group_id, userId);
   res.json(mapVisit(rows[0]));
 });
 
@@ -1160,6 +1406,8 @@ function mapGroupRow(row: Record<string, unknown>) {
     ownerId: row.owner_id,
     memberIds: row.member_ids ?? [],
     createdAt: row.created_at,
+    unlockedGallerySlots: row.unlocked_gallery_slots ?? 0,
+    sharedGalleryUploaderId: row.shared_gallery_uploader_id ?? undefined,
   };
 }
 
@@ -1485,6 +1733,8 @@ function mapVisit(row: Record<string, unknown>) {
     lat: row.lat,
     lng: row.lng,
     filter: row.filter,
+    isPublic: row.is_public ?? false,
+    isSharedGallery: row.is_shared_gallery ?? false,
   };
 }
 
@@ -1536,6 +1786,119 @@ function buildGroupStationQuests(visitedRegionCodes: Set<string>, completedIds: 
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
     return (a.regionCode ?? '').localeCompare(b.regionCode ?? '');
   });
+}
+
+async function getGroupRegionReviewCounts(groupId: string) {
+  const { rows } = await pool.query(
+    `SELECT p.region_code,
+            COUNT(*) FILTER (
+              WHERE COALESCE(v.photo_uri, v.edited_photo_uri) IS NOT NULL
+                AND COALESCE(NULLIF(TRIM(v.note), ''), '') <> ''
+            )::int AS photo_reviews,
+            COUNT(*) FILTER (
+              WHERE v.is_public = true
+                AND COALESCE(v.photo_uri, v.edited_photo_uri) IS NOT NULL
+                AND COALESCE(NULLIF(TRIM(v.note), ''), '') <> ''
+            )::int AS public_reviews
+     FROM visits v
+     JOIN places p ON p.id = v.place_id
+     WHERE v.group_id = $1
+     GROUP BY p.region_code`,
+    [groupId],
+  );
+  const counts = new Map<string, { photoReviews: number; publicReviews: number }>();
+  for (const row of rows) {
+    counts.set(String(row.region_code), {
+      photoReviews: Number(row.photo_reviews ?? 0),
+      publicReviews: Number(row.public_reviews ?? 0),
+    });
+  }
+  return counts;
+}
+
+function buildGroupActivityQuests(
+  counts: Map<string, { photoReviews: number; publicReviews: number }>,
+  completedIds: Set<string>,
+): ActivityQuest[] {
+  return REGIONS.flatMap((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
+    if (!station) return [];
+    const regionCounts = counts.get(region.code) ?? { photoReviews: 0, publicReviews: 0 };
+    const photoQuestId = buildRegionActivityQuestId(region.code, 'photo_reviews');
+    const publicQuestId = buildRegionActivityQuestId(region.code, 'public_review');
+    return [
+      {
+        id: photoQuestId,
+        placeId: station.placeId,
+        title: `${region.name} 사진 후기 3개`,
+        description: `${region.name} 여행 사진과 후기를 3개 남기세요.`,
+        rewardStars: REGION_PHOTO_REVIEW_QUEST_REWARD,
+        targetLat: station.lat,
+        targetLng: station.lng,
+        radiusMeters: 0,
+        regionCode: region.code,
+        questKind: 'photo_reviews' as const,
+        targetCount: REGION_PHOTO_REVIEW_QUEST_TARGET,
+        progressCount: Math.min(regionCounts.photoReviews, REGION_PHOTO_REVIEW_QUEST_TARGET),
+        completed: completedIds.has(photoQuestId),
+      },
+      {
+        id: publicQuestId,
+        placeId: station.placeId,
+        title: `${region.name} 공개 후기`,
+        description: `${region.name} 여행 후기를 공개로 1개 올리세요.`,
+        rewardStars: REGION_PUBLIC_REVIEW_QUEST_REWARD,
+        targetLat: station.lat,
+        targetLng: station.lng,
+        radiusMeters: 0,
+        regionCode: region.code,
+        questKind: 'public_review' as const,
+        targetCount: REGION_PUBLIC_REVIEW_QUEST_TARGET,
+        progressCount: Math.min(regionCounts.publicReviews, REGION_PUBLIC_REVIEW_QUEST_TARGET),
+        completed: completedIds.has(publicQuestId),
+      },
+    ];
+  });
+}
+
+async function awardCompletedActivityQuests(groupId: string, userId: string) {
+  const counts = await getGroupRegionReviewCounts(groupId);
+  const completedResult = await pool.query(
+    'SELECT quest_id FROM group_quest_completions WHERE group_id = $1',
+    [groupId],
+  );
+  const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
+  const quests = buildGroupActivityQuests(counts, completedIds);
+  const newlyCompleted = quests.filter(
+    (quest) => !quest.completed && (quest.progressCount ?? 0) >= (quest.targetCount ?? 1),
+  );
+  if (newlyCompleted.length === 0) return;
+
+  const totalReward = newlyCompleted.reduce((sum, quest) => sum + quest.rewardStars, 0);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const quest of newlyCompleted) {
+      await client.query(
+        `INSERT INTO group_quest_completions (group_id, quest_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [groupId, quest.id],
+      );
+    }
+    await client.query('UPDATE users SET stars = stars + $1 WHERE id = $2', [totalReward, userId]);
+    await client.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+      userId,
+      totalReward,
+      `group_activity_quests:${groupId}`,
+    ]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 async function main() {

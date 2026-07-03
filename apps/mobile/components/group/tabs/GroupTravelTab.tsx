@@ -23,7 +23,7 @@ import { AppModal } from '@/components/AppModal';
 import { useBottomSheetLayout } from '@/hooks/useBottomSheetLayout';
 import { useLocale } from '@/hooks/useLocale';
 import { prefersEnglishContent } from '@/lib/i18n/locales';
-import { daysUntil, findNearestUpcomingSchedule, formatDday } from '@/lib/schedule-utils';
+import { getGroupRegionReviewProgress } from '@/lib/travel-progress';
 import { theme } from '@/constants/theme';
 
 interface Props {
@@ -68,10 +68,14 @@ export function GroupTravelTab({
     [selectedRegionCode]
   );
 
-  const upcomingSchedule = useMemo(
-    () => findNearestUpcomingSchedule(schedules),
-    [schedules]
-  );
+  const regionProgressMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const r of REGIONS) {
+      const progress = getGroupRegionReviewProgress(r.code, places, visits);
+      map[r.code] = Math.round(progress.ratio * 100);
+    }
+    return map;
+  }, [places, visits]);
 
   const onRegionPress = (region: Region) => {
     setFocusedPlace(null);
@@ -98,6 +102,7 @@ export function GroupTravelTab({
             onRegionPress={onRegionPress}
             focusPlace={focusedPlace}
             onPinPress={() => setPreviewOpen(true)}
+            regionProgress={regionProgressMap}
           />
         </View>
       ) : null}
@@ -117,29 +122,12 @@ export function GroupTravelTab({
       ) : null}
 
       <View style={styles.panel}>
-        {upcomingSchedule && segment === 'places' ? (
-          <Pressable
-            style={styles.ddayBanner}
-            onPress={() => {
-              onSelectedRegionCodeChange(upcomingSchedule.regionCode);
-            }}
-          >
-            <Ionicons name="calendar" size={16} color={theme.colors.primaryLight} />
-            <Text style={styles.ddayText} numberOfLines={1}>
-              {t('group.ddayBanner', {
-                dday: formatDday(daysUntil(upcomingSchedule.date)),
-                title: upcomingSchedule.title,
-              })}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
-          </Pressable>
-        ) : null}
-
         {segment === 'gallery' ? (
           <GroupGalleryTab
             group={group}
             isOwner={isOwner}
             regionCode={selectedRegionCode}
+            quests={quests}
             visits={visits}
             places={places}
             onUpdated={onUpdated}
@@ -169,6 +157,8 @@ export function GroupTravelTab({
                 groupId={group.id}
                 regionCode={selectedRegionCode}
                 quests={quests}
+                visits={visits}
+                places={places}
                 onUpdated={onUpdated}
               />
             ) : null}
@@ -231,7 +221,7 @@ export function GroupTravelTab({
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
   mapSection: { flexGrow: 0, flexShrink: 0 },
-  panel: { flex: 1, minHeight: 0, gap: theme.spacing.sm, paddingTop: theme.spacing.xs },
+  panel: { flex: 1, minHeight: 0, gap: theme.spacing.sm },
   previewSheet: {
     position: 'absolute',
     left: 0,
@@ -248,18 +238,6 @@ const styles = StyleSheet.create({
       default: { boxShadow: '0 -4px 20px rgba(15,23,42,0.12)' } as object,
     }),
   },
-  ddayBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    backgroundColor: theme.colors.tint.soft,
-    borderRadius: theme.radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.tint.border,
-  },
-  ddayText: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '700' },
   contentScroll: { flex: 1, minHeight: 0 },
   content: { paddingBottom: theme.spacing.lg, gap: theme.spacing.sm },
   modalSheet: {

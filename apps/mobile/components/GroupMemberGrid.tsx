@@ -11,6 +11,7 @@ import { formatPhone } from '@/lib/phone';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
 import { InviteMemberModal } from '@/components/InviteMemberModal';
+import { StarAmount } from '@/components/StarAmount';
 import { theme } from '@/constants/theme';
 
 const MAX_ROWS = 3;
@@ -131,7 +132,7 @@ export function GroupMemberGrid({ group, isOwner, onUpdated }: Props) {
         {showPurchaseSlot ? (
           <Pressable style={[styles.card, styles.lockedCard]} onPress={confirmUnlockSlot}>
             <Ionicons name="lock-closed" size={24} color={theme.colors.textMuted} />
-            <Text style={styles.inviteCost}>✦ {nextUnlockCost}</Text>
+            <StarAmount amount={nextUnlockCost} compact textStyle={styles.inviteCost} />
             <Text style={styles.emptyLabel}>{t('profile.unlockSlot')}</Text>
           </Pressable>
         ) : null}

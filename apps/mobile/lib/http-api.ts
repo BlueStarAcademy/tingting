@@ -284,6 +284,13 @@ export const httpApi = {
     return request<Group>(`/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(patch) });
   },
 
+  async setGroupSharedGalleryUploader(groupId: string, memberId: string | null): Promise<Group> {
+    return request<Group>(`/groups/${groupId}/shared-gallery-uploader`, {
+      method: 'POST',
+      body: JSON.stringify({ memberId }),
+    });
+  },
+
   async removeGroupMember(groupId: string, memberId: string): Promise<Group> {
     return request<Group>(`/groups/${groupId}/members/${memberId}`, { method: 'DELETE' });
   },
@@ -362,6 +369,8 @@ export const httpApi = {
     photoUri: string;
     groupId?: string;
     note?: string;
+    isPublic?: boolean;
+    isSharedGallery?: boolean;
     lat?: number;
     lng?: number;
   }): Promise<Visit> {
@@ -376,6 +385,7 @@ export const httpApi = {
         filter: patch.filter,
         note: patch.note,
         photoUri: patch.photoUri,
+        isPublic: patch.isPublic,
       }),
     });
   },

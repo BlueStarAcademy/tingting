@@ -17,6 +17,7 @@ interface Props {
   onPinPress?: () => void;
   /** 여행 탭 등 공간이 제한된 화면 */
   compact?: boolean;
+  regionProgress?: Record<string, number>;
 }
 
 export function KoreaMapPicker({
@@ -26,6 +27,7 @@ export function KoreaMapPicker({
   focusPlace,
   onPinPress,
   compact = false,
+  regionProgress,
 }: Props) {
   const { t } = useLocale();
   const visitedCount = visitedRegionCodes.length;
@@ -48,6 +50,7 @@ export function KoreaMapPicker({
         focusPlace={focusPlace}
         focusZoom={6}
         onPinPress={onPinPress}
+        regionProgress={regionProgress}
       />
       {!compact ? (
         <View style={styles.legend}>

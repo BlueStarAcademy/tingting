@@ -2,6 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
+import { StarAmount } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
@@ -45,7 +46,7 @@ export function GroupSlotPurchaseModal({
 
         <View style={styles.costBox}>
           <Text style={styles.costLabel}>{t('group.starCostLabel')}</Text>
-          <Text style={styles.costValue}>✦ {cost.toLocaleString()}</Text>
+          <StarAmount amount={cost} iconSize={24} textStyle={styles.costValue} />
         </View>
 
         <View style={styles.actions}>
@@ -105,7 +106,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   costValue: {
-    color: theme.colors.star,
     fontSize: 28,
     fontWeight: '900',
   },

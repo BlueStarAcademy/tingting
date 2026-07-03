@@ -42,6 +42,7 @@ type Props = {
   focusZoom?: number;
   /** Fired when the user taps the place pin on the map */
   onPinPress?: () => void;
+  regionProgress?: Record<string, number>;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -68,6 +69,7 @@ export function ScrollableKoreaMap({
   focusPlace,
   focusZoom = 5.5,
   onPinPress,
+  regionProgress,
 }: Props) {
   const { t } = useLocale();
   const { height: windowHeight } = useWindowDimensions();
@@ -279,6 +281,7 @@ export function ScrollableKoreaMap({
             height={mapSize}
             frameless
             pins={pins}
+            regionProgress={regionProgress}
           />
         </View>
       </View>

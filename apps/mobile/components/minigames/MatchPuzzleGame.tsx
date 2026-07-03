@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { ComboBanner } from '@/components/minigames/ComboBanner';
+import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
+import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
 import {
@@ -221,11 +223,12 @@ function TimeProgressBar({ timeLeft, totalTime }: { timeLeft: number; totalTime:
   );
 }
 
-export function MatchPuzzleGame() {
-  const { t } = useLocale();
+export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}) {
+  const { t, tArray } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('match');
-  const [activeStage, setActiveStage] = useState(1);
+  const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const stageConfig = useMemo(() => getMatchStageConfig(activeStage), [activeStage]);
+  const [showHelp, setShowHelp] = useState(false);
 
   const [grid, setGrid] = useState<number[]>(() =>
     createMatchGrid(MATCH_ROWS, MATCH_COLS, stageConfig.tileTypeCount),
@@ -255,9 +258,9 @@ export function MatchPuzzleGame() {
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
-    setActiveStage(currentStage);
+    if (!initialStage) setActiveStage(currentStage);
     initialStageSynced.current = true;
-  }, [currentStage, loading]);
+  }, [currentStage, initialStage, loading]);
 
   const restart = useCallback(
     (stage = activeStage) => {
@@ -524,6 +527,13 @@ export function MatchPuzzleGame() {
           <Text style={styles.statValueScore}>{displayScore}<Text style={styles.statTarget}>/{stageConfig.targetScore}</Text></Text>
         </View>
       </View>
+      <View style={styles.helpRow}>
+        <MinigameHelpButton
+          accessibilityLabel={t('minigames.howToPlay')}
+          label={t('minigames.howToPlay')}
+          onPress={() => setShowHelp(true)}
+        />
+      </View>
 
       {/* Time bar */}
       <TimeProgressBar timeLeft={timeLeft} totalTime={stageConfig.timeSeconds} />
@@ -577,6 +587,12 @@ export function MatchPuzzleGame() {
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}
       />
+      <HowToPlayModal
+        visible={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('minigames.howToPlay')}
+        rules={tArray('minigames.rulesMatch')}
+      />
     </View>
   );
 }
@@ -586,6 +602,13 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
+    width: '100%',
+  },
+  helpRow: {
+    alignItems: 'flex-end',
+    marginTop: -4,
+    marginBottom: 2,
   },
   statChip: {
     flex: 1,

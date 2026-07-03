@@ -26,6 +26,7 @@ export function GameStatsBar({ stats }: Props) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
+    width: '100%',
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.md,
   },

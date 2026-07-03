@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { StarAmount } from '@/components/StarAmount';
 import type { Group, GroupMember, UserProfile } from '@tingting/shared';
 import {
   FREE_GROUP_MEMBER_COUNT,
@@ -30,15 +31,15 @@ import { theme } from '@/constants/theme';
 const FULL_COLUMNS = 3;
 /** 4번째 슬롯이 살짝 보여 가로 스크롤 가능함을 암시 */
 const PEEK_RATIO = 0.16;
-const CARD_GAP = theme.spacing.sm;
+const CARD_GAP = theme.spacing.xs;
 const SECTION_HORIZONTAL_PADDING = theme.spacing.lg * 2;
-const CARD_MIN_HEIGHT = 120;
+const CARD_MIN_HEIGHT = 104;
 
 interface Props {
   group: Group;
   isOwner: boolean;
   currentUserId?: string;
-  onUpdated: () => void;
+  onUpdated: () => void | Promise<void>;
   onLeft: () => void;
 }
 
@@ -112,17 +113,47 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const members = useMemo(() => {
-    const raw = group.members ?? [];
-    return [...raw].sort((a, b) => {
-      if (a.isOwner && !b.isOwner) return -1;
-      if (!a.isOwner && b.isOwner) return 1;
-      return 0;
-    });
-  }, [group.members]);
+    const memberIds = group.memberIds ?? [];
+    const explicitMembers = group.members ?? [];
+    const memberById = new Map(explicitMembers.map((member) => [member.id, member]));
+    const fallbackMember = (id: string): GroupMember => {
+      const isSelf = id === currentUserId;
+      const isOwnerMember = id === group.ownerId;
+      return {
+        id,
+        displayName: isSelf ? (authProfile?.displayName ?? '나') : isOwnerMember ? '방장' : '멤버',
+        phone: isSelf ? authProfile?.phone : undefined,
+        photoUri: isSelf ? authProfile?.photoUri : undefined,
+        isOwner: isOwnerMember,
+      };
+    };
+    const raw =
+      memberIds.length > 0
+        ? [
+            ...memberIds.map((id) => memberById.get(id) ?? fallbackMember(id)),
+            ...explicitMembers.filter((member) => !memberIds.includes(member.id)),
+          ]
+        : explicitMembers;
+    return raw
+      .map((member, index) => ({ member, index }))
+      .sort((a, b) => {
+        if (a.member.id === currentUserId && b.member.id !== currentUserId) return -1;
+        if (a.member.id !== currentUserId && b.member.id === currentUserId) return 1;
+        if (a.member.isOwner && !b.member.isOwner) return -1;
+        if (!a.member.isOwner && b.member.isOwner) return 1;
+        return a.index - b.index;
+      })
+      .map(({ member }) => member);
+  }, [authProfile, currentUserId, group.memberIds, group.members, group.ownerId]);
   const unlocked = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
   const canInvite = isOwner && members.length < unlocked;
   const nextUnlockCost = getGroupMemberSlotUnlockCost(unlocked);
   const showPurchaseSlot = isOwner && unlocked < MAX_GROUP_MEMBER_SLOTS;
+
+  const handleUnlockPress = () => {
+    if (purchaseLoading || !showPurchaseSlot) return;
+    setPurchaseOpen(true);
+  };
 
   const cardWidth = useMemo(() => {
     const visibleWidth = contentWidth - SECTION_HORIZONTAL_PADDING;
@@ -204,10 +235,6 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
     ]);
   };
 
-  const confirmUnlockSlot = () => {
-    setPurchaseOpen(true);
-  };
-
   const closePurchaseModal = () => {
     if (purchaseLoading) return;
     setPurchaseOpen(false);
@@ -217,7 +244,7 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
     setPurchaseLoading(true);
     try {
       await api.unlockGroupMemberSlot(group.id);
-      onUpdated();
+      await onUpdated();
       setPurchaseOpen(false);
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
@@ -267,11 +294,15 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
         <Pressable
           key={`purchase-${slotIndex}`}
           style={[styles.card, styles.lockedCard, { width: cardWidth }]}
-          onPress={confirmUnlockSlot}
+          onPress={handleUnlockPress}
+          disabled={purchaseLoading}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.unlockSlot')}
+          hitSlop={6}
         >
           <Ionicons name="lock-closed" size={22} color={theme.colors.textMuted} />
           {nextUnlockCost > 0 ? (
-            <Text style={styles.price}>✦ {nextUnlockCost}</Text>
+            <StarAmount amount={nextUnlockCost} compact textStyle={styles.price} />
           ) : (
             <Text style={styles.inviteFree}>{t('common.free')}</Text>
           )}
@@ -337,8 +368,8 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: theme.spacing.md },
-  title: { color: theme.colors.text, fontSize: 18, fontWeight: '700' },
+  wrap: { gap: theme.spacing.xs },
+  title: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
   scrollViewport: {
     alignSelf: 'center',
     overflow: 'hidden',
@@ -346,54 +377,54 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: CARD_GAP,
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
   card: {
     height: CARD_MIN_HEIGHT,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
-    padding: theme.spacing.sm,
+    padding: theme.spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 2,
     borderWidth: 1,
     borderColor: theme.colors.tint.border,
   },
-  avatar: { width: 40, height: 40, borderRadius: 20 },
+  avatar: { width: 34, height: 34, borderRadius: 17 },
   avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: theme.colors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  name: { color: theme.colors.text, fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  phone: { color: theme.colors.textMuted, fontSize: 10, textAlign: 'center' },
+  name: { color: theme.colors.text, fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  phone: { color: theme.colors.textMuted, fontSize: 9, textAlign: 'center' },
   badge: {
     color: theme.colors.primaryLight,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
     backgroundColor: theme.colors.tint.medium,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: theme.radius.full,
   },
-  kickBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  kickText: { color: '#f87171', fontSize: 10, fontWeight: '600' },
+  kickBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 1 },
+  kickText: { color: '#f87171', fontSize: 9, fontWeight: '600' },
   inviteCard: {
     borderStyle: 'dashed',
     borderColor: theme.colors.primaryLight,
     backgroundColor: theme.colors.tint.soft,
   },
-  inviteLabel: { color: theme.colors.primaryLight, fontSize: 12, fontWeight: '600' },
-  inviteFree: { color: theme.colors.success, fontSize: 11, fontWeight: '700' },
+  inviteLabel: { color: theme.colors.primaryLight, fontSize: 11, fontWeight: '600' },
+  inviteFree: { color: theme.colors.success, fontSize: 10, fontWeight: '700' },
   emptyCard: { opacity: 0.45, borderStyle: 'dashed' },
-  emptyLabel: { color: theme.colors.textMuted, fontSize: 10, textAlign: 'center' },
+  emptyLabel: { color: theme.colors.textMuted, fontSize: 9, textAlign: 'center' },
   lockedCard: {
     borderStyle: 'dashed',
     borderColor: theme.colors.textMuted,
   },
-  price: { color: theme.colors.star, fontSize: 12, fontWeight: '800' },
-  lockedLabel: { color: theme.colors.textMuted, fontSize: 10, textAlign: 'center' },
+  price: { color: theme.colors.star, fontSize: 11, fontWeight: '800' },
+  lockedLabel: { color: theme.colors.textMuted, fontSize: 9, textAlign: 'center' },
 });

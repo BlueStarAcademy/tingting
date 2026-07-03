@@ -7,6 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
@@ -32,15 +33,34 @@ function feedbackStyle(feedback: CodeFeedback) {
   return styles.cellAbsent;
 }
 
-function DigitCells({ digits, feedback }: { digits: number[]; feedback?: CodeFeedback[] }) {
+function DigitCells({
+  digits,
+  feedback,
+  cellSize,
+  gap,
+}: {
+  digits: number[];
+  feedback?: CodeFeedback[];
+  cellSize: number;
+  gap: number;
+}) {
   return (
-    <View style={styles.digitRow}>
+    <View style={[styles.digitRow, { gap }]}>
       {digits.map((digit, index) => (
         <View
           key={`${digit}-${index}`}
-          style={[styles.digitCell, feedback ? feedbackStyle(feedback[index]) : styles.digitCellEmpty]}
+          style={[
+            styles.digitCell,
+            { width: cellSize, height: cellSize + 4, borderRadius: Math.max(6, cellSize * 0.2) },
+            feedback ? feedbackStyle(feedback[index]) : styles.digitCellEmpty,
+          ]}
         >
-          <Text style={styles.digitText}>{digit}</Text>
+          <Text
+            includeFontPadding={false}
+            style={[styles.digitText, { fontSize: Math.max(15, cellSize * 0.48), lineHeight: cellSize + 2 }]}
+          >
+            {digit}
+          </Text>
         </View>
       ))}
     </View>
@@ -49,10 +69,21 @@ function DigitCells({ digits, feedback }: { digits: number[]; feedback?: CodeFee
 
 export function DigitPopGame() {
   const { t } = useLocale();
+  const { width: windowWidth } = useWindowDimensions();
   const { currentStage, loading, refresh } = useMinigameProgress('code');
   const [activeStage, setActiveStage] = useState(1);
   const initialStageSynced = useRef(false);
+  const hasLoadedOnce = useRef(false);
+  const bootedStageRef = useRef<number | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const historyScrollRef = useRef<ScrollView>(null);
+
+  const digitGap = 5;
+  const digitCellSize = useMemo(() => {
+    const horizontalPadding = theme.spacing.lg * 2 + theme.spacing.md * 2;
+    const available = Math.max(260, windowWidth - horizontalPadding);
+    return Math.min(36, Math.floor((available - digitGap * (CODE_DIGIT_COUNT - 1)) / CODE_DIGIT_COUNT));
+  }, [windowWidth]);
 
   const stageConfig = useMemo(() => getCodeStageConfig(activeStage), [activeStage]);
   const targetLabel = useMemo(() => {
@@ -77,24 +108,43 @@ export function DigitPopGame() {
   }, [input]);
 
   useEffect(() => {
+    if (!loading) hasLoadedOnce.current = true;
+  }, [loading]);
+
+  useEffect(() => {
     if (loading || initialStageSynced.current) return;
     setActiveStage(currentStage);
     initialStageSynced.current = true;
   }, [currentStage, loading]);
 
-  const restart = useCallback(() => {
-    setSecret(rollSecretCode(CODE_DIGIT_COUNT));
+  const restart = useCallback((stage = activeStage) => {
+    const config = getCodeStageConfig(stage);
+    setSecret(rollSecretCode(config.digitCount));
     setInput('');
     setHistory([]);
     setWon(false);
     setFinished(false);
     setInputError(null);
-  }, []);
+  }, [activeStage]);
 
   useEffect(() => {
     if (loading || !initialStageSynced.current) return;
-    restart();
+    if (bootedStageRef.current === activeStage) return;
+    bootedStageRef.current = activeStage;
+    restart(activeStage);
   }, [activeStage, loading, restart]);
+
+  useEffect(() => {
+    if (history.length === 0) return;
+    const timer = setTimeout(() => {
+      historyScrollRef.current?.scrollToEnd({ animated: true });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [history.length]);
+
+  const scrollHistoryToEnd = useCallback(() => {
+    historyScrollRef.current?.scrollToEnd({ animated: true });
+  }, []);
 
   useEffect(() => {
     if (loading || finished) return;
@@ -148,9 +198,15 @@ export function DigitPopGame() {
     setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
   }, [refresh]);
 
+  const handleRestart = useCallback(() => {
+    bootedStageRef.current = null;
+    restart(activeStage);
+    bootedStageRef.current = activeStage;
+  }, [activeStage, restart]);
+
   const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;
 
-  if (loading) return null;
+  if (loading && !hasLoadedOnce.current) return null;
 
   return (
     <View style={styles.wrap}>
@@ -184,29 +240,57 @@ export function DigitPopGame() {
           </View>
         </View>
 
-        <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyContent}>
+        <ScrollView
+          ref={historyScrollRef}
+          style={styles.historyScroll}
+          contentContainerStyle={styles.historyContent}
+          onContentSizeChange={scrollHistoryToEnd}
+          showsVerticalScrollIndicator={false}
+          clipToPadding={false}
+          nestedScrollEnabled
+        >
           {history.length === 0 ? (
             <Text style={styles.emptyHistory}>{t('minigames.codeEmpty')}</Text>
           ) : (
             history.map((entry, index) => (
-              <DigitCells key={`guess-${index}`} digits={entry.digits} feedback={entry.feedback} />
+              <View key={`guess-${index}`} style={styles.historyRow}>
+                <DigitCells
+                  digits={entry.digits}
+                  feedback={entry.feedback}
+                  cellSize={digitCellSize}
+                  gap={digitGap}
+                />
+              </View>
             ))
           )}
         </ScrollView>
 
         {!finished ? (
           <View style={styles.inputArea}>
-            <View style={styles.digitRow}>
+            <View style={[styles.digitRow, { gap: digitGap }]}>
               {previewDigits.map((digit, index) => (
                 <View
                   key={`preview-${index}`}
                   style={[
                     styles.digitCell,
+                    {
+                      width: digitCellSize,
+                      height: digitCellSize + 4,
+                      borderRadius: Math.max(6, digitCellSize * 0.2),
+                    },
                     digit === null ? styles.digitCellEmpty : styles.digitCellFilled,
                     input.length === index && styles.digitCellActive,
                   ]}
                 >
-                  <Text style={styles.digitText}>{digit ?? ''}</Text>
+                  <Text
+                    includeFontPadding={false}
+                    style={[
+                      styles.digitText,
+                      { fontSize: Math.max(15, digitCellSize * 0.48), lineHeight: digitCellSize + 2 },
+                    ]}
+                  >
+                    {digit ?? ''}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -242,7 +326,7 @@ export function DigitPopGame() {
           answer: secret.join(''),
         })}
         stageResult={{ won, attemptsUsed }}
-        onRestart={restart}
+        onRestart={handleRestart}
         onProgressUpdated={refresh}
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}
@@ -296,13 +380,20 @@ const styles = StyleSheet.create({
   historyScroll: {
     flexGrow: 1,
     flexShrink: 1,
-    maxHeight: 260,
+    maxHeight: 280,
     minHeight: 100,
     marginBottom: theme.spacing.md,
   },
   historyContent: {
-    gap: 8,
-    paddingBottom: theme.spacing.sm,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xs,
+    gap: 10,
+    flexGrow: 1,
+  },
+  historyRow: {
+    paddingVertical: 3,
+    alignItems: 'center',
   },
   emptyHistory: {
     color: theme.colors.textSubtle,
@@ -313,15 +404,15 @@ const styles = StyleSheet.create({
   digitRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    maxWidth: '100%',
   },
   digitCell: {
-    width: 34,
-    height: 40,
-    borderRadius: theme.radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
+    overflow: 'visible',
   },
   digitCellEmpty: {
     backgroundColor: theme.colors.surfaceElevated,
@@ -336,9 +427,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   digitText: {
-    fontSize: 18,
     fontWeight: '900',
     color: theme.colors.text,
+    textAlign: 'center',
   },
   cellExact: {
     backgroundColor: 'rgba(91,163,146,0.28)',

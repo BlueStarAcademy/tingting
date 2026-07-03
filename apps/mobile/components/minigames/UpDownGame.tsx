@@ -43,6 +43,8 @@ export function UpDownGame() {
   const { currentStage, loading, refresh } = useMinigameProgress('guess');
   const [activeStage, setActiveStage] = useState(1);
   const initialStageSynced = useRef(false);
+  const hasLoadedOnce = useRef(false);
+  const bootedStageRef = useRef<number | null>(null);
   const historyScrollRef = useRef<ScrollView>(null);
 
   const stageConfig = useMemo(() => getGuessStageConfig(activeStage), [activeStage]);
@@ -62,23 +64,29 @@ export function UpDownGame() {
   const attemptsLeft = Math.max(0, stageConfig.maxAttempts - attemptsUsed);
 
   useEffect(() => {
+    if (!loading) hasLoadedOnce.current = true;
+  }, [loading]);
+
+  useEffect(() => {
     if (loading || initialStageSynced.current) return;
     setActiveStage(currentStage);
     initialStageSynced.current = true;
   }, [currentStage, loading]);
 
-  const restart = useCallback(() => {
+  const restart = useCallback((stage = activeStage) => {
     setSecret(rollSecretNumber());
     setInput('');
     setHistory([]);
     setWon(false);
     setFinished(false);
     setInputError(null);
-  }, []);
+  }, [activeStage]);
 
   useEffect(() => {
     if (loading || !initialStageSynced.current) return;
-    restart();
+    if (bootedStageRef.current === activeStage) return;
+    bootedStageRef.current = activeStage;
+    restart(activeStage);
   }, [activeStage, loading, restart]);
 
   useEffect(() => {
@@ -124,9 +132,15 @@ export function UpDownGame() {
     setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
   }, [refresh]);
 
+  const handleRestart = useCallback(() => {
+    bootedStageRef.current = null;
+    restart(activeStage);
+    bootedStageRef.current = activeStage;
+  }, [activeStage, restart]);
+
   const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;
 
-  if (loading) return null;
+  if (loading && !hasLoadedOnce.current) return null;
 
   return (
     <View style={styles.wrap}>
@@ -203,7 +217,7 @@ export function UpDownGame() {
           answer: secret,
         })}
         stageResult={{ won, attemptsUsed }}
-        onRestart={restart}
+        onRestart={handleRestart}
         onProgressUpdated={refresh}
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}

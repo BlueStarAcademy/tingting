@@ -3,10 +3,11 @@ import { View, Text, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DownloadBar, DOWNLOAD_BAR_HEIGHT } from '@/components/landing/DownloadBar';
+import { ApkDownloadCard } from '@/components/landing/ApkDownloadCard';
 import { PremiumButton } from '@/components/PremiumButton';
 import { GradientBackground } from '@/components/GradientBackground';
 import { useLocale } from '@/hooks/useLocale';
-import { openApkDownload, APK_DOWNLOAD_URL } from '@/lib/app-config';
+import { APK_DOWNLOAD_URL } from '@/lib/app-config';
 import { theme } from '@/constants/theme';
 
 const FEATURES = [
@@ -46,13 +47,7 @@ export function LandingPage() {
             <Text style={styles.heroSub}>{t('auth.tagline')}</Text>
             <Text style={styles.heroDesc}>{t('landing.heroDesc')}</Text>
             <View style={styles.heroCtas}>
-              {APK_DOWNLOAD_URL ? (
-                <PremiumButton
-                  title={t('landing.downloadAndroid')}
-                  onPress={() => openApkDownload()}
-                  style={styles.ctaBtn}
-                />
-              ) : null}
+              {APK_DOWNLOAD_URL ? <ApkDownloadCard variant="hero" /> : null}
               <PremiumButton
                 title={t('landing.tryWeb')}
                 onPress={() => router.push('/app')}
@@ -62,6 +57,14 @@ export function LandingPage() {
             </View>
           </View>
         </GradientBackground>
+
+        {APK_DOWNLOAD_URL ? (
+          <View style={styles.downloadSection}>
+            <Text style={styles.sectionTitle}>{t('landing.downloadTitle')}</Text>
+            <Text style={styles.downloadSectionDesc}>{t('landing.downloadSectionDesc')}</Text>
+            <ApkDownloadCard variant="section" />
+          </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('landing.featuresTitle')}</Text>
@@ -153,10 +156,33 @@ const styles = StyleSheet.create({
     marginTop: 28,
     width: '100%',
     maxWidth: 320,
-    gap: 12,
+    gap: 16,
+    alignItems: 'center',
   },
   ctaBtn: {
     maxWidth: 320,
+    width: '100%',
+  },
+  downloadSection: {
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+    maxWidth: 640,
+    alignSelf: 'center',
+    width: '100%',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.tealSoft,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  downloadSectionDesc: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 8,
+    maxWidth: 420,
   },
   section: {
     paddingHorizontal: 24,

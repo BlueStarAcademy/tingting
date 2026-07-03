@@ -2,6 +2,8 @@ export const TOTAL_REGIONS = 17;
 export const FIRST_GROUP_FREE = true;
 export const ADDITIONAL_GROUP_COST = 50;
 export const DEMO_EMAIL = 'demo@tingting.app';
+/** 로컬 데모·개발용 전화 인증 OTP (실서비스에서는 서버 발급) */
+export const DEMO_OTP = '123456';
 export const INITIAL_STARS = 100;
 export const QUEST_REWARD_DEFAULT = 10;
 export const GPS_QUEST_RADIUS_METERS = 200;

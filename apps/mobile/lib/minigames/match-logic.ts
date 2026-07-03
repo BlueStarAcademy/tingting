@@ -7,6 +7,7 @@ export const TILE_EMPTY = -1;
 export const SPECIAL_LINE_H = 50;
 export const SPECIAL_LINE_V = 51;
 export const SPECIAL_BOMB = 52;
+export const SPECIAL_COLOR_CLEAR = 53;
 
 export interface MatchRun {
   cells: number[];
@@ -34,13 +35,23 @@ function randomTile(tileTypeCount: number = TILE_EMOJIS.length): number {
 }
 
 export function isSpecial(tile: number): boolean {
-  return tile === SPECIAL_LINE_H || tile === SPECIAL_LINE_V || tile === SPECIAL_BOMB;
+  return (
+    tile === SPECIAL_LINE_H ||
+    tile === SPECIAL_LINE_V ||
+    tile === SPECIAL_BOMB ||
+    tile === SPECIAL_COLOR_CLEAR
+  );
+}
+
+export function isLineSpecial(tile: number): boolean {
+  return tile === SPECIAL_LINE_H || tile === SPECIAL_LINE_V;
 }
 
 export function getTileEmoji(tile: number): string {
   if (tile === SPECIAL_LINE_H) return '↔️';
   if (tile === SPECIAL_LINE_V) return '↕️';
   if (tile === SPECIAL_BOMB) return '💣';
+  if (tile === SPECIAL_COLOR_CLEAR) return '🎯';
   if (tile < 0) return '';
   return TILE_EMOJIS[tile] ?? '·';
 }
@@ -111,6 +122,19 @@ export function findMatchCells(grid: number[], rows: number, cols: number): Set<
   return matches;
 }
 
+function findCrossCells(runs: MatchRun[]): number[] {
+  const hCells = new Set<number>();
+  const vCells = new Set<number>();
+  for (const run of runs) {
+    if (run.length < 3) continue;
+    for (const cell of run.cells) {
+      if (run.orientation === 'horizontal') hCells.add(cell);
+      else vCells.add(cell);
+    }
+  }
+  return [...hCells].filter((cell) => vCells.has(cell));
+}
+
 export function buildMatchResolution(
   grid: number[],
   rows: number,
@@ -122,25 +146,28 @@ export function buildMatchResolution(
 
   for (const run of runs) {
     for (const cell of run.cells) cleared.add(cell);
+  }
 
+  for (const run of runs) {
     const center = run.cells[Math.floor(run.cells.length / 2)];
-    const existing = specialsToSpawn.get(center);
-    const nextSpecial =
-      run.length >= 5
-        ? SPECIAL_BOMB
-        : run.length === 4
-          ? run.orientation === 'horizontal'
-            ? SPECIAL_LINE_H
-            : SPECIAL_LINE_V
-          : null;
-
-    if (nextSpecial === null) continue;
-    if (existing === SPECIAL_BOMB) continue;
-    if (existing === SPECIAL_LINE_H || existing === SPECIAL_LINE_V) {
-      if (nextSpecial === SPECIAL_BOMB) specialsToSpawn.set(center, SPECIAL_BOMB);
+    if (run.length >= 5) {
+      specialsToSpawn.set(center, SPECIAL_COLOR_CLEAR);
       continue;
     }
-    specialsToSpawn.set(center, nextSpecial);
+    if (run.length === 4) {
+      if (specialsToSpawn.get(center) === SPECIAL_COLOR_CLEAR) continue;
+      if (!specialsToSpawn.has(center)) {
+        specialsToSpawn.set(
+          center,
+          run.orientation === 'horizontal' ? SPECIAL_LINE_H : SPECIAL_LINE_V,
+        );
+      }
+    }
+  }
+
+  for (const cell of findCrossCells(runs)) {
+    if (specialsToSpawn.get(cell) === SPECIAL_COLOR_CLEAR) continue;
+    specialsToSpawn.set(cell, SPECIAL_BOMB);
   }
 
   return { cleared, specialsToSpawn, matchedTileCount: cleared.size };
@@ -185,11 +212,118 @@ function areaCells(
   return cells;
 }
 
+function cellsOfTileType(
+  grid: number[],
+  tileType: number,
+  rows: number,
+  cols: number,
+): Set<number> {
+  const cleared = new Set<number>();
+  for (let i = 0; i < rows * cols; i++) {
+    if (grid[i] === tileType) cleared.add(i);
+  }
+  return cleared;
+}
+
+function activateCrossAt(
+  row: number,
+  col: number,
+  rows: number,
+  cols: number,
+): Set<number> {
+  const cleared = new Set<number>();
+  for (const cell of rowCells(row, cols)) cleared.add(cell);
+  for (const cell of colCells(col, rows, cols)) cleared.add(cell);
+  return cleared;
+}
+
+function activateThreeByThreeLines(
+  center: number,
+  rows: number,
+  cols: number,
+): Set<number> {
+  const cleared = new Set<number>();
+  const centerRow = Math.floor(center / cols);
+  const centerCol = center % cols;
+  for (let dr = -1; dr <= 1; dr++) {
+    const row = centerRow + dr;
+    if (row >= 0 && row < rows) {
+      for (const cell of rowCells(row, cols)) cleared.add(cell);
+    }
+  }
+  for (let dc = -1; dc <= 1; dc++) {
+    const col = centerCol + dc;
+    if (col >= 0 && col < cols) {
+      for (const cell of colCells(col, rows, cols)) cleared.add(cell);
+    }
+  }
+  return cleared;
+}
+
+function pickRandomNormalCells(
+  grid: number[],
+  count: number,
+  exclude: Set<number>,
+  rows: number,
+  cols: number,
+): number[] {
+  const candidates: number[] = [];
+  for (let i = 0; i < rows * cols; i++) {
+    if (exclude.has(i)) continue;
+    const tile = grid[i];
+    if (tile >= 0 && !isSpecial(tile)) candidates.push(i);
+  }
+  const picked: number[] = [];
+  const pool = [...candidates];
+  while (picked.length < count && pool.length > 0) {
+    const idx = Math.floor(Math.random() * pool.length);
+    picked.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return picked;
+}
+
+function activateRandomLineBlast(
+  grid: number[],
+  count: number,
+  exclude: Set<number>,
+  rows: number,
+  cols: number,
+): Set<number> {
+  const cleared = new Set<number>();
+  for (const index of pickRandomNormalCells(grid, count, exclude, rows, cols)) {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    if (Math.random() < 0.5) {
+      for (const cell of rowCells(row, cols)) cleared.add(cell);
+    } else {
+      for (const cell of colCells(col, rows, cols)) cleared.add(cell);
+    }
+  }
+  return cleared;
+}
+
+function activateRandomBombBlast(
+  grid: number[],
+  count: number,
+  exclude: Set<number>,
+  rows: number,
+  cols: number,
+): Set<number> {
+  const cleared = new Set<number>();
+  for (const index of pickRandomNormalCells(grid, count, exclude, rows, cols)) {
+    for (const cell of areaCells(index, 1, rows, cols)) cleared.add(cell);
+  }
+  return cleared;
+}
+
 export function activateSingleSpecial(
+  grid: number[],
   index: number,
   tile: number,
   rows: number,
   cols: number,
+  pairedTile?: number,
 ): Set<number> {
   const cleared = new Set<number>();
   const row = Math.floor(index / cols);
@@ -201,12 +335,15 @@ export function activateSingleSpecial(
     for (const cell of colCells(col, rows, cols)) cleared.add(cell);
   } else if (tile === SPECIAL_BOMB) {
     for (const cell of areaCells(index, 1, rows, cols)) cleared.add(cell);
+  } else if (tile === SPECIAL_COLOR_CLEAR && pairedTile !== undefined && pairedTile >= 0) {
+    return cellsOfTileType(grid, pairedTile, rows, cols);
   }
 
   return cleared;
 }
 
 export function activateSpecialCombo(
+  grid: number[],
   indexA: number,
   tileA: number,
   indexB: number,
@@ -215,14 +352,44 @@ export function activateSpecialCombo(
   cols: number,
 ): Set<number> {
   const cleared = new Set<number>();
-
-  const addSingle = (index: number, tile: number) => {
-    for (const cell of activateSingleSpecial(index, tile, rows, cols)) cleared.add(cell);
+  const add = (cells: Set<number>) => {
+    for (const cell of cells) cleared.add(cell);
   };
 
+  if (tileA === SPECIAL_COLOR_CLEAR && tileB === SPECIAL_COLOR_CLEAR) {
+    for (let i = 0; i < rows * cols; i++) cleared.add(i);
+    return cleared;
+  }
+
+  const exclude = new Set([indexA, indexB]);
+
+  if (
+    (tileA === SPECIAL_COLOR_CLEAR && isLineSpecial(tileB)) ||
+    (tileB === SPECIAL_COLOR_CLEAR && isLineSpecial(tileA))
+  ) {
+    add(activateRandomLineBlast(grid, 5, exclude, rows, cols));
+    return cleared;
+  }
+
+  if (
+    (tileA === SPECIAL_COLOR_CLEAR && tileB === SPECIAL_BOMB) ||
+    (tileB === SPECIAL_COLOR_CLEAR && tileA === SPECIAL_BOMB)
+  ) {
+    add(activateRandomBombBlast(grid, 5, exclude, rows, cols));
+    return cleared;
+  }
+
   if (tileA === SPECIAL_BOMB && tileB === SPECIAL_BOMB) {
-    for (const cell of areaCells(indexA, 2, rows, cols)) cleared.add(cell);
-    for (const cell of areaCells(indexB, 2, rows, cols)) cleared.add(cell);
+    add(new Set(areaCells(indexA, 2, rows, cols)));
+    return cleared;
+  }
+
+  if (
+    (tileA === SPECIAL_BOMB && isLineSpecial(tileB)) ||
+    (tileB === SPECIAL_BOMB && isLineSpecial(tileA))
+  ) {
+    const bombIndex = tileA === SPECIAL_BOMB ? indexA : indexB;
+    add(activateThreeByThreeLines(bombIndex, rows, cols));
     return cleared;
   }
 
@@ -232,40 +399,22 @@ export function activateSpecialCombo(
   ) {
     const hIndex = tileA === SPECIAL_LINE_H ? indexA : indexB;
     const vIndex = tileA === SPECIAL_LINE_V ? indexA : indexB;
-    const hRow = Math.floor(hIndex / cols);
-    const vCol = vIndex % cols;
-    for (const cell of rowCells(hRow, cols)) cleared.add(cell);
-    for (const cell of colCells(vCol, rows, cols)) cleared.add(cell);
+    add(activateCrossAt(Math.floor(hIndex / cols), vIndex % cols, rows, cols));
     return cleared;
   }
 
   if (tileA === SPECIAL_LINE_H && tileB === SPECIAL_LINE_H) {
-    addSingle(indexA, tileA);
-    addSingle(indexB, tileB);
+    add(activateCrossAt(Math.floor(indexA / cols), indexB % cols, rows, cols));
     return cleared;
   }
 
   if (tileA === SPECIAL_LINE_V && tileB === SPECIAL_LINE_V) {
-    addSingle(indexA, tileA);
-    addSingle(indexB, tileB);
+    add(activateCrossAt(Math.floor(indexB / cols), indexA % cols, rows, cols));
     return cleared;
   }
 
-  if (
-    (tileA === SPECIAL_BOMB && (tileB === SPECIAL_LINE_H || tileB === SPECIAL_LINE_V)) ||
-    (tileB === SPECIAL_BOMB && (tileA === SPECIAL_LINE_H || tileA === SPECIAL_LINE_V))
-  ) {
-    const bombIndex = tileA === SPECIAL_BOMB ? indexA : indexB;
-    const lineIndex = tileA === SPECIAL_BOMB ? indexB : indexA;
-    const lineTile = tileA === SPECIAL_BOMB ? tileB : tileA;
-    addSingle(bombIndex, SPECIAL_BOMB);
-    addSingle(lineIndex, lineTile);
-    for (const cell of areaCells(bombIndex, 1, rows, cols)) cleared.add(cell);
-    return cleared;
-  }
-
-  addSingle(indexA, tileA);
-  addSingle(indexB, tileB);
+  add(activateSingleSpecial(grid, indexA, tileA, rows, cols));
+  add(activateSingleSpecial(grid, indexB, tileB, rows, cols));
   return cleared;
 }
 
@@ -282,15 +431,15 @@ export function resolveSwapActivation(
   const specialB = isSpecial(tileB);
 
   if (specialA && specialB) {
-    return activateSpecialCombo(indexA, tileA, indexB, tileB, rows, cols);
+    return activateSpecialCombo(grid, indexA, tileA, indexB, tileB, rows, cols);
   }
   if (specialA) {
-    const cleared = activateSingleSpecial(indexA, tileA, rows, cols);
+    const cleared = activateSingleSpecial(grid, indexA, tileA, rows, cols, tileB);
     cleared.add(indexB);
     return cleared;
   }
   if (specialB) {
-    const cleared = activateSingleSpecial(indexB, tileB, rows, cols);
+    const cleared = activateSingleSpecial(grid, indexB, tileB, rows, cols, tileA);
     cleared.add(indexA);
     return cleared;
   }

@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Text, StyleSheet } from 'react-native';
+import { Animated, Text, StyleSheet, View } from 'react-native';
 import { theme } from '@/constants/theme';
 
 interface Props {
   combo: number;
   label: string;
   minCombo?: number;
+  reserveSpace?: boolean;
 }
 
-export function ComboBanner({ combo, label, minCombo = 2 }: Props) {
+export function ComboBanner({ combo, label, minCombo = 2, reserveSpace = false }: Props) {
   const scale = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -24,7 +25,10 @@ export function ComboBanner({ combo, label, minCombo = 2 }: Props) {
     });
   }, [combo, minCombo, opacity, scale]);
 
-  if (combo < minCombo) return null;
+  if (combo < minCombo) {
+    if (!reserveSpace) return null;
+    return <View style={styles.placeholder} />;
+  }
 
   return (
     <Animated.View style={[styles.banner, { opacity, transform: [{ scale }] }]}>
@@ -34,6 +38,10 @@ export function ComboBanner({ combo, label, minCombo = 2 }: Props) {
 }
 
 const styles = StyleSheet.create({
+  placeholder: {
+    height: 34,
+    marginTop: theme.spacing.sm,
+  },
   banner: {
     alignSelf: 'center',
     zIndex: 5,
@@ -41,7 +49,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: theme.radius.full,
-    marginBottom: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
   },
   text: {
     color: '#78350F',

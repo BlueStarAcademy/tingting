@@ -11,7 +11,7 @@ export function DownloadBar() {
   const { t } = useLocale();
   const router = useRouter();
   const hasApk = APK_DOWNLOAD_URL.length > 0;
-  const qrUri = hasApk ? getApkQrImageUrl(APK_DOWNLOAD_URL) : undefined;
+  const qrUri = hasApk ? getApkQrImageUrl(APK_DOWNLOAD_URL, 96) : undefined;
 
   const openDownload = () => {
     if (Platform.OS !== 'web') {
@@ -26,7 +26,7 @@ export function DownloadBar() {
       <View style={styles.inner}>
         <View style={styles.brand}>
           <Text style={styles.logo}>{t('appName')}</Text>
-          <Text style={styles.badge}>{t('landing.downloadBadge')}</Text>
+          {hasApk ? <Text style={styles.badge}>{t('landing.downloadBadge')}</Text> : null}
         </View>
 
         <View style={styles.actions}>
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 6,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#fff',
   },
   qrHint: {
     fontSize: 11,

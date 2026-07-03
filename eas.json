@@ -26,7 +26,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://your-api-service.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://tingting-api-production.up.railway.app"
       }
     }
   },

@@ -18,6 +18,7 @@ import {
   GPS_QUEST_RADIUS_METERS,
   INITIAL_STARS,
   DEMO_EMAIL,
+  DEMO_OTP,
   buildFeaturePass,
   mergeFeaturePass,
   FEATURE_PASS_COSTS,
@@ -1622,10 +1623,11 @@ export const localStore = {
   async getMinigameProgress(): Promise<MinigameProgress> {
     const stored = await readJson<MinigameProgress | null>(KEYS.minigameProgress, null);
     if (!stored) return { ...EMPTY_MINIGAME_PROGRESS };
+    const legacyTap = (stored as MinigameProgress & { tap?: { clearedStage?: number } }).tap;
     return {
       match: { clearedStage: stored.match?.clearedStage ?? 0 },
       quiz: { clearedStage: stored.quiz?.clearedStage ?? 0 },
-      slime: { clearedStage: stored.slime?.clearedStage ?? stored.tap?.clearedStage ?? 0 },
+      slime: { clearedStage: stored.slime?.clearedStage ?? legacyTap?.clearedStage ?? 0 },
       memory: { clearedStage: stored.memory?.clearedStage ?? 0 },
       guess: { clearedStage: stored.guess?.clearedStage ?? 0 },
       code: { clearedStage: stored.code?.clearedStage ?? 0 },

@@ -32,7 +32,7 @@ import {
   scoreForClear,
   swapCells,
 } from '@/lib/minigames/match-logic';
-import { formatStageTarget, getMatchStageConfig } from '@/lib/minigames/stages';
+import { getMatchStageConfig } from '@/lib/minigames/stages';
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
@@ -184,10 +184,6 @@ export function MatchPuzzleGame() {
   const { currentStage, loading, refresh } = useMinigameProgress('match');
   const [activeStage, setActiveStage] = useState(1);
   const stageConfig = useMemo(() => getMatchStageConfig(activeStage), [activeStage]);
-  const targetLabel = useMemo(() => {
-    const target = formatStageTarget('match', activeStage);
-    return t(target.key, target.params);
-  }, [activeStage, t]);
 
   const [grid, setGrid] = useState<number[]>(() =>
     createMatchGrid(MATCH_ROWS, MATCH_COLS, stageConfig.tileTypeCount),
@@ -203,6 +199,7 @@ export function MatchPuzzleGame() {
   const [fallOffsets, setFallOffsets] = useState<Map<number, number>>(new Map());
   const [combo, setCombo] = useState(0);
   const [floatingScores, setFloatingScores] = useState<FloatingScore[]>([]);
+  const [sessionId, setSessionId] = useState(0);
 
   const busyRef = useRef(false);
   const scoreRef = useRef(0);
@@ -234,6 +231,7 @@ export function MatchPuzzleGame() {
       setFallOffsets(new Map());
       setCombo(0);
       setFloatingScores([]);
+      setSessionId((id) => id + 1);
       busyRef.current = false;
       pendingTimeoutRef.current = false;
     },
@@ -260,6 +258,16 @@ export function MatchPuzzleGame() {
     }
     setFinished(true);
   }, [finished, timeLeft]);
+
+  useEffect(() => {
+    if (finished) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [finished, sessionId]);
 
   useEffect(() => {
     const listener = scoreAnim.addListener(({ value }) => setDisplayScore(Math.round(value)));
@@ -449,15 +457,12 @@ export function MatchPuzzleGame() {
       <GameStatsBar
         stats={[
           { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-          { label: t('minigames.score'), value: displayScore },
+          { label: t('minigames.score'), value: `${displayScore}/${stageConfig.targetScore}` },
           { label: t('minigames.time'), value: `${timeLeft}s` },
         ]}
       />
-      <Text style={styles.target}>{targetLabel}</Text>
-      <Text style={styles.hint}>{t('minigames.matchHint')}</Text>
 
       <View style={styles.boardWrap}>
-        <ComboBanner combo={combo} label={comboLabel} />
         <View style={[styles.grid, { width: GRID_WIDTH, height: GRID_HEIGHT }]}>
           {grid.map((tile, index) => (
             <MatchCell
@@ -477,6 +482,7 @@ export function MatchPuzzleGame() {
         {floatingScores.map((item) => (
           <FloatingScorePop key={item.id} item={item} onDone={removeFloatingScore} />
         ))}
+        <ComboBanner combo={combo} label={comboLabel} reserveSpace />
       </View>
 
       <MinigameResultPanel
@@ -498,19 +504,6 @@ export function MatchPuzzleGame() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    marginBottom: theme.spacing.sm,
-    textAlign: 'center',
-  },
-  target: {
-    color: theme.colors.primaryLight,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: theme.spacing.sm,
-    textAlign: 'center',
-  },
   boardWrap: {
     alignSelf: 'center',
     position: 'relative',

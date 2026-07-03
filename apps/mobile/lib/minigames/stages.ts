@@ -79,15 +79,15 @@ export type MinigameStageResult =
 
 const MATCH_STAGES: MatchStageConfig[] = [
   { timeSeconds: 60, targetScore: 200, tileTypeCount: 4 },
-  { timeSeconds: 58, targetScore: 300, tileTypeCount: 4 },
-  { timeSeconds: 50, targetScore: 500, tileTypeCount: 5 },
-  { timeSeconds: 48, targetScore: 600, tileTypeCount: 5 },
-  { timeSeconds: 45, targetScore: 750, tileTypeCount: 5 },
-  { timeSeconds: 42, targetScore: 900, tileTypeCount: 5 },
-  { timeSeconds: 40, targetScore: 1050, tileTypeCount: 5 },
-  { timeSeconds: 38, targetScore: 1200, tileTypeCount: 5 },
-  { timeSeconds: 36, targetScore: 1300, tileTypeCount: 5 },
-  { timeSeconds: 35, targetScore: 1400, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 300, tileTypeCount: 4 },
+  { timeSeconds: 60, targetScore: 500, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 600, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 750, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 900, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 1050, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 1200, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 1300, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 1400, tileTypeCount: 5 },
 ];
 
 const QUIZ_STAGES: QuizStageConfig[] = [

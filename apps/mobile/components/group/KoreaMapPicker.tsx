@@ -49,22 +49,18 @@ export function KoreaMapPicker({
         focusZoom={6}
         onPinPress={onPinPress}
       />
-      <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.swatch, { backgroundColor: theme.colors.primaryLight }]} />
-          <Text style={styles.legendText}>
-            {t('map.visitedLegend')} {visitedCount}/{REGIONS.length}
-          </Text>
+      {!compact ? (
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.swatch, { backgroundColor: theme.colors.primaryLight }]} />
+            <Text style={styles.legendText}>
+              {t('map.visitedLegend')} {visitedCount}/{REGIONS.length}
+            </Text>
+          </View>
+          <Text style={styles.hint}>{t('map.panHint')}</Text>
+          <Text style={styles.hint}>{t('map.tapRegion')}</Text>
         </View>
-        {compact ? (
-          <Text style={styles.hint}>{t('group.travelMapHint')}</Text>
-        ) : (
-          <>
-            <Text style={styles.hint}>{t('map.panHint')}</Text>
-            <Text style={styles.hint}>{t('map.tapRegion')}</Text>
-          </>
-        )}
-      </View>
+      ) : null}
     </View>
   );
 }

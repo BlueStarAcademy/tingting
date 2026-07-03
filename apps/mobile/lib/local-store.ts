@@ -16,6 +16,7 @@ import {
   GALLERY_SLOT_BATCH_SIZE,
   QUEST_REWARD_DEFAULT,
   GPS_QUEST_RADIUS_METERS,
+  GROUP_STATION_QUEST_RADIUS_METERS,
   INITIAL_STARS,
   DEMO_EMAIL,
   DEMO_OTP,
@@ -33,6 +34,11 @@ import {
   normalizeAdminLoginEmail,
   isAdminProfile,
   buildAdminFeaturePasses,
+  SCHEDULE_STICKERS,
+  STICKER_PACK_OPTIONS,
+  REGION_QUEST_TEMPLATES,
+  buildRegionQuestId,
+  renderQuestTemplate,
 } from '@tingting/shared';
 import type {
   AdminUserSummary,
@@ -187,14 +193,14 @@ function buildGroupStationQuests(
     return {
       id: questId,
       placeId: station.placeId,
-      title: `${region.name} 대표역 방문`,
-      description: `${station.stationName}에서 GPS 방문 인증을 완료하세요.`,
+      title: `${region.name} 갤러리 오픈`,
+      description: `${region.name} 지역 내에서 GPS 인증을 완료하면 갤러리가 열립니다.`,
       rewardStars: 0,
       rewardType: 'gallery_slots' as const,
       rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD,
       targetLat: station.lat,
       targetLng: station.lng,
-      radiusMeters: GPS_QUEST_RADIUS_METERS,
+      radiusMeters: GROUP_STATION_QUEST_RADIUS_METERS,
       isStationQuest: true,
       regionCode: region.code,
       completed: completedIds.has(questId),
@@ -206,6 +212,30 @@ function buildGroupStationQuests(
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
     return (a.regionCode ?? '').localeCompare(b.regionCode ?? '');
   });
+}
+
+function buildRegionStarQuests(completedIds: Set<string>): Quest[] {
+  const quests: Quest[] = [];
+  for (const region of REGIONS) {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
+    if (!station) continue;
+    for (const tmpl of REGION_QUEST_TEMPLATES) {
+      const questId = buildRegionQuestId(region.code, tmpl.idSuffix);
+      quests.push({
+        id: questId,
+        placeId: station.placeId,
+        title: renderQuestTemplate(tmpl.titleTemplate, region.name),
+        description: renderQuestTemplate(tmpl.descTemplate, region.name),
+        rewardStars: tmpl.rewardStars,
+        targetLat: station.lat,
+        targetLng: station.lng,
+        radiusMeters: GROUP_STATION_QUEST_RADIUS_METERS,
+        regionCode: region.code,
+        completed: completedIds.has(questId),
+      });
+    }
+  }
+  return quests;
 }
 
 function buildQuests(places: Place[]): Quest[] {
@@ -466,7 +496,6 @@ export const localStore = {
 
   async signUp(email: string, password: string, displayName: string): Promise<AuthSession> {
     const trimmed = displayName.trim();
-    assertValidNickname(trimmed);
     const session: AuthSession = { userId: uid(), email, isDemo: false };
     const profile: UserProfile = {
       id: session.userId,
@@ -1227,7 +1256,7 @@ export const localStore = {
       }).length;
       const regionUnlocked = stationQuest?.completed === true || regionVisitCount > 0;
       if (!regionUnlocked) {
-        throw new Error('대표역 인증 후 갤러리에 사진을 추가할 수 있어요');
+        throw new Error('GPS 인증 퀘스트 완료 후 갤러리에 사진을 추가할 수 있어요');
       }
       if (regionVisitCount >= GALLERY_SLOT_BATCH_SIZE) {
         throw new Error('갤러리 슬롯이 가득 찼습니다. 슬롯을 먼저 해금해 주세요');
@@ -1340,7 +1369,9 @@ export const localStore = {
     const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
     const completedIds = new Set(allCompletions[groupId] ?? []);
 
-    return buildGroupStationQuests(visitedRegionCodes, completedIds);
+    const stationQuests = buildGroupStationQuests(visitedRegionCodes, completedIds);
+    const regionQuests = buildRegionStarQuests(completedIds);
+    return [...stationQuests, ...regionQuests];
   },
 
   async completeGroupQuest(
@@ -1348,7 +1379,7 @@ export const localStore = {
     questId: string,
     lat: number,
     lng: number
-  ): Promise<{ rewardGallerySlots: number }> {
+  ): Promise<{ rewardGallerySlots: number; rewardStars?: number }> {
     const session = await this.getSession();
     const profile = await this.getProfile();
     if (!session || !profile) throw new Error('로그인이 필요합니다');
@@ -1366,7 +1397,7 @@ export const localStore = {
     const dist = haversineMeters(lat, lng, quest.targetLat, quest.targetLng);
     if (dist > quest.radiusMeters) throw new Error('퀘스트 위치에서 너무 멀리 있습니다');
 
-    return this.grantGroupStationQuestReward(groupId, questId);
+    return this.grantQuestReward(groupId, questId, quest);
   },
 
   async skipGroupStationQuestPurchase(
@@ -1390,25 +1421,35 @@ export const localStore = {
     return this.grantGroupStationQuestReward(groupId, questId);
   },
 
-  async grantGroupStationQuestReward(
+  async grantQuestReward(
     groupId: string,
-    questId: string
-  ): Promise<{ rewardGallerySlots: number }> {
-    const groups = await readJson<Group[]>(KEYS.groups, []);
-    const idx = groups.findIndex((g) => g.id === groupId);
-    if (idx < 0) throw new Error('그룹을 찾을 수 없습니다');
-
+    questId: string,
+    quest?: Quest
+  ): Promise<{ rewardGallerySlots: number; rewardStars?: number }> {
     const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
     const completed = allCompletions[groupId] ?? [];
     if (completed.includes(questId)) throw new Error('이미 완료한 퀘스트입니다');
 
-    const group = groups[idx];
-    groups[idx] = group;
-    await writeJson(KEYS.groups, groups);
     allCompletions[groupId] = [...completed, questId];
     await writeJson(KEYS.groupQuestCompletions, allCompletions);
 
+    if (quest && quest.rewardStars && !quest.isStationQuest) {
+      const profile = await this.getProfile();
+      if (profile) {
+        profile.stars = (profile.stars ?? 0) + quest.rewardStars;
+        await writeJson(KEYS.profile, profile);
+      }
+      return { rewardGallerySlots: 0, rewardStars: quest.rewardStars };
+    }
+
     return { rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD };
+  },
+
+  async grantGroupStationQuestReward(
+    groupId: string,
+    questId: string
+  ): Promise<{ rewardGallerySlots: number }> {
+    return this.grantQuestReward(groupId, questId);
   },
 
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
@@ -1424,12 +1465,26 @@ export const localStore = {
     title: string;
     date: string;
     note?: string;
+    stickerId?: string;
   }): Promise<GroupSchedule> {
     const session = await this.getSession();
     if (!session) throw new Error('로그인이 필요합니다');
     const title = input.title.trim();
     if (!title) throw new Error('일정 제목을 입력해 주세요');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error('올바른 날짜를 선택해 주세요');
+
+    const stickerId = input.stickerId;
+    if (stickerId) {
+      const sticker = SCHEDULE_STICKERS.find((s) => s.id === stickerId);
+      if (sticker && !sticker.free) {
+        const profile = await this.getProfile();
+        const owned: Record<string, number> = (profile as any)?.ownedStickers ?? {};
+        const count = owned[stickerId] ?? 0;
+        if (count <= 0) throw new Error('해당 스티커가 없습니다. 상점에서 구매해 주세요.');
+        owned[stickerId] = count - 1;
+        await this.updateProfile({ ownedStickers: owned } as any);
+      }
+    }
 
     const schedule: GroupSchedule = {
       id: uid(),
@@ -1438,6 +1493,7 @@ export const localStore = {
       title,
       date: input.date,
       note: input.note?.trim() || undefined,
+      stickerId: stickerId || undefined,
       createdBy: session.userId,
       createdAt: new Date().toISOString(),
     };
@@ -1455,6 +1511,19 @@ export const localStore = {
     if (idx < 0) throw new Error('일정을 찾을 수 없습니다');
     all.splice(idx, 1);
     await writeJson(KEYS.groupSchedules, all);
+  },
+
+  async purchaseStickers(stickerId: string, packId: string): Promise<{ newCount: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const pack = STICKER_PACK_OPTIONS.find((p) => p.id === packId);
+    if (!pack) throw new Error('올바르지 않은 팩입니다');
+    if (profile.stars < pack.starCost) throw new Error('스타가 부족합니다');
+    const stars = profile.stars - pack.starCost;
+    const owned: Record<string, number> = (profile as any)?.ownedStickers ?? {};
+    owned[stickerId] = (owned[stickerId] ?? 0) + pack.count;
+    await this.updateProfile({ stars, ownedStickers: owned } as any);
+    return { newCount: owned[stickerId] };
   },
 
   async spendStars(amount: number, _reason: string): Promise<number> {
@@ -1621,10 +1690,16 @@ export const localStore = {
   },
 
   async getMinigameProgress(): Promise<MinigameProgress> {
+    const kstDayKey = getDayKey('Asia/Seoul');
     const stored = await readJson<MinigameProgress | null>(KEYS.minigameProgress, null);
-    if (!stored) return { ...EMPTY_MINIGAME_PROGRESS };
+    if (!stored || stored.dayKey !== kstDayKey) {
+      const fresh: MinigameProgress = { ...EMPTY_MINIGAME_PROGRESS, dayKey: kstDayKey };
+      await writeJson(KEYS.minigameProgress, fresh);
+      return fresh;
+    }
     const legacyTap = (stored as MinigameProgress & { tap?: { clearedStage?: number } }).tap;
     return {
+      dayKey: kstDayKey,
       match: { clearedStage: stored.match?.clearedStage ?? 0 },
       quiz: { clearedStage: stored.quiz?.clearedStage ?? 0 },
       slime: { clearedStage: stored.slime?.clearedStage ?? legacyTap?.clearedStage ?? 0 },

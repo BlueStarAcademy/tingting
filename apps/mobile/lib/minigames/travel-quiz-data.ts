@@ -358,6 +358,234 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     },
     correctIndex: 0,
   },
+  {
+    id: 'andong-mask',
+    question: {
+      ko: '하회별신굿탈놀이로 유명한 경북 도시는?',
+      en: 'Which Gyeongbuk city is famous for Hahoe mask dance?',
+    },
+    options: {
+      ko: ['안동', '영주', '상주', '문경'],
+      en: ['Andong', 'Yeongju', 'Sangju', 'Mungyeong'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'suwon-fortress',
+    question: {
+      ko: '유네스코 세계유산인 화성(華城)이 있는 도시는?',
+      en: 'Which city has the UNESCO World Heritage Hwaseong Fortress?',
+    },
+    options: {
+      ko: ['수원', '성남', '용인', '화성'],
+      en: ['Suwon', 'Seongnam', 'Yongin', 'Hwaseong'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'damyang-bamboo',
+    question: {
+      ko: '죽녹원(대나무 숲)으로 유명한 전남 지역은?',
+      en: 'Which Jeonnam area is famous for its bamboo forest (Juknokwon)?',
+    },
+    options: {
+      ko: ['담양', '곡성', '구례', '보성'],
+      en: ['Damyang', 'Gokseong', 'Gurye', 'Boseong'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'incheon-airport',
+    question: {
+      ko: '대한민국의 관문 공항으로 영종도에 위치한 공항은?',
+      en: 'Which airport on Yeongjong Island serves as Korea\'s main gateway?',
+    },
+    options: {
+      ko: ['인천국제공항', '김포공항', '제주공항', '김해공항'],
+      en: ['Incheon Intl.', 'Gimpo', 'Jeju', 'Gimhae'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'tongyeong-cable',
+    question: {
+      ko: '한려수도 조망과 케이블카로 유명한 경남 해안 도시는?',
+      en: 'Which Gyeongnam coastal city is known for its cable car and sea views?',
+    },
+    options: {
+      ko: ['통영', '거제', '사천', '남해'],
+      en: ['Tongyeong', 'Geoje', 'Sacheon', 'Namhae'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'boseong-tea',
+    question: {
+      ko: '초록빛 녹차밭으로 유명한 전남 지역은?',
+      en: 'Which Jeonnam area is famous for its green tea fields?',
+    },
+    options: {
+      ko: ['보성', '담양', '해남', '완도'],
+      en: ['Boseong', 'Damyang', 'Haenam', 'Wando'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'dna-shape',
+    question: {
+      ko: 'DNA의 구조를 가장 잘 설명한 것은?',
+      en: 'Which best describes the structure of DNA?',
+    },
+    options: {
+      ko: ['이중 나선', '단일 직선', '삼중 나선', '원형 고리'],
+      en: ['Double helix', 'Single strand', 'Triple helix', 'Circular ring'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'highest-mountain',
+    question: {
+      ko: '세계에서 가장 높은 산은?',
+      en: 'What is the tallest mountain in the world?',
+    },
+    options: {
+      ko: ['에베레스트', 'K2', '칸첸중가', '마카루'],
+      en: ['Everest', 'K2', 'Kangchenjunga', 'Makalu'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'blood-types',
+    question: {
+      ko: 'ABO 혈액형 분류에서 존재하지 않는 혈액형은?',
+      en: 'Which blood type does NOT exist in the ABO system?',
+    },
+    options: {
+      ko: ['C형', 'A형', 'B형', 'O형'],
+      en: ['Type C', 'Type A', 'Type B', 'Type O'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'vitamin-c-source',
+    question: {
+      ko: '비타민 C가 풍부한 과일로 가장 적절한 것은?',
+      en: 'Which fruit is richest in vitamin C?',
+    },
+    options: {
+      ko: ['키위', '바나나', '포도', '사과'],
+      en: ['Kiwi', 'Banana', 'Grape', 'Apple'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'sahara-location',
+    question: {
+      ko: '사하라 사막은 어느 대륙에 있을까요?',
+      en: 'On which continent is the Sahara Desert?',
+    },
+    options: {
+      ko: ['아프리카', '아시아', '호주', '남아메리카'],
+      en: ['Africa', 'Asia', 'Australia', 'South America'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'beethoven-work',
+    question: {
+      ko: '베토벤이 작곡한 교향곡의 수는 몇 곡일까요?',
+      en: 'How many symphonies did Beethoven compose?',
+    },
+    options: {
+      ko: ['9곡', '5곡', '12곡', '7곡'],
+      en: ['9', '5', '12', '7'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'gravity-discoverer',
+    question: {
+      ko: '만유인력의 법칙을 발견한 과학자는?',
+      en: 'Who discovered the law of universal gravitation?',
+    },
+    options: {
+      ko: ['뉴턴', '아인슈타인', '갈릴레오', '다윈'],
+      en: ['Newton', 'Einstein', 'Galileo', 'Darwin'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'korean-flag-name',
+    question: {
+      ko: '대한민국 국기의 명칭은?',
+      en: 'What is the name of the South Korean national flag?',
+    },
+    options: {
+      ko: ['태극기', '일장기', '성조기', '삼색기'],
+      en: ['Taegeukgi', 'Hinomaru', 'Stars and Stripes', 'Tricolore'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'amazon-river',
+    question: {
+      ko: '세계에서 유역 면적이 가장 넓은 강은?',
+      en: 'Which river has the largest drainage basin in the world?',
+    },
+    options: {
+      ko: ['아마존강', '나일강', '양쯔강', '미시시피강'],
+      en: ['Amazon', 'Nile', 'Yangtze', 'Mississippi'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'oxygen-symbol',
+    question: {
+      ko: '산소의 원소 기호는?',
+      en: 'What is the chemical symbol for oxygen?',
+    },
+    options: {
+      ko: ['O', 'Ox', 'Og', 'Os'],
+      en: ['O', 'Ox', 'Og', 'Os'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'korea-neighbors',
+    question: {
+      ko: '한반도와 국경을 접하고 있는 국가가 아닌 것은?',
+      en: 'Which country does NOT border the Korean Peninsula?',
+    },
+    options: {
+      ko: ['일본', '중국', '러시아', '북한'],
+      en: ['Japan', 'China', 'Russia', 'North Korea'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'heart-chambers',
+    question: {
+      ko: '사람의 심장은 몇 개의 방으로 나뉘어 있을까요?',
+      en: 'How many chambers does the human heart have?',
+    },
+    options: {
+      ko: ['4개', '2개', '3개', '5개'],
+      en: ['4', '2', '3', '5'],
+    },
+    correctIndex: 0,
+  },
+  {
+    id: 'internet-www',
+    question: {
+      ko: 'WWW의 풀네임으로 올바른 것은?',
+      en: 'What does WWW stand for?',
+    },
+    options: {
+      ko: ['World Wide Web', 'World Wired Web', 'Wide World Web', 'Web World Wide'],
+      en: ['World Wide Web', 'World Wired Web', 'Wide World Web', 'Web World Wide'],
+    },
+    correctIndex: 0,
+  },
 ];
 
 /** @deprecated use QUIZ_QUESTIONS */
@@ -375,7 +603,9 @@ function shuffleOptionOrder(question: QuizQuestion): QuizQuestion {
   };
 }
 
-export function pickQuizQuestions(count = 8): QuizQuestion[] {
-  const shuffled = [...QUIZ_QUESTIONS].sort(() => Math.random() - 0.5);
+export function pickQuizQuestions(count = 8, excludeIds: Set<string> = new Set()): QuizQuestion[] {
+  const available = QUIZ_QUESTIONS.filter((q) => !excludeIds.has(q.id));
+  const pool = available.length >= count ? available : [...QUIZ_QUESTIONS];
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length)).map(shuffleOptionOrder);
 }

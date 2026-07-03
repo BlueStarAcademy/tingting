@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { AuthSession, UserProfile } from '@tingting/shared';
 import { api } from '@/lib/api';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 interface AuthContextValue {
   session: AuthSession | null;
@@ -35,6 +36,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const {
+      data: { subscription },
+    } = getSupabase()!.auth.onAuthStateChange(() => {
+      refresh().catch(() => undefined);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {

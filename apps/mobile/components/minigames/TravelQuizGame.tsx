@@ -17,6 +17,7 @@ export function TravelQuizGame() {
   const { currentStage, loading, refresh } = useMinigameProgress('quiz');
   const [activeStage, setActiveStage] = useState(1);
   const initialStageSynced = useRef(false);
+  const answeredCorrectlyRef = useRef<Set<string>>(new Set());
 
   const stageConfig = useMemo(() => getQuizStageConfig(activeStage), [activeStage]);
   const targetLabel = useMemo(() => {
@@ -26,7 +27,7 @@ export function TravelQuizGame() {
 
   const [round, setRound] = useState(0);
   const questions = useMemo(
-    () => pickQuizQuestions(stageConfig.questionCount),
+    () => pickQuizQuestions(stageConfig.questionCount, answeredCorrectlyRef.current),
     [round, stageConfig.questionCount],
   );
   const [index, setIndex] = useState(0);
@@ -53,6 +54,9 @@ export function TravelQuizGame() {
 
   const restart = useCallback(
     (stage = activeStage) => {
+      if (stage === 1) {
+        answeredCorrectlyRef.current = new Set();
+      }
       const config = getQuizStageConfig(stage);
       setRound((value) => value + 1);
       setIndex(0);
@@ -119,6 +123,7 @@ export function TravelQuizGame() {
     setPicked(optionIndex);
 
     if (optionIndex === current.correctIndex) {
+      answeredCorrectlyRef.current.add(current.id);
       const nextCombo = combo + 1;
       const gain = scoreQuizCorrect(nextCombo);
       setCombo(nextCombo);
@@ -231,7 +236,11 @@ export function TravelQuizGame() {
         scoreValue={String(points)}
         detail={t('minigames.quizResult', { correct: correctCount, total, points })}
         stageResult={{ correctCount }}
-        onRestart={() => restart(activeStage)}
+        onRestart={(stage) => {
+          const target = stage ?? 1;
+          if (target !== activeStage) setActiveStage(target);
+          else restart(target);
+        }}
         onProgressUpdated={refresh}
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}

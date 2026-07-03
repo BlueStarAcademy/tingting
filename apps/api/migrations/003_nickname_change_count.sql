@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name_change_count INT NOT NULL DEFAULT 0;

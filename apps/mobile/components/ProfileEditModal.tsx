@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserProfile } from '@tingting/shared';
-import { getDisplayNameChangeCost } from '@tingting/shared';
+import { getDisplayNameChangeCost, NICKNAME_CHANGE_COST } from '@tingting/shared';
 import { pickPhoto } from '@/lib/pick-photo';
 import { api } from '@/lib/api';
 import { clampNicknameInput, getNicknameLength, nicknameErrorMessage, validateNickname } from '@/lib/nickname';
@@ -42,10 +42,7 @@ export function ProfileEditModal({ visible, profile, onClose, onSaved }: Props) 
   const nameChanged = name.trim() !== profile.displayName;
   const photoChanged = photoUri !== (profile.photoUri ?? '');
   const nicknameValid = validateNickname(name) === null;
-  const nicknameButtonTitle =
-    nicknameCost > 0
-      ? t('profile.nicknameChangeButtonPaid', { cost: nicknameCost })
-      : t('profile.nicknameChangeButtonFree');
+  const nicknameButtonTitle = t('profile.nicknameChangeButtonPaid', { cost: nicknameCost });
 
   useEffect(() => {
     if (visible) {
@@ -185,6 +182,9 @@ export function ProfileEditModal({ visible, profile, onClose, onSaved }: Props) 
           <Text style={styles.hint}>
             {t('profile.nicknameLengthHint', { count: getNicknameLength(name) })}
           </Text>
+          <Text style={styles.costHint}>
+            {t('profile.nicknameChangeCostHint', { cost: NICKNAME_CHANGE_COST })}
+          </Text>
 
           <PremiumButton
             title={nicknameButtonTitle}
@@ -269,6 +269,12 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.surfaceLight,
     marginBottom: theme.spacing.xs,
   },
-  hint: { color: theme.colors.textMuted, fontSize: 12, marginBottom: theme.spacing.sm },
+  hint: { color: theme.colors.textMuted, fontSize: 12, marginBottom: theme.spacing.xs },
+  costHint: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: theme.spacing.sm,
+  },
   helper: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: theme.spacing.xs },
 });

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { GameResultOverlay } from '@/components/minigames/GameResultOverlay';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdFree, showRewardedAd } from '@/hooks/useAdFree';
 import { api } from '@/lib/api';
 import {
   evaluateStageClear,
@@ -20,7 +21,7 @@ interface Props {
   scoreValue: string;
   detail?: string;
   stageResult: MinigameStageResult['result'];
-  onRestart: () => void;
+  onRestart: (stage?: number) => void;
   onProgressUpdated?: () => void;
   onNextStage?: () => void;
   nextStageLabel?: string;
@@ -44,6 +45,7 @@ export function MinigameResultPanel({
   const { t } = useLocale();
   const router = useRouter();
   const { refresh } = useAuth();
+  const { adFree } = useAdFree();
   const cleared = finished ? evaluateStageClear(gameId, stage, stageResult) : false;
   const resultKey = finished ? JSON.stringify(stageResult) : '';
   const isFinalStage = stage === MINIGAME_MAX_STAGE;
@@ -95,7 +97,24 @@ export function MinigameResultPanel({
     claimedRef.current = null;
     setStarReward(0);
     setShowFinalStarRoll(false);
-    onRestart();
+    onRestart(1);
+  };
+
+  const handleContinueWithAd = async () => {
+    if (adFree) {
+      claimedRef.current = null;
+      setStarReward(0);
+      setShowFinalStarRoll(false);
+      onRestart(stage);
+      return;
+    }
+    const watched = await showRewardedAd();
+    if (watched) {
+      claimedRef.current = null;
+      setStarReward(0);
+      setShowFinalStarRoll(false);
+      onRestart(stage);
+    }
   };
 
   return (
@@ -117,6 +136,8 @@ export function MinigameResultPanel({
       nextStageLabel={nextStageLabel}
       exitLabel={t('minigames.exit')}
       onPlayAgain={handleRestart}
+      onContinueWithAd={!cleared ? handleContinueWithAd : undefined}
+      continueAdLabel={adFree ? t('minigames.continueStage') : t('minigames.watchAdContinue')}
       onNextStage={
         cleared && onNextStage
           ? () => {

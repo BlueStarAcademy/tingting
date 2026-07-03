@@ -3,32 +3,24 @@ import { Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Alert, Scr
 import { useRouter } from 'expo-router';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
-import { clampNicknameInput, nicknameErrorMessage, validateNickname } from '@/lib/nickname';
 import { api } from '@/lib/api';
-import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { refresh } = useAuth();
   const { t } = useLocale();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!email.trim()) return Alert.alert(t('common.alert'), t('auth.fillAllFields'));
-    const validationError = validateNickname(displayName);
-    if (validationError) {
-      return Alert.alert(t('common.alert'), nicknameErrorMessage(validationError, t));
-    }
+    if (!email.trim() || !password) return Alert.alert(t('common.alert'), t('auth.fillAllFields'));
     setLoading(true);
     try {
-      await api.signUp(email.trim(), password, displayName.trim());
-      await refresh();
-      router.replace('/(auth)/onboarding');
+      const trimmedEmail = email.trim();
+      await api.signUp(trimmedEmail, password, '');
+      router.replace({ pathname: '/(auth)/verify-email-sent', params: { email: trimmedEmail } });
     } catch (e: unknown) {
       Alert.alert(t('auth.signupFailed'), e instanceof Error ? e.message : t('auth.unknownError'));
     } finally {
@@ -46,14 +38,8 @@ export default function SignupScreen() {
       >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
           <Text style={styles.title}>{t('auth.joinTitle')}</Text>
+          <Text style={styles.sub}>{t('auth.signupSub')}</Text>
           <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder={t('auth.displayName')}
-              placeholderTextColor={theme.colors.textMuted}
-              value={displayName}
-              onChangeText={(text) => setDisplayName(clampNicknameInput(text))}
-            />
             <TextInput
               style={styles.input}
               placeholder={t('auth.email')}
@@ -61,6 +47,7 @@ export default function SignupScreen() {
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
+              keyboardType="email-address"
             />
             <TextInput
               style={styles.input}
@@ -88,7 +75,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: theme.colors.primaryDark,
     textAlign: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  sub: {
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 22,
     marginBottom: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
   },
   form: {
     gap: theme.spacing.sm,

@@ -19,7 +19,7 @@ import type {
   FeaturePass,
   FeaturePassTier,
 } from '@tingting/shared';
-import { getSupabase, isSupabaseConfigured } from './supabase';
+import { getAuthRedirectUrl, getSupabase, isSupabaseConfigured } from './supabase';
 import { httpApi, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
 import type { MinigameId } from '@/lib/minigames/stages';
@@ -28,31 +28,68 @@ export { isSupabaseConfigured, isHttpApiConfigured };
 
 export const api = {
   async getSession(): Promise<AuthSession | null> {
+    if (isSupabaseConfigured) {
+      const sb = getSupabase()!;
+      const { data } = await sb.auth.getSession();
+      if (data.session) {
+        return { userId: data.session.user.id, email: data.session.user.email ?? '', isDemo: false };
+      }
+    }
     if (isHttpApiConfigured()) return httpApi.getSession();
-    if (!isSupabaseConfigured) return localStore.getSession();
-    const sb = getSupabase()!;
-    const { data } = await sb.auth.getSession();
-    if (!data.session) return null;
-    return { userId: data.session.user.id, email: data.session.user.email ?? '', isDemo: false };
+    return localStore.getSession();
   },
 
   async signIn(email: string, password: string): Promise<AuthSession> {
+    if (isSupabaseConfigured) {
+      const sb = getSupabase()!;
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      return { userId: data.user!.id, email: data.user!.email ?? '', isDemo: false };
+    }
     if (isHttpApiConfigured()) return httpApi.signIn(email, password);
-    if (!isSupabaseConfigured) return localStore.signIn(email, password);
-    const sb = getSupabase()!;
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    return { userId: data.user!.id, email: data.user!.email ?? '', isDemo: false };
+    return localStore.signIn(email, password);
   },
 
   async signUp(email: string, password: string, displayName: string): Promise<AuthSession> {
+    if (isSupabaseConfigured) {
+      const sb = getSupabase()!;
+      const { data, error } = await sb.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: getAuthRedirectUrl('auth-callback'),
+          data: displayName ? { display_name: displayName } : undefined,
+        },
+      });
+      if (error) throw error;
+      return { userId: data.user?.id ?? '', email: data.user?.email ?? email, isDemo: false };
+    }
     if (isHttpApiConfigured()) return httpApi.signUp(email, password, displayName);
-    if (!isSupabaseConfigured) return localStore.signUp(email, password, displayName);
-    const sb = getSupabase()!;
-    const { data, error } = await sb.auth.signUp({ email, password });
+    return localStore.signUp(email, password, displayName);
+  },
+
+  async resendEmailVerification(email: string): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured');
+    const { error } = await getSupabase()!.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: getAuthRedirectUrl('auth-callback') },
+    });
     if (error) throw error;
-    await sb.from('profiles').insert({ id: data.user!.id, email, display_name: displayName });
-    return { userId: data.user!.id, email, isDemo: false };
+  },
+
+  async requestPasswordReset(email: string): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured');
+    const { error } = await getSupabase()!.auth.resetPasswordForEmail(email, {
+      redirectTo: getAuthRedirectUrl('reset-password'),
+    });
+    if (error) throw error;
+  },
+
+  async updatePassword(password: string): Promise<void> {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured');
+    const { error } = await getSupabase()!.auth.updateUser({ password });
+    if (error) throw error;
   },
 
   async signInDemo(): Promise<AuthSession> {
@@ -60,10 +97,17 @@ export const api = {
     return localStore.signInDemo();
   },
 
+  async signInWithKakao(accessToken: string): Promise<AuthSession> {
+    if (!isHttpApiConfigured()) {
+      throw new Error('Kakao login requires EXPO_PUBLIC_API_URL');
+    }
+    return httpApi.signInWithKakao(accessToken);
+  },
+
   async signOut(): Promise<void> {
-    if (isHttpApiConfigured()) return httpApi.signOut();
-    if (!isSupabaseConfigured) return localStore.signOut();
-    await getSupabase()!.auth.signOut();
+    if (isSupabaseConfigured) await getSupabase()!.auth.signOut();
+    if (isHttpApiConfigured()) await httpApi.signOut();
+    if (!isSupabaseConfigured && !isHttpApiConfigured()) await localStore.signOut();
   },
 
   async getProfile(): Promise<UserProfile | null> {
@@ -87,8 +131,13 @@ export const api = {
   async updateProfile(
     patch: Partial<Pick<UserProfile, 'photoUri' | 'birthday' | 'profilePublic'>>
   ): Promise<UserProfile> {
-    if (isHttpApiConfigured()) return httpApi.updateProfile(patch);
-    if (!isSupabaseConfigured) return localStore.updateProfile(patch);
+    if (isHttpApiConfigured()) {
+      try {
+        return await httpApi.updateProfile(patch);
+      } catch {
+        return localStore.updateProfile(patch);
+      }
+    }
     return localStore.updateProfile(patch);
   },
 
@@ -399,7 +448,7 @@ export const api = {
     questId: string,
     lat: number,
     lng: number
-  ): Promise<{ rewardGallerySlots: number }> {
+  ): Promise<{ rewardGallerySlots: number; rewardStars?: number }> {
     if (isHttpApiConfigured()) return httpApi.completeGroupQuest(groupId, questId, lat, lng);
     return localStore.completeGroupQuest(groupId, questId, lat, lng);
   },
@@ -423,6 +472,7 @@ export const api = {
     title: string;
     date: string;
     note?: string;
+    stickerId?: string;
   }): Promise<GroupSchedule> {
     if (isHttpApiConfigured()) return httpApi.createGroupSchedule(input);
     return localStore.createGroupSchedule(input);
@@ -431,6 +481,11 @@ export const api = {
   async deleteGroupSchedule(scheduleId: string): Promise<void> {
     if (isHttpApiConfigured()) return httpApi.deleteGroupSchedule(scheduleId);
     return localStore.deleteGroupSchedule(scheduleId);
+  },
+
+  async purchaseStickers(stickerId: string, packId: string): Promise<{ newCount: number }> {
+    if (isHttpApiConfigured()) return httpApi.purchaseStickers(stickerId, packId);
+    return localStore.purchaseStickers(stickerId, packId);
   },
 
   async spendStars(amount: number, reason: string): Promise<number> {
@@ -568,6 +623,10 @@ export const api = {
   },
 
   async changePassword(current: string, next: string): Promise<void> {
+    if (isSupabaseConfigured) {
+      await this.updatePassword(next);
+      return;
+    }
     return localStore.changePassword(current, next);
   },
 

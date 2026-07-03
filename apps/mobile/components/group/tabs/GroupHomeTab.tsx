@@ -1,19 +1,26 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { Group } from '@tingting/shared';
+import {
+  type Group,
+  type GroupSchedule,
+  getStickerById,
+  DEFAULT_STICKER_ID,
+} from '@tingting/shared';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
+import { daysUntil, formatDday } from '@/lib/schedule-utils';
 import { theme } from '@/constants/theme';
 
 interface Props {
   group: Group;
   isOwner: boolean;
+  schedules: GroupSchedule[];
   onUpdated: () => void;
 }
 
-export function GroupHomeTab({ group, isOwner, onUpdated }: Props) {
-  const { t } = useLocale();
+export function GroupHomeTab({ group, isOwner, schedules, onUpdated }: Props) {
+  const { t, formatDate } = useLocale();
   const [editingDesc, setEditingDesc] = useState(false);
   const [desc, setDesc] = useState(group.description ?? '');
 
@@ -33,49 +40,92 @@ export function GroupHomeTab({ group, isOwner, onUpdated }: Props) {
     }
   };
 
+  const upcomingSchedules = useMemo(() => {
+    const now = new Date();
+    const todayKey = now.toISOString().slice(0, 10);
+    return schedules
+      .filter((s) => s.date >= todayKey)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 5);
+  }, [schedules]);
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.descHeader}>
-        <Text style={styles.descLabel}>{t('group.descriptionLabel')}</Text>
-        {isOwner && !editingDesc ? (
-          <Pressable style={styles.editBtn} onPress={startEdit}>
-            <Ionicons name="pencil" size={14} color={theme.colors.primaryLight} />
-          </Pressable>
-        ) : null}
-        {isOwner && editingDesc ? (
-          <Pressable style={styles.editBtn} onPress={saveDesc}>
-            <Ionicons name="checkmark" size={16} color={theme.colors.primaryLight} />
-          </Pressable>
-        ) : null}
+      {/* Description + stats combined panel */}
+      <View style={styles.panel}>
+        <View style={styles.descHeader}>
+          <Text style={styles.descLabel}>{t('group.descriptionLabel')}</Text>
+          {isOwner && !editingDesc ? (
+            <Pressable style={styles.editBtn} onPress={startEdit}>
+              <Ionicons name="pencil" size={14} color={theme.colors.primaryLight} />
+            </Pressable>
+          ) : null}
+          {isOwner && editingDesc ? (
+            <Pressable style={styles.editBtn} onPress={saveDesc}>
+              <Ionicons name="checkmark" size={16} color={theme.colors.primaryLight} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {editingDesc && isOwner ? (
+          <TextInput
+            style={styles.descInput}
+            value={desc}
+            onChangeText={setDesc}
+            placeholder={t('group.descPlaceholder')}
+            placeholderTextColor={theme.colors.textMuted}
+            multiline
+            autoFocus
+          />
+        ) : group.description ? (
+          <Text style={styles.desc}>{group.description}</Text>
+        ) : (
+          <Text style={styles.descMuted}>{t('group.noDescription')}</Text>
+        )}
+
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Ionicons name="people" size={16} color={theme.colors.primaryLight} />
+            <Text style={styles.statText}>
+              {t('group.tabMembers')} {group.members?.length ?? group.memberIds.length}
+            </Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Ionicons name="calendar-outline" size={16} color={theme.colors.primaryLight} />
+            <Text style={styles.statText}>
+              {new Date(group.createdAt).toLocaleDateString('ko-KR')} {t('group.createdAt')}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {editingDesc && isOwner ? (
-        <TextInput
-          style={styles.descInput}
-          value={desc}
-          onChangeText={setDesc}
-          placeholder={t('group.descPlaceholder')}
-          placeholderTextColor={theme.colors.textMuted}
-          multiline
-          autoFocus
-        />
-      ) : group.description ? (
-        <Text style={styles.desc}>{group.description}</Text>
-      ) : (
-        <Text style={styles.descMuted}>{t('group.noDescription')}</Text>
-      )}
-
-      <View style={styles.stats}>
-        <View style={styles.statCard}>
-          <Ionicons name="people" size={20} color={theme.colors.primaryLight} />
-          <Text style={styles.statNum}>{group.members?.length ?? group.memberIds.length}</Text>
-          <Text style={styles.statLabel}>{t('group.tabMembers')}</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Ionicons name="calendar" size={20} color={theme.colors.primaryLight} />
-          <Text style={styles.statLabel}>{new Date(group.createdAt).toLocaleDateString('ko-KR')}</Text>
-          <Text style={styles.statSub}>{t('group.createdAt')}</Text>
-        </View>
+      {/* Upcoming schedules */}
+      <View style={styles.scheduleSection}>
+        <Text style={styles.scheduleTitle}>{t('group.upcomingSchedules')}</Text>
+        {upcomingSchedules.length > 0 ? (
+          upcomingSchedules.map((schedule) => {
+            const dday = daysUntil(schedule.date);
+            const emoji = getStickerById(schedule.stickerId ?? DEFAULT_STICKER_ID)?.emoji ?? '❤️';
+            return (
+              <View key={schedule.id} style={styles.scheduleCard}>
+                <Text style={styles.scheduleSticker}>{emoji}</Text>
+                <View style={styles.scheduleMain}>
+                  <Text style={styles.scheduleCardTitle} numberOfLines={1}>{schedule.title}</Text>
+                  <Text style={styles.scheduleDate}>{formatDate(schedule.date)}</Text>
+                </View>
+                <Text style={[styles.scheduleDday, dday === 0 && styles.scheduleDdayToday]}>
+                  {dday === 0 ? t('group.ddayToday') : formatDday(dday)}
+                </Text>
+              </View>
+            );
+          })
+        ) : (
+          <View style={styles.scheduleEmptyCard}>
+            <Ionicons name="calendar-outline" size={24} color={theme.colors.textMuted} />
+            <Text style={styles.scheduleEmptyText}>{t('group.scheduleEmpty')}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -83,41 +133,76 @@ export function GroupHomeTab({ group, isOwner, onUpdated }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { gap: theme.spacing.md },
+  panel: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.tint.border,
+  },
   descHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-  descLabel: { color: theme.colors.text, fontSize: 16, fontWeight: '700', flex: 1 },
+  descLabel: { color: theme.colors.text, fontSize: 15, fontWeight: '700', flex: 1 },
   editBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: theme.colors.tint.medium,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  desc: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
-  descMuted: { color: theme.colors.textMuted, fontSize: 14, fontStyle: 'italic' },
+  desc: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
+  descMuted: { color: theme.colors.textMuted, fontSize: 13, fontStyle: 'italic' },
   descInput: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius.sm,
+    padding: 10,
+    color: theme.colors.text,
+    fontSize: 13,
+    minHeight: 72,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingTop: theme.spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  statDivider: { width: 1, height: 16, backgroundColor: theme.colors.border },
+  statText: { color: theme.colors.text, fontSize: 12, fontWeight: '600' },
+  scheduleSection: { gap: theme.spacing.sm },
+  scheduleTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
+  scheduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     padding: 12,
-    color: theme.colors.text,
-    fontSize: 14,
-    minHeight: 96,
-    textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: theme.colors.surfaceLight,
+    borderColor: theme.colors.tint.border,
   },
-  stats: { flexDirection: 'row', gap: theme.spacing.sm },
-  statCard: {
-    flex: 1,
+  scheduleSticker: { fontSize: 20 },
+  scheduleMain: { flex: 1, gap: 2 },
+  scheduleCardTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
+  scheduleDate: { color: theme.colors.textMuted, fontSize: 11 },
+  scheduleDday: { color: theme.colors.primaryLight, fontSize: 13, fontWeight: '800' },
+  scheduleDdayToday: { color: theme.colors.success },
+  scheduleEmptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: theme.spacing.lg,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    gap: 4,
     borderWidth: 1,
-    borderColor: theme.colors.tint.medium,
+    borderColor: theme.colors.tint.border,
+    borderStyle: 'dashed',
   },
-  statNum: { color: theme.colors.text, fontSize: 20, fontWeight: '800' },
-  statLabel: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
-  statSub: { color: theme.colors.textMuted, fontSize: 11 },
+  scheduleEmptyText: { color: theme.colors.textMuted, fontSize: 13 },
 });

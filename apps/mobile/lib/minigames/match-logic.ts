@@ -9,6 +9,80 @@ export const SPECIAL_LINE_V = 51;
 export const SPECIAL_BOMB = 52;
 export const SPECIAL_COLOR_CLEAR = 53;
 
+/** Obstacle types: bricks that need adjacent clears to break */
+export const OBSTACLE_BRICK = 'brick';
+export type ObstacleType = typeof OBSTACLE_BRICK;
+export interface ObstacleCell {
+  type: ObstacleType;
+  health: number;
+}
+
+export function createObstacles(
+  rows: number,
+  cols: number,
+  stage: number,
+): Map<number, ObstacleCell> {
+  const obstacles = new Map<number, ObstacleCell>();
+  if (stage < 3) return obstacles;
+
+  const brickCount = Math.min(Math.floor((stage - 2) * 1.5), 8);
+  const candidates: number[] = [];
+  for (let r = 1; r < rows - 1; r++) {
+    for (let c = 1; c < cols - 1; c++) {
+      candidates.push(r * cols + c);
+    }
+  }
+
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  const placed = candidates.slice(0, brickCount);
+  for (const idx of placed) {
+    const health = stage >= 6 ? 2 : 1;
+    obstacles.set(idx, { type: OBSTACLE_BRICK, health });
+  }
+  return obstacles;
+}
+
+export function getAdjacentIndices(index: number, rows: number, cols: number): number[] {
+  const r = Math.floor(index / cols);
+  const c = index % cols;
+  const adj: number[] = [];
+  if (r > 0) adj.push((r - 1) * cols + c);
+  if (r < rows - 1) adj.push((r + 1) * cols + c);
+  if (c > 0) adj.push(r * cols + (c - 1));
+  if (c < cols - 1) adj.push(r * cols + (c + 1));
+  return adj;
+}
+
+export function damageObstacles(
+  obstacles: Map<number, ObstacleCell>,
+  clearedCells: Set<number>,
+  rows: number,
+  cols: number,
+): { updated: Map<number, ObstacleCell>; broken: Set<number> } {
+  const updated = new Map(obstacles);
+  const broken = new Set<number>();
+
+  for (const cleared of clearedCells) {
+    for (const adj of getAdjacentIndices(cleared, rows, cols)) {
+      const obs = updated.get(adj);
+      if (!obs) continue;
+      const newHealth = obs.health - 1;
+      if (newHealth <= 0) {
+        updated.delete(adj);
+        broken.add(adj);
+      } else {
+        updated.set(adj, { ...obs, health: newHealth });
+      }
+    }
+  }
+
+  return { updated, broken };
+}
+
 export interface MatchRun {
   cells: number[];
   orientation: 'horizontal' | 'vertical';

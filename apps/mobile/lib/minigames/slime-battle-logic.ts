@@ -67,10 +67,11 @@ function removeStones(board: SlimeStone[], indices: number[]): SlimeStone[] {
   return next;
 }
 
-function captureOpponentGroups(board: SlimeStone[], color: SlimeStone): { board: SlimeStone[]; count: number } {
+function captureOpponentGroups(board: SlimeStone[], color: SlimeStone): { board: SlimeStone[]; count: number; lastCapturedIndex: number | null } {
   const opponent = color === SLIME_PLAYER ? SLIME_AI : SLIME_PLAYER;
   let next = [...board];
   let captured = 0;
+  let lastCapturedIndex: number | null = null;
   const checked = new Set<number>();
 
   for (let i = 0; i < next.length; i++) {
@@ -79,25 +80,31 @@ function captureOpponentGroups(board: SlimeStone[], color: SlimeStone): { board:
     for (const cell of group) checked.add(cell);
     if (countLiberties(next, group) === 0) {
       captured += group.length;
+      if (group.length === 1) lastCapturedIndex = group[0];
       next = removeStones(next, group);
     }
   }
 
-  return { board: next, count: captured };
+  return { board: next, count: captured, lastCapturedIndex };
 }
 
 export function tryPlaceStone(
   board: SlimeStone[],
   index: number,
   color: SlimeStone,
-): { valid: true; board: SlimeStone[]; captured: number } | { valid: false } {
+  koPoint: number | null = null,
+): { valid: true; board: SlimeStone[]; captured: number; capturedAt: number | null } | { valid: false } {
   if (index < 0 || index >= board.length || board[index] !== SLIME_EMPTY) {
+    return { valid: false };
+  }
+
+  if (index === koPoint) {
     return { valid: false };
   }
 
   let next = [...board];
   next[index] = color;
-  const { board: afterCapture, count } = captureOpponentGroups(next, color);
+  const { board: afterCapture, count, lastCapturedIndex } = captureOpponentGroups(next, color);
   next = afterCapture;
 
   const ownGroup = collectGroup(next, index);
@@ -105,19 +112,20 @@ export function tryPlaceStone(
     return { valid: false };
   }
 
-  return { valid: true, board: next, captured: count };
+  const capturedAt = count === 1 ? lastCapturedIndex : null;
+  return { valid: true, board: next, captured: count, capturedAt };
 }
 
-export function getValidMoves(board: SlimeStone[], color: SlimeStone): number[] {
+export function getValidMoves(board: SlimeStone[], color: SlimeStone, koPoint: number | null = null): number[] {
   const moves: number[] = [];
   for (let i = 0; i < board.length; i++) {
-    if (tryPlaceStone(board, i, color).valid) moves.push(i);
+    if (tryPlaceStone(board, i, color, koPoint).valid) moves.push(i);
   }
   return moves;
 }
 
-export function pickAiMove(board: SlimeStone[], stage: number): number | null {
-  const moves = getValidMoves(board, SLIME_AI);
+export function pickAiMove(board: SlimeStone[], stage: number, koPoint: number | null = null): number | null {
+  const moves = getValidMoves(board, SLIME_AI, koPoint);
   if (moves.length === 0) return null;
 
   const center = slimeIndex(3, 3);
@@ -125,7 +133,7 @@ export function pickAiMove(board: SlimeStone[], stage: number): number | null {
   let candidates: number[] = [];
 
   for (const move of moves) {
-    const result = tryPlaceStone(board, move, SLIME_AI);
+    const result = tryPlaceStone(board, move, SLIME_AI, koPoint);
     if (!result.valid) continue;
 
     let score = result.captured * 120;

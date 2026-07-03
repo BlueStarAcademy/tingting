@@ -2,8 +2,10 @@ import { useCallback, useState } from 'react';
 import { View, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { getRegion, REGIONS } from '@tingting/shared';
 import { AppHeader } from '@/components/AppHeader';
 import { GroupTabBar, type GroupTab } from '@/components/group/GroupTabBar';
+import { RegionSegmentBar, type RegionSegment } from '@/components/group/RegionSegmentBar';
 import { GroupChatBar } from '@/components/group/GroupChatBar';
 import { GroupNameEditModal } from '@/components/group/GroupNameEditModal';
 import { GroupHomeTab } from '@/components/group/tabs/GroupHomeTab';
@@ -12,14 +14,18 @@ import { GroupTravelTab } from '@/components/group/tabs/GroupTravelTab';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
+import { prefersEnglishContent } from '@/lib/i18n/locales';
 import type { Group, GroupSchedule, Place, Quest, Visit } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { session, profile, refresh: refreshAuth } = useAuth();
   const [tab, setTab] = useState<GroupTab>('home');
+  const [selectedRegionCode, setSelectedRegionCode] = useState('SEO');
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [segment, setSegment] = useState<RegionSegment>('places');
   const [group, setGroup] = useState<Group | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
@@ -67,6 +73,12 @@ export default function GroupDetailScreen() {
     ),
   ];
 
+  const selectedRegion = getRegion(selectedRegionCode) ?? REGIONS[0];
+  const travelRegionLabel =
+    prefersEnglishContent(locale) && selectedRegion.nameEn
+      ? selectedRegion.nameEn
+      : selectedRegion.name;
+
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <AppHeader
@@ -75,7 +87,15 @@ export default function GroupDetailScreen() {
         showActions={false}
         onEditTitle={isOwner ? () => setNameEditOpen(true) : undefined}
       />
-      <GroupTabBar active={tab} onChange={setTab} />
+      <GroupTabBar
+        active={tab}
+        onChange={setTab}
+        regionLabel={travelRegionLabel}
+        onRegionPress={() => setRegionOpen(true)}
+      />
+      {tab === 'travel' ? (
+        <RegionSegmentBar active={segment} onChange={setSegment} />
+      ) : null}
       <View style={styles.body}>
         {tab === 'travel' ? (
           <View style={styles.travelBody}>
@@ -86,6 +106,12 @@ export default function GroupDetailScreen() {
               quests={quests}
               schedules={schedules}
               visitedRegionCodes={visitedRegions}
+              selectedRegionCode={selectedRegionCode}
+              onSelectedRegionCodeChange={setSelectedRegionCode}
+              regionOpen={regionOpen}
+              onRegionOpenChange={setRegionOpen}
+              segment={segment}
+              isOwner={isOwner}
               onUpdated={load}
             />
           </View>
@@ -97,7 +123,7 @@ export default function GroupDetailScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.homeSections}>
-              <GroupHomeTab group={group} isOwner={isOwner} onUpdated={load} />
+              <GroupHomeTab group={group} isOwner={isOwner} schedules={schedules} onUpdated={load} />
               <GroupMembersTab
                 group={group}
                 isOwner={isOwner}

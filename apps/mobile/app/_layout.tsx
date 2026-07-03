@@ -8,6 +8,7 @@ import { AppShell } from '@/components/AppShell';
 import { WebLayoutFix } from '@/components/WebLayoutFix';
 import { MainTabBar } from '@/components/MainTabBar';
 import { UpdateChecker } from '@/components/UpdateChecker';
+import { OnboardingNicknameGate } from '@/components/auth/OnboardingNicknameGate';
 import { View } from 'react-native';
 import { theme } from '@/constants/theme';
 
@@ -20,6 +21,7 @@ export default function RootLayout() {
           <AuthProvider>
             <LogoutConfirmProvider>
               <UpdateChecker />
+              <OnboardingNicknameGate />
               <StatusBar style="dark" />
               <View style={{ flex: 1 }}>
                 <Stack

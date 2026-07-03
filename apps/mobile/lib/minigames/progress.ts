@@ -5,6 +5,7 @@ export interface MinigameGameProgress {
 }
 
 export interface MinigameProgress {
+  dayKey?: string;
   match: MinigameGameProgress;
   quiz: MinigameGameProgress;
   slime: MinigameGameProgress;

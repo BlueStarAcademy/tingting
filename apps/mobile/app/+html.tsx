@@ -11,7 +11,8 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
         />
-        <ScrollViewStyleReset />
+        <ScrollViewStyleReset         />
+        <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossOrigin="anonymous" />
         <style
           dangerouslySetInnerHTML={{
             __html: `

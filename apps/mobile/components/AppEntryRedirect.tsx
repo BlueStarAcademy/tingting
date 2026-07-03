@@ -4,21 +4,19 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { theme } from '@/constants/theme';
 
-/** 인증 상태에 따라 로그인 / 온보딩 / 홈으로 이동 */
+/** 인증 상태에 따라 로그인 / 홈으로 이동 (닉네임 설정은 OnboardingNicknameGate 모달) */
 export function AppEntryRedirect() {
   const router = useRouter();
-  const { session, profile, loading } = useAuth();
+  const { session, loading } = useAuth();
 
   useEffect(() => {
     if (loading) return;
     if (!session) {
       router.replace('/(auth)/login');
-    } else if (!profile?.onboardingComplete) {
-      router.replace('/(auth)/onboarding');
     } else {
       router.replace('/(tabs)/home');
     }
-  }, [loading, session, profile, router]);
+  }, [loading, session, router]);
 
   return (
     <View style={styles.center}>

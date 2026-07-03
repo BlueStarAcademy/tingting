@@ -1,19 +1,31 @@
-/** Android APK direct download URL (EAS Build artifact or hosted file) */
+import { loadPublicConfig } from './public-config';
+
+/** Build-time fallback; on web prefer `usePublicConfig()` or `loadPublicConfig()`. */
 export const APK_DOWNLOAD_URL =
   process.env.EXPO_PUBLIC_APK_DOWNLOAD_URL?.replace(/\/$/, '') ?? '';
 
 export const SITE_URL =
   process.env.EXPO_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? '';
 
-export function getApkQrImageUrl(data: string, size = 128): string {
+export function getDownloadQrImageUrl(data: string, size = 128): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&margin=8`;
 }
 
-export function openApkDownload(): boolean {
-  if (!APK_DOWNLOAD_URL) return false;
+/** @deprecated Use getDownloadQrImageUrl */
+export const getApkQrImageUrl = getDownloadQrImageUrl;
+
+export function openDownloadUrl(url: string): boolean {
+  if (!url) return false;
   if (typeof window !== 'undefined') {
-    window.open(APK_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+    window.open(url, '_blank', 'noopener,noreferrer');
     return true;
   }
   return false;
 }
+
+/** @deprecated Use openDownloadUrl */
+export function openApkDownload(url = APK_DOWNLOAD_URL): boolean {
+  return openDownloadUrl(url);
+}
+
+export { loadPublicConfig, usePublicConfig } from './public-config';

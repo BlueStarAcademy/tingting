@@ -60,6 +60,7 @@ export interface GroupSchedule {
   /** YYYY-MM-DD */
   date: string;
   note?: string;
+  stickerId?: string;
   createdBy: string;
   createdAt: string;
 }
@@ -122,6 +123,8 @@ export interface UserProfile {
   unlockedGroupSlots?: number;
   /** 전화번호 인증 완료 여부 */
   phoneVerified?: boolean;
+  /** 이메일 인증 완료 여부 */
+  emailVerified?: boolean;
   /** 전화번호 초대 검색 거부 */
   blockPhoneInvite?: boolean;
   /** 프로필 상세(생년월일·MBTI 등) 공개 여부 */

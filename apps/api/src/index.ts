@@ -9,6 +9,7 @@ import {
   ADDITIONAL_GROUP_COST,
   DEMO_EMAIL,
   GPS_QUEST_RADIUS_METERS,
+  GROUP_STATION_QUEST_RADIUS_METERS,
   INITIAL_STARS,
   QUEST_REWARD_DEFAULT,
   REGIONS,
@@ -30,6 +31,8 @@ import {
   normalizeAdminLoginEmail,
   isAdminProfile,
   buildAdminFeaturePasses,
+  getDisplayNameChangeCost,
+  validateNickname,
 } from '@tingting/shared';
 import type {
   AdminUserSummary,
@@ -46,8 +49,10 @@ import type { Place } from '@tingting/shared';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const JWT_SECRET = process.env.JWT_SECRET ?? 'tingting-dev-secret-change-me';
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
+const KAKAO_APP_ID = process.env.KAKAO_APP_ID ? Number(process.env.KAKAO_APP_ID) : null;
 
 if (!DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -59,6 +64,8 @@ const pool = new Pool({ connectionString: DATABASE_URL, ssl: process.env.NODE_EN
 interface AuthPayload {
   userId: string;
   email: string;
+  emailVerified?: boolean;
+  isSupabaseAuth?: boolean;
 }
 
 interface AuthedRequest extends Request {
@@ -71,14 +78,22 @@ app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'tingting-api' }));
 
-function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
+async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
+  const token = header.slice(7);
   try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET) as AuthPayload;
+    const supabasePayload = verifySupabaseAccessToken(token);
+    if (supabasePayload) {
+      const user = await ensureUserProfile(supabasePayload);
+      req.user = { ...supabasePayload, userId: user.id, email: user.email };
+      next();
+      return;
+    }
+    req.user = jwt.verify(token, JWT_SECRET) as AuthPayload;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -99,6 +114,28 @@ async function adminMiddleware(req: AuthedRequest, res: Response, next: NextFunc
 
 function signToken(userId: string, email: string) {
   return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+function verifySupabaseAccessToken(token: string): AuthPayload | null {
+  if (!SUPABASE_JWT_SECRET) return null;
+  try {
+    const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload & {
+      email?: string;
+      email_verified?: boolean;
+      email_confirmed_at?: string;
+      role?: string;
+    };
+    if (!payload.sub || !payload.email) return null;
+    if (payload.role && payload.role !== 'authenticated') return null;
+    return {
+      userId: payload.sub,
+      email: payload.email.toLowerCase(),
+      emailVerified: Boolean(payload.email_verified || payload.email_confirmed_at || payload.role === 'authenticated'),
+      isSupabaseAuth: true,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -124,7 +161,17 @@ function mapUser(row: Record<string, unknown>) {
     role,
     isAdmin: role === 'admin',
     unlockedGroupSlots: role === 'admin' ? MAX_GROUP_SLOTS : undefined,
+    displayNameChangeCount: Number(row.display_name_change_count ?? 0),
+    emailVerified: Boolean(row.email_verified),
   };
+}
+
+function nicknameValidationError(name: string): string | null {
+  const err = validateNickname(name);
+  if (err === 'empty') return '닉네임을 입력해 주세요';
+  if (err === 'too_short') return '닉네임은 2자 이상 입력해 주세요';
+  if (err === 'too_long') return '닉네임은 8자 이하로 입력해 주세요';
+  return null;
 }
 
 async function userIsAdmin(userId: string): Promise<boolean> {
@@ -137,10 +184,63 @@ async function getUserById(id: string) {
   return rows[0] ?? null;
 }
 
+async function ensureUserProfile(payload: AuthPayload) {
+  const verifiedAt = payload.emailVerified ? new Date() : null;
+  const byId = await getUserById(payload.userId);
+  if (byId) {
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET email = $1,
+           email_verified = email_verified OR $2,
+           email_verified_at = COALESCE(email_verified_at, $3)
+       WHERE id = $4
+       RETURNING *`,
+      [payload.email.toLowerCase(), Boolean(payload.emailVerified), verifiedAt, payload.userId],
+    );
+    return rows[0];
+  }
+
+  const { rows: byEmailRows } = await pool.query('SELECT * FROM users WHERE lower(email) = lower($1)', [payload.email]);
+  if (byEmailRows[0]) {
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET email_verified = email_verified OR $1,
+           email_verified_at = COALESCE(email_verified_at, $2)
+       WHERE id = $3
+       RETURNING *`,
+      [Boolean(payload.emailVerified), verifiedAt, byEmailRows[0].id],
+    );
+    return rows[0];
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, email, password_hash, display_name, stars, email_verified, email_verified_at)
+     VALUES ($1, $2, '', '', $3, $4, $5)
+     RETURNING *`,
+    [payload.userId, payload.email.toLowerCase(), INITIAL_STARS, Boolean(payload.emailVerified), verifiedAt],
+  );
+  return rows[0];
+}
+
 async function migrate() {
   const sqlPath = path.join(__dirname, '..', 'migrations', '001_railway.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
   await pool.query(sql);
+
+  const kakaoSqlPath = path.join(__dirname, '..', 'migrations', '002_kakao_auth.sql');
+  if (fs.existsSync(kakaoSqlPath)) {
+    await pool.query(fs.readFileSync(kakaoSqlPath, 'utf8'));
+  }
+
+  const nicknameSqlPath = path.join(__dirname, '..', 'migrations', '003_nickname_change_count.sql');
+  if (fs.existsSync(nicknameSqlPath)) {
+    await pool.query(fs.readFileSync(nicknameSqlPath, 'utf8'));
+  }
+
+  const supabaseAuthSqlPath = path.join(__dirname, '..', 'migrations', '004_supabase_auth.sql');
+  if (fs.existsSync(supabaseAuthSqlPath)) {
+    await pool.query(fs.readFileSync(supabaseAuthSqlPath, 'utf8'));
+  }
 
   // Ensure every group owner has a group_members row (legacy data repair).
   await pool.query(
@@ -199,14 +299,15 @@ async function migrate() {
 app.post('/auth/signup', async (req, res) => {
   try {
     const { email, password, displayName } = req.body as { email?: string; password?: string; displayName?: string };
-    if (!email || !password || !displayName) {
-      res.status(400).json({ error: 'email, password, displayName required' });
+    if (!email || !password) {
+      res.status(400).json({ error: 'email and password required' });
       return;
     }
+    const name = (displayName ?? '').trim();
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
       `INSERT INTO users (email, password_hash, display_name, stars) VALUES ($1,$2,$3,$4) RETURNING *`,
-      [email.toLowerCase(), hash, displayName, INITIAL_STARS]
+      [email.toLowerCase(), hash, name, INITIAL_STARS]
     );
     const user = rows[0];
     const token = signToken(user.id, user.email);
@@ -258,6 +359,89 @@ app.post('/auth/demo', async (_req, res) => {
   }
 });
 
+interface KakaoProfile {
+  id: number;
+  nickname: string;
+}
+
+async function fetchKakaoProfile(accessToken: string): Promise<KakaoProfile> {
+  const tokenRes = await fetch('https://kapi.kakao.com/v1/user/access_token_info', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!tokenRes.ok) {
+    throw new Error('Invalid Kakao access token');
+  }
+
+  const tokenInfo = (await tokenRes.json()) as { app_id?: number };
+  if (KAKAO_APP_ID && tokenInfo.app_id !== KAKAO_APP_ID) {
+    throw new Error('Kakao token app mismatch');
+  }
+
+  const meRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!meRes.ok) {
+    throw new Error('Failed to load Kakao profile');
+  }
+
+  const me = (await meRes.json()) as {
+    id: number;
+    properties?: { nickname?: string };
+    kakao_account?: { profile?: { nickname?: string } };
+  };
+
+  const nickname =
+    me.kakao_account?.profile?.nickname?.trim() ||
+    me.properties?.nickname?.trim() ||
+    `카카오${String(me.id).slice(-4)}`;
+
+  return { id: me.id, nickname };
+}
+
+function kakaoOAuthEmail(kakaoId: number): string {
+  return `kakao_${kakaoId}@oauth.tingting.app`;
+}
+
+app.post('/auth/kakao', async (req, res) => {
+  try {
+    const { accessToken } = req.body as { accessToken?: string };
+    if (!accessToken) {
+      res.status(400).json({ error: 'accessToken required' });
+      return;
+    }
+
+    const kakao = await fetchKakaoProfile(accessToken);
+    let { rows } = await pool.query('SELECT * FROM users WHERE kakao_id = $1', [kakao.id]);
+    let user = rows[0];
+
+    if (!user) {
+      const email = kakaoOAuthEmail(kakao.id);
+      const insert = await pool.query(
+        `INSERT INTO users (email, password_hash, display_name, stars, kakao_id)
+         VALUES ($1, '', $2, $3, $4)
+         ON CONFLICT (email) DO UPDATE SET
+           kakao_id = COALESCE(users.kakao_id, EXCLUDED.kakao_id),
+           display_name = CASE
+             WHEN users.display_name = '' OR users.display_name IS NULL THEN EXCLUDED.display_name
+             ELSE users.display_name
+           END
+         RETURNING *`,
+        [email, kakao.nickname, INITIAL_STARS, kakao.id],
+      );
+      user = insert.rows[0];
+    }
+
+    const token = signToken(user.id, user.email);
+    res.json({
+      token,
+      session: { userId: user.id, email: user.email, isDemo: false },
+      profile: mapUser(user),
+    });
+  } catch (e: unknown) {
+    res.status(401).json({ error: e instanceof Error ? e.message : 'Kakao login failed' });
+  }
+});
+
 app.get('/auth/me', authMiddleware, async (req: AuthedRequest, res) => {
   const user = await getUserById(req.user!.userId);
   if (!user) {
@@ -268,16 +452,66 @@ app.get('/auth/me', authMiddleware, async (req: AuthedRequest, res) => {
 });
 
 app.post('/auth/onboarding', authMiddleware, async (req: AuthedRequest, res) => {
-  const { displayName } = req.body as { displayName?: string };
-  if (!displayName) {
-    res.status(400).json({ error: 'displayName required' });
-    return;
+  try {
+    const { displayName } = req.body as { displayName?: string };
+    const trimmed = (displayName ?? '').trim();
+    const nicknameError = nicknameValidationError(trimmed);
+    if (nicknameError) {
+      res.status(400).json({ error: nicknameError });
+      return;
+    }
+    const { rows } = await pool.query(
+      'UPDATE users SET display_name = $1, onboarding_complete = true WHERE id = $2 RETURNING *',
+      [trimmed, req.user!.userId],
+    );
+    res.json({ profile: mapUser(rows[0]) });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Onboarding failed' });
   }
-  const { rows } = await pool.query(
-    'UPDATE users SET display_name = $1, onboarding_complete = true WHERE id = $2 RETURNING *',
-    [displayName, req.user!.userId]
-  );
-  res.json({ profile: mapUser(rows[0]) });
+});
+
+app.post('/profile/display-name', authMiddleware, async (req: AuthedRequest, res) => {
+  try {
+    const { displayName } = req.body as { displayName?: string };
+    const trimmed = (displayName ?? '').trim();
+    const nicknameError = nicknameValidationError(trimmed);
+    if (nicknameError) {
+      res.status(400).json({ error: nicknameError });
+      return;
+    }
+
+    const user = await getUserById(req.user!.userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (trimmed === user.display_name) {
+      res.json({ profile: mapUser(user), cost: 0 });
+      return;
+    }
+
+    const priorCount = Number(user.display_name_change_count ?? 0);
+    const cost = getDisplayNameChangeCost(priorCount);
+    if (cost > 0 && Number(user.stars) < cost) {
+      res.status(400).json({ error: '스타가 부족합니다' });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE users SET
+         display_name = $1,
+         display_name_change_count = $2,
+         stars = stars - $3
+       WHERE id = $4
+       RETURNING *`,
+      [trimmed, priorCount + 1, cost, req.user!.userId],
+    );
+
+    res.json({ profile: mapUser(rows[0]), cost });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Nickname change failed' });
+  }
 });
 
 // --- Dashboard ---
@@ -1283,14 +1517,14 @@ function buildGroupStationQuests(visitedRegionCodes: Set<string>, completedIds: 
     return {
       id: questId,
       placeId: station.placeId,
-      title: `${region.name} 대표역 방문`,
-      description: `${station.stationName}에서 GPS 방문 인증을 완료하세요.`,
+      title: `${region.name} 갤러리 오픈`,
+      description: `${region.name} 지역 내에서 GPS 인증을 완료하면 갤러리가 열립니다.`,
       rewardStars: 0,
       rewardType: 'gallery_slots' as const,
       rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD,
       targetLat: station.lat,
       targetLng: station.lng,
-      radiusMeters: GPS_QUEST_RADIUS_METERS,
+      radiusMeters: GROUP_STATION_QUEST_RADIUS_METERS,
       isStationQuest: true,
       regionCode: region.code,
       completed: completedIds.has(questId),

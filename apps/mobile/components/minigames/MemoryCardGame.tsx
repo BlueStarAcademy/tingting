@@ -158,7 +158,11 @@ export function MemoryCardGame() {
         scoreValue={String(moves)}
         detail={t('minigames.memoryResult', { moves })}
         stageResult={{ moves, allMatched: matchedCount >= totalPairs }}
-        onRestart={() => restart(activeStage)}
+        onRestart={(stage) => {
+          const target = stage ?? 1;
+          if (target !== activeStage) setActiveStage(target);
+          else restart(target);
+        }}
         onProgressUpdated={refresh}
         onNextStage={canAdvance ? handleNextStage : undefined}
         nextStageLabel={t('minigames.nextStage')}

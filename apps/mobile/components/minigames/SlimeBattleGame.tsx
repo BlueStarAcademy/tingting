@@ -126,6 +126,7 @@ export function SlimeBattleGame() {
   const [won, setWon] = useState(false);
   const [lastMove, setLastMove] = useState<number | null>(null);
   const [pulseIndex, setPulseIndex] = useState<number | null>(null);
+  const [koPoint, setKoPoint] = useState<number | null>(null);
 
   const busyRef = useRef(false);
 
@@ -151,6 +152,7 @@ export function SlimeBattleGame() {
     setWon(false);
     setLastMove(null);
     setPulseIndex(null);
+    setKoPoint(null);
   }, [activeStage]);
 
   useEffect(() => {
@@ -178,16 +180,16 @@ export function SlimeBattleGame() {
   );
 
   const runAiTurn = useCallback(
-    async (currentBoard: SlimeStone[], currentPlayerCaptures: number, currentAiCaptures: number) => {
+    async (currentBoard: SlimeStone[], currentPlayerCaptures: number, currentAiCaptures: number, currentKo: number | null) => {
       await delay(480);
-      const move = pickAiMove(currentBoard, activeStage);
+      const move = pickAiMove(currentBoard, activeStage, currentKo);
       if (move === null) {
         setTurn('player');
         setBusy(false);
         return;
       }
 
-      const result = tryPlaceStone(currentBoard, move, SLIME_AI);
+      const result = tryPlaceStone(currentBoard, move, SLIME_AI, currentKo);
       if (!result.valid) {
         setTurn('player');
         setBusy(false);
@@ -198,6 +200,9 @@ export function SlimeBattleGame() {
       setLastMove(move);
       setPulseIndex(move);
       setTimeout(() => setPulseIndex(null), 320);
+
+      const nextKo = result.capturedAt;
+      setKoPoint(nextKo);
 
       const nextAi = currentAiCaptures + result.captured;
       setAiCaptures(nextAi);
@@ -224,7 +229,7 @@ export function SlimeBattleGame() {
   const handleCellPress = useCallback(
     async (index: number) => {
       if (finished || busy || turn !== 'player') return;
-      const result = tryPlaceStone(board, index, SLIME_PLAYER);
+      const result = tryPlaceStone(board, index, SLIME_PLAYER, koPoint);
       if (!result.valid) return;
 
       setBusy(true);
@@ -233,6 +238,9 @@ export function SlimeBattleGame() {
       setLastMove(index);
       setPulseIndex(index);
       setTimeout(() => setPulseIndex(null), 320);
+
+      const nextKo = result.capturedAt;
+      setKoPoint(nextKo);
 
       const nextPlayer = playerCaptures + result.captured;
       setPlayerCaptures(nextPlayer);
@@ -244,9 +252,9 @@ export function SlimeBattleGame() {
       }
 
       setTurn('ai');
-      await runAiTurn(result.board, nextPlayer, aiCaptures);
+      await runAiTurn(result.board, nextPlayer, aiCaptures, nextKo);
     },
-    [aiCaptures, board, busy, finishCheck, finished, playerCaptures, runAiTurn, turn],
+    [aiCaptures, board, busy, finishCheck, finished, koPoint, playerCaptures, runAiTurn, turn],
   );
 
   const handleNextStage = useCallback(async () => {
@@ -257,9 +265,11 @@ export function SlimeBattleGame() {
     setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
   }, [refresh]);
 
-  const handleRestart = useCallback(() => {
-    restart(activeStage);
-    bootedStageRef.current = activeStage;
+  const handleRestart = useCallback((stage?: number) => {
+    const targetStage = stage ?? 1;
+    restart(targetStage);
+    bootedStageRef.current = targetStage;
+    if (targetStage !== activeStage) setActiveStage(targetStage);
   }, [activeStage, restart]);
 
   const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;

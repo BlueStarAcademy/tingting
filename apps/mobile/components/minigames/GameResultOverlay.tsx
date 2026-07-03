@@ -25,6 +25,8 @@ interface Props {
   nextStageLabel?: string;
   exitLabel: string;
   onPlayAgain: () => void;
+  onContinueWithAd?: () => void;
+  continueAdLabel?: string;
   onNextStage?: () => void;
   onExit: () => void;
   /** 클리어 시 다음 스테이지·나가기만 표시 (다시 하기 숨김) */
@@ -49,6 +51,8 @@ export function GameResultOverlay({
   nextStageLabel,
   exitLabel,
   onPlayAgain,
+  onContinueWithAd,
+  continueAdLabel,
   onNextStage,
   onExit,
   nextOrExitOnly = false,
@@ -170,12 +174,22 @@ export function GameResultOverlay({
         </ScrollView>
 
         <View style={styles.actions}>
+          {!cleared && onContinueWithAd ? (
+            <PremiumButton
+              title={continueAdLabel ?? '광고 보고 이어하기'}
+              onPress={onContinueWithAd}
+              fullWidth
+              size="sm"
+              style={styles.actionPrimary}
+            />
+          ) : null}
           <PremiumButton
-            title={primaryLabel}
-            onPress={primaryAction}
+            title={!cleared && onContinueWithAd ? `${playAgainLabel} (Stage 1)` : primaryLabel}
+            onPress={!cleared && onContinueWithAd ? onPlayAgain : primaryAction}
             fullWidth
             size="sm"
-            style={styles.actionPrimary}
+            variant={!cleared && onContinueWithAd ? 'outline' : undefined}
+            style={!cleared && onContinueWithAd ? styles.actionSecondary : styles.actionPrimary}
           />
           {showExitButton ? (
             <PremiumButton

@@ -13,7 +13,7 @@ import {
   type Visit,
 } from '@tingting/shared';
 import { KoreaMapPicker } from '@/components/group/KoreaMapPicker';
-import { RegionSegmentBar, type RegionSegment } from '@/components/group/RegionSegmentBar';
+import type { RegionSegment } from '@/components/group/RegionSegmentBar';
 import { GroupPlacesPanel } from '@/components/group/tabs/GroupPlacesPanel';
 import { GroupGalleryTab } from '@/components/group/tabs/GroupGalleryTab';
 import { GroupQuestTab } from '@/components/group/tabs/GroupQuestTab';
@@ -33,6 +33,12 @@ interface Props {
   quests: Quest[];
   schedules: GroupSchedule[];
   visitedRegionCodes: string[];
+  selectedRegionCode: string;
+  onSelectedRegionCodeChange: (code: string) => void;
+  regionOpen: boolean;
+  onRegionOpenChange: (open: boolean) => void;
+  segment: RegionSegment;
+  isOwner: boolean;
   onUpdated: () => void;
 }
 
@@ -43,14 +49,17 @@ export function GroupTravelTab({
   quests,
   schedules,
   visitedRegionCodes,
+  selectedRegionCode,
+  onSelectedRegionCodeChange,
+  regionOpen,
+  onRegionOpenChange,
+  segment,
+  isOwner,
   onUpdated,
 }: Props) {
   const router = useRouter();
   const { footerInset } = useBottomSheetLayout(true);
   const { t, locale } = useLocale();
-  const [selectedRegionCode, setSelectedRegionCode] = useState('SEO');
-  const [segment, setSegment] = useState<RegionSegment>('places');
-  const [regionOpen, setRegionOpen] = useState(false);
   const [focusedPlace, setFocusedPlace] = useState<Place | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -58,9 +67,6 @@ export function GroupTravelTab({
     () => getRegion(selectedRegionCode) ?? REGIONS[0],
     [selectedRegionCode]
   );
-
-  const regionLabel =
-    prefersEnglishContent(locale) && selectedRegion.nameEn ? selectedRegion.nameEn : selectedRegion.name;
 
   const upcomingSchedule = useMemo(
     () => findNearestUpcomingSchedule(schedules),
@@ -70,8 +76,7 @@ export function GroupTravelTab({
   const onRegionPress = (region: Region) => {
     setFocusedPlace(null);
     setPreviewOpen(false);
-    setSelectedRegionCode(region.code);
-    setSegment('places');
+    onSelectedRegionCodeChange(region.code);
   };
 
   const regionLabelFor = (code: string) => {
@@ -80,18 +85,22 @@ export function GroupTravelTab({
     return prefersEnglishContent(locale) && region.nameEn ? region.nameEn : region.name;
   };
 
+  const showMap = segment === 'places';
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.mapSection}>
-        <KoreaMapPicker
-          compact
-          visitedRegionCodes={visitedRegionCodes}
-          selectedCode={selectedRegionCode}
-          onRegionPress={onRegionPress}
-          focusPlace={focusedPlace}
-          onPinPress={() => setPreviewOpen(true)}
-        />
-      </View>
+      {showMap ? (
+        <View style={styles.mapSection}>
+          <KoreaMapPicker
+            compact
+            visitedRegionCodes={visitedRegionCodes}
+            selectedCode={selectedRegionCode}
+            onRegionPress={onRegionPress}
+            focusPlace={focusedPlace}
+            onPinPress={() => setPreviewOpen(true)}
+          />
+        </View>
+      ) : null}
 
       {previewOpen && focusedPlace ? (
         <View style={[styles.previewSheet, { bottom: footerInset }]}>
@@ -108,12 +117,11 @@ export function GroupTravelTab({
       ) : null}
 
       <View style={styles.panel}>
-        {upcomingSchedule ? (
+        {upcomingSchedule && segment === 'places' ? (
           <Pressable
             style={styles.ddayBanner}
             onPress={() => {
-              setSelectedRegionCode(upcomingSchedule.regionCode);
-              setSegment('schedule');
+              onSelectedRegionCodeChange(upcomingSchedule.regionCode);
             }}
           >
             <Ionicons name="calendar" size={16} color={theme.colors.primaryLight} />
@@ -127,68 +135,59 @@ export function GroupTravelTab({
           </Pressable>
         ) : null}
 
-        <Pressable style={styles.regionChip} onPress={() => setRegionOpen(true)}>
-          <Ionicons name="location" size={16} color={theme.colors.primaryLight} />
-          <Text style={styles.regionChipText} numberOfLines={1}>
-            {regionLabel}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={theme.colors.textMuted} />
-        </Pressable>
-
-        <RegionSegmentBar active={segment} onChange={setSegment} />
-
-        <ScrollView
-          style={styles.contentScroll}
-          contentContainerStyle={styles.content}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {segment === 'places' ? (
-            <GroupPlacesPanel
-              region={selectedRegion}
-              visitedRegionCodes={visitedRegionCodes}
-              places={places}
-              visits={visits}
-              onFocusPlace={(place) => {
-                setFocusedPlace(place);
-                setPreviewOpen(true);
-              }}
-            />
-          ) : null}
-          {segment === 'gallery' ? (
-            <GroupGalleryTab
-              group={group}
-              regionCode={selectedRegionCode}
-              visits={visits}
-              places={places}
-              quests={quests}
-              onUpdated={onUpdated}
-            />
-          ) : null}
-          {segment === 'quest' ? (
-            <GroupQuestTab
-              groupId={group.id}
-              regionCode={selectedRegionCode}
-              quests={quests}
-              onUpdated={onUpdated}
-            />
-          ) : null}
-          {segment === 'schedule' ? (
-            <GroupScheduleTab
-              groupId={group.id}
-              regionCode={selectedRegionCode}
-              schedules={schedules}
-              onUpdated={onUpdated}
-            />
-          ) : null}
-        </ScrollView>
+        {segment === 'gallery' ? (
+          <GroupGalleryTab
+            group={group}
+            isOwner={isOwner}
+            regionCode={selectedRegionCode}
+            visits={visits}
+            places={places}
+            onUpdated={onUpdated}
+          />
+        ) : (
+          <ScrollView
+            style={styles.contentScroll}
+            contentContainerStyle={styles.content}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {segment === 'places' ? (
+              <GroupPlacesPanel
+                region={selectedRegion}
+                visitedRegionCodes={visitedRegionCodes}
+                places={places}
+                visits={visits}
+                onFocusPlace={(place) => {
+                  setFocusedPlace(place);
+                  setPreviewOpen(true);
+                }}
+              />
+            ) : null}
+            {segment === 'quest' ? (
+              <GroupQuestTab
+                groupId={group.id}
+                regionCode={selectedRegionCode}
+                quests={quests}
+                onUpdated={onUpdated}
+              />
+            ) : null}
+            {segment === 'schedule' ? (
+              <GroupScheduleTab
+                groupId={group.id}
+                regionCode={selectedRegionCode}
+                schedules={schedules}
+                onUpdated={onUpdated}
+              />
+            ) : null}
+          </ScrollView>
+        )}
       </View>
 
       <AppModal
         visible={regionOpen}
         animationType="fade"
-        onRequestClose={() => setRegionOpen(false)}
+        onRequestClose={() => onRegionOpenChange(false)}
         variant="center"
         withGroupChat
       >
@@ -200,8 +199,8 @@ export function GroupTravelTab({
                 key={region.code}
                 style={[styles.regionOpt, region.code === selectedRegionCode && styles.regionOptActive]}
                 onPress={() => {
-                  setSelectedRegionCode(region.code);
-                  setRegionOpen(false);
+                  onSelectedRegionCodeChange(region.code);
+                  onRegionOpenChange(false);
                 }}
               >
                 <Text
@@ -261,21 +260,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.tint.border,
   },
   ddayText: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '700' },
-  regionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    alignSelf: 'center',
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.full,
-    paddingVertical: 8,
-    paddingHorizontal: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    maxWidth: '80%',
-  },
-  regionChipText: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
   contentScroll: { flex: 1, minHeight: 0 },
   content: { paddingBottom: theme.spacing.lg, gap: theme.spacing.sm },
   modalSheet: {

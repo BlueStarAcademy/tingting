@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getRegion,
   PLACE_CATEGORY_BY_MENU,
   type Place,
   type Region,
@@ -78,23 +77,13 @@ export function GroupPlacesPanel({
 
   return (
     <View style={styles.wrap}>
-      <View style={[styles.badge, visitedRegionCodes.includes(region.code) && styles.badgeVisited]}>
-        <Text style={styles.badgeText}>
-          {visitedRegionCodes.includes(region.code) ? t('region.visited') : t('region.notVisited')}
-        </Text>
-      </View>
-      <Text style={styles.sub}>
-        {getRegion(region.code)?.nameEn ?? ''} ·{' '}
-        {t('region.placeCount', {
-          count: places.filter((p) => p.regionCode === region.code).length,
-        })}
-      </Text>
       <TravelProgressBar
         title={t('map.regionProgressTitle')}
         subtitle={t('map.regionProgressSub', {
           visited: regionProgress.visited,
           total: regionProgress.total,
         })}
+        inlineSubtitle
         progress={regionProgress.ratio}
         accentColor={region.color}
       />
@@ -105,7 +94,7 @@ export function GroupPlacesPanel({
             const categoryPercent = getCategoryMaxProgressPercent(region.code, key, places);
             return (
               <Pressable key={key} style={styles.menuItem} onPress={() => setCategory(key)}>
-                <Ionicons name={menuIcons[key]} size={24} color={theme.colors.primaryLight} />
+                <Ionicons name={menuIcons[key]} size={20} color={theme.colors.primaryLight} />
                 <Text style={styles.menuLabel}>{menuLabels[key]}</Text>
                 {categoryPercent > 0 ? (
                   <Text style={styles.menuProgress}>
@@ -151,31 +140,20 @@ export function GroupPlacesPanel({
 
 const styles = StyleSheet.create({
   wrap: { gap: theme.spacing.sm },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.full,
-  },
-  badgeVisited: { backgroundColor: 'rgba(52,211,153,0.2)' },
-  badgeText: { color: theme.colors.text, fontWeight: '600', fontSize: 13 },
-  sub: { color: theme.colors.textMuted, fontSize: 13 },
-  menuGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.xs },
+  menuGrid: { flexDirection: 'row', gap: 6, marginTop: theme.spacing.xs },
   menuItem: {
-    width: '30%',
-    flexGrow: 1,
-    minWidth: 90,
+    flex: 1,
     alignItems: 'center',
-    gap: 6,
-    padding: theme.spacing.md,
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.tint.border,
   },
-  menuLabel: { color: theme.colors.text, fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  menuProgress: { color: theme.colors.primaryLight, fontSize: 10, fontWeight: '700', textAlign: 'center' },
+  menuLabel: { color: theme.colors.text, fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  menuProgress: { color: theme.colors.primaryLight, fontSize: 9, fontWeight: '700', textAlign: 'center' },
   backMenu: { marginTop: theme.spacing.xs },
   empty: { color: theme.colors.textMuted, textAlign: 'center', paddingVertical: theme.spacing.lg },
 });

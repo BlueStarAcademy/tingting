@@ -1,8 +1,8 @@
-import { View, Text, Image, Pressable, Linking, Platform, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Linking, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
-import { APK_DOWNLOAD_URL, getApkQrImageUrl, openApkDownload } from '@/lib/app-config';
+import { openDownloadUrl, usePublicConfig } from '@/lib/app-config';
 import { theme } from '@/constants/theme';
 
 export const DOWNLOAD_BAR_HEIGHT = 72;
@@ -10,15 +10,15 @@ export const DOWNLOAD_BAR_HEIGHT = 72;
 export function DownloadBar() {
   const { t } = useLocale();
   const router = useRouter();
-  const hasApk = APK_DOWNLOAD_URL.length > 0;
-  const qrUri = hasApk ? getApkQrImageUrl(APK_DOWNLOAD_URL, 96) : undefined;
+  const { apkDownloadUrl, loaded } = usePublicConfig();
+  const hasApk = apkDownloadUrl.length > 0;
 
-  const openDownload = () => {
+  const openAndroid = () => {
     if (Platform.OS !== 'web') {
-      if (hasApk) Linking.openURL(APK_DOWNLOAD_URL);
+      Linking.openURL(apkDownloadUrl);
       return;
     }
-    openApkDownload();
+    openDownloadUrl(apkDownloadUrl);
   };
 
   return (
@@ -31,19 +31,13 @@ export function DownloadBar() {
 
         <View style={styles.actions}>
           {hasApk ? (
-            <>
-              <View style={styles.qrBlock}>
-                <Image source={{ uri: qrUri! }} style={styles.qr} accessibilityLabel={t('landing.qrLabel')} />
-                <Text style={styles.qrHint}>{t('landing.qrHint')}</Text>
-              </View>
-              <Pressable style={styles.downloadBtn} onPress={openDownload}>
-                <Ionicons name="logo-android" size={20} color={theme.colors.onPrimary} />
-                <Text style={styles.downloadText}>{t('landing.downloadAndroid')}</Text>
-              </Pressable>
-            </>
-          ) : (
+            <Pressable style={styles.downloadBtn} onPress={openAndroid}>
+              <Ionicons name="logo-android" size={20} color={theme.colors.onPrimary} />
+              <Text style={styles.downloadText}>{t('landing.downloadAndroid')}</Text>
+            </Pressable>
+          ) : loaded ? (
             <Text style={styles.comingSoon}>{t('landing.apkComingSoon')}</Text>
-          )}
+          ) : null}
 
           <Pressable style={styles.webBtn} onPress={() => router.push('/app')}>
             <Ionicons name="globe-outline" size={18} color={theme.colors.primary} />
@@ -107,23 +101,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     flexWrap: 'wrap',
-  },
-  qrBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  qr: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
-    backgroundColor: '#fff',
-  },
-  qrHint: {
-    fontSize: 11,
-    color: theme.colors.textMuted,
-    maxWidth: 72,
-    lineHeight: 14,
   },
   downloadBtn: {
     flexDirection: 'row',

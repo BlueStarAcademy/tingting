@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserProfile } from '@tingting/shared';
@@ -55,6 +56,9 @@ export function ProfileSection({
   const [starRewardTotal, setStarRewardTotal] = useState(0);
   const [pendingMbtiResult, setPendingMbtiResult] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isCompleted = profile.mbtiTestCompleted === true;
   const isPublic = profile.profilePublic !== false;
@@ -84,10 +88,26 @@ export function ProfileSection({
     }
   };
 
+  const showToast = (msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastMessage(msg);
+    Animated.timing(toastOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+        setToastMessage(null);
+      });
+    }, 3000);
+  };
+
   const toggleProfilePublic = async (value: boolean) => {
     setVisibilitySaving(true);
     try {
       await api.updateProfile({ profilePublic: value });
+      if (value) {
+        showToast('프로필 공개 상태가 되어 그룹 초대를 받을 수 있습니다.');
+      } else {
+        showToast('프로필 비공개 상태가 되어 그룹 초대를 받을 수 없습니다.');
+      }
       onUpdated();
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
@@ -266,6 +286,12 @@ export function ProfileSection({
         onClose={() => setResultOpen(false)}
         onRetake={readOnly ? undefined : startRetake}
       />
+
+      {toastMessage ? (
+        <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -389,4 +415,16 @@ const styles = StyleSheet.create({
   },
   mbtiActionText: { color: theme.colors.accentDark, fontSize: 12, fontWeight: '700' },
   loader: { alignSelf: 'center' },
+  toast: {
+    position: 'absolute',
+    bottom: 12,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  toastText: { color: '#fff', fontSize: 13, fontWeight: '600', textAlign: 'center' },
 });

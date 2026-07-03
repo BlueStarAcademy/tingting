@@ -140,13 +140,13 @@ export default function StepsScreen() {
 
   return (
     <TabPage contentContainerStyle={styles.page}>
-      <View style={styles.headerRow}>
-        <Pressable style={styles.tzButton} onPress={() => setTzOpen(true)}>
-          <Text style={styles.tzButtonText}>{t('steps.timezoneButton', { label: tzShortLabel })}</Text>
+      <View style={styles.ringContainer}>
+        <StepsProgressRing steps={dailySteps} stepsLabel={t('steps.stepsUnit')} />
+        <Pressable style={styles.tzOverlay} onPress={() => setTzOpen(true)}>
+          <Ionicons name="time-outline" size={12} color={theme.colors.textMuted} />
+          <Text style={styles.tzOverlayText}>{tzShortLabel}</Text>
         </Pressable>
       </View>
-
-      <StepsProgressRing steps={dailySteps} stepsLabel={t('steps.stepsUnit')} />
 
       {!available ? <Text style={styles.warn}>{t('steps.unavailable')}</Text> : null}
 
@@ -235,22 +235,30 @@ export default function StepsScreen() {
 
 const styles = StyleSheet.create({
   page: { padding: 0, gap: theme.spacing.md },
-  headerRow: {
+  ringContainer: {
+    alignSelf: 'center',
+  },
+  tzOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: theme.spacing.sm,
-  },
-  tzButton: {
-    flexShrink: 0,
+    gap: 4,
     backgroundColor: theme.colors.surfaceElevated,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 10,
   },
-  tzButtonText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
+  tzOverlayText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
   warn: { color: theme.colors.star, textAlign: 'center' },
   rouletteCard: {
     flexDirection: 'row',

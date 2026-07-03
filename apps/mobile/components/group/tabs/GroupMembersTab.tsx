@@ -111,7 +111,14 @@ export function GroupMembersTab({ group, isOwner, currentUserId, onUpdated, onLe
   const [profileLoading, setProfileLoading] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
-  const members = group.members ?? [];
+  const members = useMemo(() => {
+    const raw = group.members ?? [];
+    return [...raw].sort((a, b) => {
+      if (a.isOwner && !b.isOwner) return -1;
+      if (!a.isOwner && b.isOwner) return 1;
+      return 0;
+    });
+  }, [group.members]);
   const unlocked = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
   const canInvite = isOwner && members.length < unlocked;
   const nextUnlockCost = getGroupMemberSlotUnlockCost(unlocked);

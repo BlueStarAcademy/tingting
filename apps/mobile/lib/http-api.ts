@@ -21,6 +21,7 @@ import type {
 } from '@tingting/shared';
 import { filterPlacesByRegion, mergePlacesWithBundled } from '@/lib/places-data';
 import { SEED_PUBLIC_EXPERIENCE_POSTS } from '@/lib/public-feed-seed';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const TOKEN_KEY = '@tingting/api-token';
 const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
@@ -30,6 +31,10 @@ export function isHttpApiConfigured(): boolean {
 }
 
 async function getToken(): Promise<string | null> {
+  if (isSupabaseConfigured) {
+    const { data } = await getSupabase()!.auth.getSession();
+    if (data.session?.access_token) return data.session.access_token;
+  }
   return AsyncStorage.getItem(TOKEN_KEY);
 }
 
@@ -86,6 +91,15 @@ export const httpApi = {
 
   async signInDemo(): Promise<AuthSession> {
     const data = await request<{ token: string; session: AuthSession }>('/auth/demo', { method: 'POST' });
+    await setToken(data.token);
+    return data.session;
+  },
+
+  async signInWithKakao(accessToken: string): Promise<AuthSession> {
+    const data = await request<{ token: string; session: AuthSession }>('/auth/kakao', {
+      method: 'POST',
+      body: JSON.stringify({ accessToken }),
+    });
     await setToken(data.token);
     return data.session;
   },
@@ -401,7 +415,7 @@ export const httpApi = {
     questId: string,
     lat: number,
     lng: number
-  ): Promise<{ rewardGallerySlots: number }> {
+  ): Promise<{ rewardGallerySlots: number; rewardStars?: number }> {
     return request(`/groups/${groupId}/quests/${encodeURIComponent(questId)}/complete`, {
       method: 'POST',
       body: JSON.stringify({ lat, lng }),
@@ -427,6 +441,7 @@ export const httpApi = {
     title: string;
     date: string;
     note?: string;
+    stickerId?: string;
   }): Promise<GroupSchedule> {
     return request<GroupSchedule>(`/groups/${input.groupId}/schedules`, {
       method: 'POST',
@@ -436,6 +451,13 @@ export const httpApi = {
 
   async deleteGroupSchedule(scheduleId: string): Promise<void> {
     await request(`/schedules/${encodeURIComponent(scheduleId)}`, { method: 'DELETE' });
+  },
+
+  async purchaseStickers(stickerId: string, packId: string): Promise<{ newCount: number }> {
+    return request<{ newCount: number }>('/stickers/purchase', {
+      method: 'POST',
+      body: JSON.stringify({ stickerId, packId }),
+    });
   },
 
   async spendStars(amount: number, reason: string): Promise<number> {

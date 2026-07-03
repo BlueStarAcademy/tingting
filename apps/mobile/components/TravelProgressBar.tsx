@@ -4,6 +4,8 @@ import { theme } from '@/constants/theme';
 interface Props {
   title: string;
   subtitle?: string;
+  /** subtitle을 퍼센트 옆(헤더 우측)에 표시 */
+  inlineSubtitle?: boolean;
   progress: number;
   accentColor?: string;
   compact?: boolean;
@@ -12,6 +14,7 @@ interface Props {
 export function TravelProgressBar({
   title,
   subtitle,
+  inlineSubtitle = false,
   progress,
   accentColor = theme.colors.primary,
   compact = false,
@@ -24,9 +27,16 @@ export function TravelProgressBar({
         <Text style={[styles.title, compact && styles.titleCompact]} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={[styles.pct, compact && styles.pctCompact]}>{pct}%</Text>
+        <View style={styles.headerMeta}>
+          {inlineSubtitle && subtitle ? (
+            <Text style={[styles.subInline, compact && styles.subCompact]} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
+          <Text style={[styles.pct, compact && styles.pctCompact]}>{pct}%</Text>
+        </View>
       </View>
-      {subtitle ? (
+      {subtitle && !inlineSubtitle ? (
         <Text style={[styles.sub, compact && styles.subCompact]} numberOfLines={1}>
           {subtitle}
         </Text>
@@ -65,12 +75,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   titleCompact: { fontSize: 13 },
+  headerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
   pct: {
     color: theme.colors.text,
     fontSize: 14,
     fontWeight: '800',
   },
   pctCompact: { fontSize: 13 },
+  subInline: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   sub: {
     color: theme.colors.textMuted,
     fontSize: 12,

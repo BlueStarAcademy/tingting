@@ -7,6 +7,8 @@ export const DEMO_OTP = '123456';
 export const INITIAL_STARS = 100;
 export const QUEST_REWARD_DEFAULT = 10;
 export const GPS_QUEST_RADIUS_METERS = 200;
+/** 그룹 갤러리 오픈 퀘스트는 해당 지역 내 어디서든 GPS 인증 가능 (50km) */
+export const GROUP_STATION_QUEST_RADIUS_METERS = 50_000;
 export const MAX_GROUP_SLOTS = 6;
 export const MBTI_TEST_REWARD = 100;
 export const MINIGAME_DAILY_STAR_CAP = 30;
@@ -24,6 +26,8 @@ export function rollMinigameFinalStarReward(): number {
 }
 export const NICKNAME_CHANGE_BASE_COST = 200;
 export const NICKNAME_CHANGE_MAX_COST = 1000;
+/** 닉네임 변경 고정 비용 (첫 설정·첫 변경 제외) */
+export const NICKNAME_CHANGE_COST = 100;
 /** 그룹 기본 무료 구성원 수 (방장만) */
 export const FREE_GROUP_MEMBER_COUNT = 1;
 export const MAX_GROUP_MEMBER_SLOTS = 10;
@@ -75,11 +79,9 @@ export const GROUP_STATION_QUEST_SKIP_PRICE_KRW = 2900;
 
 export const GROUP_STATION_QUEST_SKIP_PRODUCT_ID = 'gallery_quest_skip';
 
-/** 닉네임 변경 비용 (이미 변경한 횟수 기준, 첫 변경 무료) */
-export function getDisplayNameChangeCost(priorChangeCount: number): number {
-  if (priorChangeCount <= 0) return 0;
-  const cost = NICKNAME_CHANGE_BASE_COST * Math.pow(2, priorChangeCount - 1);
-  return Math.min(cost, NICKNAME_CHANGE_MAX_COST);
+/** 닉네임 변경 비용 (설정 모달 첫 저장은 무료, 이후 변경은 고정) */
+export function getDisplayNameChangeCost(_priorChangeCount: number): number {
+  return NICKNAME_CHANGE_COST;
 }
 
 import type { FeaturePassTier } from './types';
@@ -144,3 +146,90 @@ export const FEATURED_PLACE_IDS = [
   'p-sjb-1',
   'p-bus-2',
 ] as const;
+
+// ─── Schedule Stickers ───────────────────────────────────────
+export interface ScheduleSticker {
+  id: string;
+  emoji: string;
+  label: string;
+  free: boolean;
+}
+
+export const SCHEDULE_STICKERS: ScheduleSticker[] = [
+  { id: 'heart', emoji: '❤️', label: '하트', free: true },
+  { id: 'star', emoji: '⭐', label: '별', free: false },
+  { id: 'plane', emoji: '✈️', label: '비행기', free: false },
+  { id: 'cake', emoji: '🎂', label: '케이크', free: false },
+  { id: 'party', emoji: '🎉', label: '파티', free: false },
+  { id: 'camera', emoji: '📷', label: '카메라', free: false },
+  { id: 'food', emoji: '🍽️', label: '음식', free: false },
+  { id: 'tent', emoji: '⛺', label: '캠핑', free: false },
+];
+
+export const DEFAULT_STICKER_ID = 'heart';
+
+export interface StickerPackOption {
+  id: string;
+  count: number;
+  starCost: number;
+}
+
+export const STICKER_PACK_OPTIONS: StickerPackOption[] = [
+  { id: 'sticker_10', count: 10, starCost: 50 },
+  { id: 'sticker_50', count: 50, starCost: 100 },
+  { id: 'sticker_100', count: 100, starCost: 150 },
+];
+
+export function getStickerById(id: string): ScheduleSticker | undefined {
+  return SCHEDULE_STICKERS.find((s) => s.id === id);
+}
+
+// ─── Region Star Quests ──────────────────────────────────────
+export interface RegionQuestTemplate {
+  /** quest id suffix (combined with region code) */
+  idSuffix: string;
+  titleTemplate: string;
+  descTemplate: string;
+  rewardStars: number;
+}
+
+export const REGION_QUEST_TEMPLATES: RegionQuestTemplate[] = [
+  {
+    idSuffix: 'food',
+    titleTemplate: '{{region}} 맛집탐방',
+    descTemplate: '{{region}} 지역 맛집에서 인증하기',
+    rewardStars: 15,
+  },
+  {
+    idSuffix: 'photo',
+    titleTemplate: '{{region}} 포토스팟',
+    descTemplate: '{{region}} 명소에서 사진 인증하기',
+    rewardStars: 10,
+  },
+  {
+    idSuffix: 'stay',
+    titleTemplate: '{{region}} 숙박체험',
+    descTemplate: '{{region}} 지역 숙소에서 인증하기',
+    rewardStars: 20,
+  },
+  {
+    idSuffix: 'culture',
+    titleTemplate: '{{region}} 문화탐방',
+    descTemplate: '{{region}} 문화시설/행사 방문 인증하기',
+    rewardStars: 15,
+  },
+  {
+    idSuffix: 'explore',
+    titleTemplate: '{{region}} 자유탐색',
+    descTemplate: '{{region}} 어디든 새로운 곳 방문 인증하기',
+    rewardStars: 10,
+  },
+];
+
+export function buildRegionQuestId(regionCode: string, suffix: string): string {
+  return `region-quest-${regionCode}-${suffix}`;
+}
+
+export function renderQuestTemplate(template: string, regionName: string): string {
+  return template.replace(/\{\{region\}\}/g, regionName);
+}

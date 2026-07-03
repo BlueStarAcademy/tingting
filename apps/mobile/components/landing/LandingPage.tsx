@@ -3,11 +3,11 @@ import { View, Text, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DownloadBar, DOWNLOAD_BAR_HEIGHT } from '@/components/landing/DownloadBar';
-import { ApkDownloadCard } from '@/components/landing/ApkDownloadCard';
+import { AndroidDownloadCard } from '@/components/landing/AndroidDownloadCard';
 import { PremiumButton } from '@/components/PremiumButton';
 import { GradientBackground } from '@/components/GradientBackground';
 import { useLocale } from '@/hooks/useLocale';
-import { APK_DOWNLOAD_URL } from '@/lib/app-config';
+import { usePublicConfig } from '@/lib/app-config';
 import { theme } from '@/constants/theme';
 
 const FEATURES = [
@@ -22,6 +22,8 @@ const FEATURES = [
 export function LandingPage() {
   const { t } = useLocale();
   const router = useRouter();
+  const { apkDownloadUrl } = usePublicConfig();
+  const hasApk = Boolean(apkDownloadUrl);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -46,25 +48,23 @@ export function LandingPage() {
             <Text style={styles.heroTitle}>{t('appName')}</Text>
             <Text style={styles.heroSub}>{t('auth.tagline')}</Text>
             <Text style={styles.heroDesc}>{t('landing.heroDesc')}</Text>
+            {hasApk ? (
+              <View style={styles.downloadBlock}>
+                <Text style={styles.downloadTitle}>{t('landing.downloadTitle')}</Text>
+                <Text style={styles.downloadDesc}>{t('landing.downloadSectionDesc')}</Text>
+                <AndroidDownloadCard downloadUrl={apkDownloadUrl} />
+              </View>
+            ) : null}
             <View style={styles.heroCtas}>
-              {APK_DOWNLOAD_URL ? <ApkDownloadCard variant="hero" /> : null}
               <PremiumButton
                 title={t('landing.tryWeb')}
                 onPress={() => router.push('/app')}
-                variant={APK_DOWNLOAD_URL ? 'outline' : 'primary'}
+                variant={hasApk ? 'outline' : 'primary'}
                 style={styles.ctaBtn}
               />
             </View>
           </View>
         </GradientBackground>
-
-        {APK_DOWNLOAD_URL ? (
-          <View style={styles.downloadSection}>
-            <Text style={styles.sectionTitle}>{t('landing.downloadTitle')}</Text>
-            <Text style={styles.downloadSectionDesc}>{t('landing.downloadSectionDesc')}</Text>
-            <ApkDownloadCard variant="section" />
-          </View>
-        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('landing.featuresTitle')}</Text>
@@ -152,37 +152,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
   },
-  heroCtas: {
+  downloadBlock: {
     marginTop: 28,
     width: '100%',
     maxWidth: 320,
-    gap: 16,
-    alignItems: 'center',
-  },
-  ctaBtn: {
-    maxWidth: 320,
-    width: '100%',
-  },
-  downloadSection: {
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    maxWidth: 640,
-    alignSelf: 'center',
-    width: '100%',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: theme.colors.tealSoft,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: theme.colors.border,
   },
-  downloadSectionDesc: {
+  downloadTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  downloadDesc: {
     fontSize: 14,
     lineHeight: 22,
     color: theme.colors.textMuted,
     textAlign: 'center',
     marginBottom: 8,
-    maxWidth: 420,
+  },
+  heroCtas: {
+    marginTop: 20,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  ctaBtn: {
+    maxWidth: 320,
+    width: '100%',
   },
   section: {
     paddingHorizontal: 24,

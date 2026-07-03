@@ -132,10 +132,12 @@ export function UpDownGame() {
     setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
   }, [refresh]);
 
-  const handleRestart = useCallback(() => {
+  const handleRestart = useCallback((stage?: number) => {
+    const targetStage = stage ?? 1;
     bootedStageRef.current = null;
-    restart(activeStage);
-    bootedStageRef.current = activeStage;
+    restart(targetStage);
+    bootedStageRef.current = targetStage;
+    if (targetStage !== activeStage) setActiveStage(targetStage);
   }, [activeStage, restart]);
 
   const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;

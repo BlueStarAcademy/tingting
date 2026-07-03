@@ -9,6 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { GroupChatMessage } from '@tingting/shared';
@@ -151,9 +154,45 @@ export function GroupChatBar({ groupId }: Props) {
     setEmojiOpen(false);
   };
 
+  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const lastOffset = useRef({ x: 0, y: 0 });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
+      onPanResponderGrant: () => {
+        pan.setOffset(lastOffset.current);
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+        const { width: screenW, height: screenH } = Dimensions.get('window');
+        const curX = (pan.x as any)._value ?? 0;
+        const curY = (pan.y as any)._value ?? 0;
+        const clampedX = Math.max(-(screenW - 120), Math.min(0, curX));
+        const clampedY = Math.max(-(screenH - 200), Math.min(screenH - 200, curY));
+        lastOffset.current = { x: clampedX, y: clampedY };
+        pan.setValue({ x: clampedX, y: clampedY });
+      },
+    })
+  ).current;
+
   if (!expanded) {
     return (
-      <View style={[styles.bubbleWrap, { bottom: tabBarInset + 12 }]} pointerEvents="box-none">
+      <Animated.View
+        style={[
+          styles.bubbleWrap,
+          { bottom: tabBarInset + 12 },
+          { transform: pan.getTranslateTransform() },
+        ]}
+        pointerEvents="box-none"
+        {...panResponder.panHandlers}
+      >
         <Pressable
           style={styles.bubble}
           onPress={() => setExpanded(true)}
@@ -168,7 +207,7 @@ export function GroupChatBar({ groupId }: Props) {
             </View>
           </View>
         </Pressable>
-      </View>
+      </Animated.View>
     );
   }
 

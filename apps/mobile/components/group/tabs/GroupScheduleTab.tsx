@@ -9,10 +9,16 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { GroupSchedule } from '@tingting/shared';
+import {
+  type GroupSchedule,
+  SCHEDULE_STICKERS,
+  DEFAULT_STICKER_ID,
+  getStickerById,
+} from '@tingting/shared';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { getIntlTag } from '@/lib/i18n/locale';
 import {
@@ -33,6 +39,7 @@ interface Props {
 
 export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: Props) {
   const { t, formatDate, locale } = useLocale();
+  const { profile } = useAuth();
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -40,6 +47,9 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
   const [addOpen, setAddOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
+  const [selectedStickerId, setSelectedStickerId] = useState(DEFAULT_STICKER_ID);
+
+  const ownedStickers: Record<string, number> = (profile as any)?.ownedStickers ?? {};
 
   const regionSchedules = useMemo(
     () => schedules.filter((s) => s.regionCode === regionCode),
@@ -50,6 +60,14 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
     () => new Set(regionSchedules.map((s) => s.date)),
     [regionSchedules]
   );
+
+  const schedulesByDate = useMemo(() => {
+    const map: Record<string, GroupSchedule[]> = {};
+    for (const s of regionSchedules) {
+      (map[s.date] ??= []).push(s);
+    }
+    return map;
+  }, [regionSchedules]);
 
   const selectedDateKey = dateKeyFromParts(viewYear, viewMonth, selectedDay);
   const daySchedules = regionSchedules.filter((s) => s.date === selectedDateKey);
@@ -81,6 +99,7 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
   const openAdd = () => {
     setTitle('');
     setNote('');
+    setSelectedStickerId(DEFAULT_STICKER_ID);
     setAddOpen(true);
   };
 
@@ -89,6 +108,14 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
       Alert.alert(t('common.alert'), t('group.scheduleTitlePlaceholder'));
       return;
     }
+    const sticker = getStickerById(selectedStickerId);
+    if (sticker && !sticker.free) {
+      const count = ownedStickers[selectedStickerId] ?? 0;
+      if (count <= 0) {
+        Alert.alert(t('common.alert'), t('group.stickerNone'));
+        return;
+      }
+    }
     try {
       await api.createGroupSchedule({
         groupId,
@@ -96,6 +123,7 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
         title: title.trim(),
         date: selectedDateKey,
         note: note.trim() || undefined,
+        stickerId: selectedStickerId,
       });
       setAddOpen(false);
       onUpdated();
@@ -120,6 +148,13 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
   };
 
   const todayKey = toDateKey(today);
+
+  const getFirstStickerForDate = (dateKey: string): string | null => {
+    const dayItems = schedulesByDate[dateKey];
+    if (!dayItems || dayItems.length === 0) return null;
+    const stickerId = dayItems[0].stickerId ?? DEFAULT_STICKER_ID;
+    return getStickerById(stickerId)?.emoji ?? null;
+  };
 
   return (
     <View style={styles.wrap}>
@@ -150,7 +185,7 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
             const dateKey = dateKeyFromParts(viewYear, viewMonth, day);
             const isSelected = day === selectedDay;
             const isToday = dateKey === todayKey;
-            const hasSchedule = scheduleDates.has(dateKey);
+            const stickerEmoji = getFirstStickerForDate(dateKey);
             const dday = daysUntil(dateKey);
             return (
               <Pressable
@@ -168,8 +203,10 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
                 >
                   {day}
                 </Text>
-                {hasSchedule ? <View style={styles.dot} /> : null}
-                {hasSchedule && isSelected && dday >= 0 ? (
+                {stickerEmoji ? (
+                  <Text style={styles.stickerEmoji}>{stickerEmoji}</Text>
+                ) : null}
+                {stickerEmoji && isSelected && dday >= 0 ? (
                   <Text style={styles.miniDday}>{formatDday(dday)}</Text>
                 ) : null}
               </Pressable>
@@ -191,8 +228,10 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
       ) : (
         daySchedules.map((schedule) => {
           const dday = daysUntil(schedule.date);
+          const emoji = getStickerById(schedule.stickerId ?? DEFAULT_STICKER_ID)?.emoji ?? '❤️';
           return (
             <View key={schedule.id} style={styles.card}>
+              <Text style={styles.cardSticker}>{emoji}</Text>
               <View style={styles.cardMain}>
                 <Text style={styles.cardTitle}>{schedule.title}</Text>
                 {schedule.note ? <Text style={styles.cardNote}>{schedule.note}</Text> : null}
@@ -218,6 +257,27 @@ export function GroupScheduleTab({ groupId, regionCode, schedules, onUpdated }: 
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalContent}>
           <Text style={styles.modalTitle}>{t('group.scheduleAdd')}</Text>
           <Text style={styles.modalDate}>{formatDate(selectedDateKey)}</Text>
+
+          <Text style={styles.inputLabel}>{t('group.stickerLabel')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stickerScroll} contentContainerStyle={styles.stickerRow}>
+            {SCHEDULE_STICKERS.map((sticker) => {
+              const isActive = sticker.id === selectedStickerId;
+              const count = sticker.free ? Infinity : (ownedStickers[sticker.id] ?? 0);
+              return (
+                <Pressable
+                  key={sticker.id}
+                  style={[styles.stickerItem, isActive && styles.stickerItemActive]}
+                  onPress={() => setSelectedStickerId(sticker.id)}
+                >
+                  <Text style={styles.stickerItemEmoji}>{sticker.emoji}</Text>
+                  <Text style={[styles.stickerCount, count === 0 && styles.stickerCountZero]}>
+                    {sticker.free ? '∞' : count}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
           <Text style={styles.inputLabel}>{t('group.scheduleTitle')}</Text>
           <TextInput
             style={styles.input}
@@ -272,19 +332,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: theme.radius.sm,
     margin: 1,
-    gap: 2,
+    gap: 1,
   },
   daySelected: { backgroundColor: theme.colors.tint.soft, borderWidth: 1, borderColor: theme.colors.primaryLight },
   dayToday: { backgroundColor: theme.colors.surface },
-  dayNum: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
+  dayNum: { color: theme.colors.text, fontSize: 12, fontWeight: '600' },
   dayNumSelected: { color: theme.colors.primaryDark, fontWeight: '800' },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: theme.colors.primaryLight,
-  },
-  miniDday: { fontSize: 8, color: theme.colors.primaryLight, fontWeight: '700' },
+  stickerEmoji: { fontSize: 12 },
+  miniDday: { fontSize: 7, color: theme.colors.primaryLight, fontWeight: '700' },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -306,6 +361,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.tint.border,
   },
+  cardSticker: { fontSize: 22 },
   cardMain: { flex: 1, gap: 4 },
   cardTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
   cardNote: { color: theme.colors.textMuted, fontSize: 12 },
@@ -316,6 +372,26 @@ const styles = StyleSheet.create({
   modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800' },
   modalDate: { color: theme.colors.textMuted, fontSize: 14 },
   inputLabel: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
+  stickerScroll: { flexGrow: 0 },
+  stickerRow: { gap: 8, paddingVertical: 6 },
+  stickerItem: {
+    width: 52,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderRadius: theme.radius.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: theme.colors.surface,
+  },
+  stickerItemActive: {
+    borderColor: theme.colors.primaryLight,
+    backgroundColor: theme.colors.tint.soft,
+  },
+  stickerItemEmoji: { fontSize: 22 },
+  stickerCount: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
+  stickerCountZero: { color: '#f87171' },
   input: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,

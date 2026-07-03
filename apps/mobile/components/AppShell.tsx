@@ -16,8 +16,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return <WebMobileFrame>{children}</WebMobileFrame>;
 }
 
+const AUTH_ROUTE_PREFIXES = ['/login', '/signup', '/onboarding'];
+
 export function shouldShowMainTabBar(pathname: string): boolean {
   if (pathname === '/' || pathname === '/app') return false;
   if (pathname.includes('(auth)')) return false;
+  if (AUTH_ROUTE_PREFIXES.some((route) => pathname === route || pathname.startsWith(`${route}?`))) {
+    return false;
+  }
   return true;
 }

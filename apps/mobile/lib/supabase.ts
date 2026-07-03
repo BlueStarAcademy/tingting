@@ -1,9 +1,12 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const siteUrl = process.env.EXPO_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? '';
 
 export const isSupabaseConfigured = Boolean(url && key);
 
@@ -18,8 +21,58 @@ export function getSupabase(): SupabaseClient | null {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+        flowType: 'pkce',
       },
     });
   }
   return client;
+}
+
+export type AuthRedirectRoute = 'auth-callback' | 'reset-password';
+
+export function getAuthRedirectUrl(route: AuthRedirectRoute): string {
+  const path = `/${route}`;
+  if (Platform.OS === 'web') {
+    const origin = siteUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    return origin ? `${origin}${path}` : path;
+  }
+  return Linking.createURL(route);
+}
+
+function paramsFromUrl(urlToParse: string): URLSearchParams {
+  const parsed = new URL(urlToParse);
+  const params = new URLSearchParams(parsed.search);
+  if (parsed.hash.startsWith('#')) {
+    const hashParams = new URLSearchParams(parsed.hash.slice(1));
+    hashParams.forEach((value, key) => params.set(key, value));
+  }
+  return params;
+}
+
+export async function handleSupabaseAuthUrl(urlToHandle: string): Promise<{ type?: string }> {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Supabase is not configured');
+
+  const params = paramsFromUrl(urlToHandle);
+  const code = params.get('code');
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  const type = params.get('type') ?? undefined;
+
+  if (code) {
+    const { error } = await sb.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    return { type };
+  }
+
+  if (accessToken && refreshToken) {
+    const { error } = await sb.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw error;
+    return { type };
+  }
+
+  return { type };
 }

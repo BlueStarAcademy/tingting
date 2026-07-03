@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { usePathname, useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { shouldShowMainTabBar } from '@/components/AppShell';
@@ -32,8 +33,10 @@ export function MainTabBar() {
   const insets = useSafeAreaInsets();
   const contentWidth = useContentWidth();
   const { t } = useLocale();
+  const { profile } = useAuth();
 
   if (!shouldShowMainTabBar(pathname)) return null;
+  if (profile && !profile.onboardingComplete) return null;
 
   return (
     <View

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Platform } from 'react-native';
+import { View, Text, ScrollView, Image, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DownloadBar, DOWNLOAD_BAR_HEIGHT } from '@/components/landing/DownloadBar';
@@ -9,6 +9,8 @@ import { GradientBackground } from '@/components/GradientBackground';
 import { useLocale } from '@/hooks/useLocale';
 import { usePublicConfig } from '@/lib/app-config';
 import { theme } from '@/constants/theme';
+
+const appIcon = require('@/assets/icon.png');
 
 const FEATURES = [
   { icon: 'map-outline' as const, key: 'map' },
@@ -44,6 +46,7 @@ export function LandingPage() {
       >
         <GradientBackground>
           <View style={styles.hero}>
+            <Image source={appIcon} style={styles.appIcon} />
             <Text style={styles.heroEyebrow}>{t('landing.heroEyebrow')}</Text>
             <Text style={styles.heroTitle}>{t('appName')}</Text>
             <Text style={styles.heroSub}>{t('auth.tagline')}</Text>
@@ -124,6 +127,16 @@ const styles = StyleSheet.create({
     maxWidth: 640,
     alignSelf: 'center',
     width: '100%',
+  },
+  appIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
   heroEyebrow: {
     fontSize: 13,

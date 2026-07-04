@@ -44,6 +44,15 @@ export function AndroidDownloadCard({ downloadUrl }: Props) {
         <Ionicons name="logo-android" size={20} color={theme.colors.onPrimary} />
         <Text style={styles.downloadBtnText}>{t('landing.downloadAndroid')}</Text>
       </Pressable>
+      <View style={styles.installGuide}>
+        <View style={styles.guideHeader}>
+          <Ionicons name="information-circle-outline" size={16} color={theme.colors.teal} />
+          <Text style={styles.guideTitle}>{t('landing.installGuideTitle')}</Text>
+        </View>
+        <Text style={styles.guideStep}>{t('landing.installStep1')}</Text>
+        <Text style={styles.guideStep}>{t('landing.installStep2')}</Text>
+        <Text style={styles.guideStep}>{t('landing.installStep3')}</Text>
+      </View>
     </View>
   );
 }
@@ -116,5 +125,30 @@ const styles = StyleSheet.create({
     color: theme.colors.onPrimary,
     fontWeight: '800',
     fontSize: 15,
+  },
+  installGuide: {
+    width: '100%',
+    marginTop: 8,
+    backgroundColor: theme.colors.tealSoft,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  guideTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.teal,
+  },
+  guideStep: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: theme.colors.textMuted,
+    paddingLeft: 4,
   },
 });

@@ -228,6 +228,12 @@ export interface EditorFeature {
   previewColor?: string;
   emoji?: string;
   regionCode?: string;
+  /** UI grouping for large editor catalogs */
+  group?: { ko: string; en: string };
+  /** Short icon label for controls that are not emoji stickers */
+  icon?: string;
+  /** Default effect strength, 0-1 */
+  intensity?: number;
   /** photo-effects.ts 매핑 키 */
   effectKey?: string;
 }

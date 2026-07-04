@@ -1,9 +1,11 @@
-import { View, Text, Pressable, Linking, Platform, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Image, Linking, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
 import { openDownloadUrl, usePublicConfig } from '@/lib/app-config';
 import { theme } from '@/constants/theme';
+
+const appIcon = require('@/assets/icon.png');
 
 export const DOWNLOAD_BAR_HEIGHT = 72;
 
@@ -25,6 +27,7 @@ export function DownloadBar() {
     <View style={styles.bar}>
       <View style={styles.inner}>
         <View style={styles.brand}>
+          <Image source={appIcon} style={styles.brandIcon} />
           <Text style={styles.logo}>{t('appName')}</Text>
           {hasApk ? <Text style={styles.badge}>{t('landing.downloadBadge')}</Text> : null}
         </View>
@@ -80,6 +83,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  brandIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
   },
   logo: {
     fontSize: 20,

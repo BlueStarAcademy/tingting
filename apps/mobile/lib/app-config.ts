@@ -17,7 +17,13 @@ export const getApkQrImageUrl = getDownloadQrImageUrl;
 export function openDownloadUrl(url: string): boolean {
   if (!url) return false;
   if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tingting.apk';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     return true;
   }
   return false;

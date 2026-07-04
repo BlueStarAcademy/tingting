@@ -7,14 +7,19 @@ export interface Coords {
 }
 
 export async function requestLocationPermission(): Promise<boolean> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  return status === 'granted';
+  const existing = await Location.getForegroundPermissionsAsync();
+  if (existing.granted) return true;
+  const { granted } = await Location.requestForegroundPermissionsAsync();
+  return granted;
 }
 
 export async function getCurrentCoords(): Promise<Coords> {
+  const servicesEnabled = await Location.hasServicesEnabledAsync();
+  if (!servicesEnabled) throw new Error('기기의 위치 서비스를 켜 주세요');
   const granted = await requestLocationPermission();
   if (!granted) throw new Error('위치 권한이 거부되었습니다');
-  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+  const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+  if (pos.mocked) throw new Error('모의 위치가 감지되어 GPS 인증을 진행할 수 없습니다');
   return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
 }
 

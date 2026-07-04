@@ -7,9 +7,9 @@ import { SlimeBattleGame } from '@/components/minigames/SlimeBattleGame';
 import { TravelQuizGame } from '@/components/minigames/TravelQuizGame';
 import { UpDownGame } from '@/components/minigames/UpDownGame';
 import { DigitPopGame } from '@/components/minigames/DigitPopGame';
-import { MinigameStageGate } from '@/components/minigames/MinigameStageGate';
 import { PremiumButton } from '@/components/PremiumButton';
 import { useLocale } from '@/hooks/useLocale';
+import { MINIGAME_SINGLE_PLAY_STAGE } from '@/lib/minigames/stages';
 import { theme } from '@/constants/theme';
 
 const GAME_IDS = ['match', 'quiz', 'slime', 'memory', 'guess', 'code'] as const;
@@ -57,9 +57,7 @@ export default function MinigamePlayScreen() {
 
   return (
     <AppScreen title={t(TITLE_KEYS[id])} showBack scroll={false} contentStyle={styles.content}>
-      <MinigameStageGate gameId={id}>
-        {(startStage) => <GameContent id={id} startStage={startStage} />}
-      </MinigameStageGate>
+      <GameContent id={id} startStage={MINIGAME_SINGLE_PLAY_STAGE} />
     </AppScreen>
   );
 }

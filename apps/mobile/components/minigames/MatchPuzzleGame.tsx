@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Animated,
   Easing,
+  PanResponder,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -45,11 +46,59 @@ const CELL_GAP = 4;
 const CELL_STEP = CELL_SIZE + CELL_GAP;
 const GRID_WIDTH = MATCH_COLS * CELL_SIZE + (MATCH_COLS - 1) * CELL_GAP;
 const GRID_HEIGHT = MATCH_ROWS * CELL_SIZE + (MATCH_ROWS - 1) * CELL_GAP;
+const MATCH_ITEM_INITIAL_COUNT = 3;
+const MATCH_TIME_EXTENSION_SECONDS = 10;
+const DRAG_SWAP_THRESHOLD = 18;
+
+type MatchItemKey = 'shuffle' | 'time' | 'hint';
+type MatchItemCounts = Record<MatchItemKey, number>;
+
+const INITIAL_MATCH_ITEMS: MatchItemCounts = {
+  shuffle: MATCH_ITEM_INITIAL_COUNT,
+  time: MATCH_ITEM_INITIAL_COUNT,
+  hint: MATCH_ITEM_INITIAL_COUNT,
+};
 
 function cellPosition(index: number): { left: number; top: number } {
   const col = index % MATCH_COLS;
   const row = Math.floor(index / MATCH_COLS);
   return { left: col * CELL_STEP, top: row * CELL_STEP };
+}
+
+function getDragSwapTarget(index: number, dx: number, dy: number): number | null {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_SWAP_THRESHOLD) return null;
+
+  const row = Math.floor(index / MATCH_COLS);
+  const col = index % MATCH_COLS;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 0 && col < MATCH_COLS - 1) return index + 1;
+    if (dx < 0 && col > 0) return index - 1;
+    return null;
+  }
+
+  if (dy > 0 && row < MATCH_ROWS - 1) return index + MATCH_COLS;
+  if (dy < 0 && row > 0) return index - MATCH_COLS;
+  return null;
+}
+
+function findHintMove(grid: number[], obstacles: Map<number, ObstacleCell>): [number, number] | null {
+  for (let index = 0; index < grid.length; index += 1) {
+    if (obstacles.has(index)) continue;
+
+    const candidates = [index + 1, index + MATCH_COLS];
+    for (const target of candidates) {
+      if (target >= grid.length || obstacles.has(target)) continue;
+      if (!areAdjacent(index, target, MATCH_COLS)) continue;
+
+      const next = swapCells(grid, index, target);
+      const specialActivation = resolveSwapActivation(next, index, target, MATCH_ROWS, MATCH_COLS);
+      if ((specialActivation?.size ?? 0) > 0 || findMatchCells(next, MATCH_ROWS, MATCH_COLS).size > 0) {
+        return [index, target];
+      }
+    }
+  }
+
+  return null;
 }
 
 interface FloatingScore {
@@ -69,7 +118,7 @@ interface MatchCellProps {
   fallFromRows: number;
   disabled: boolean;
   obstacle: ObstacleCell | undefined;
-  onPress: (index: number) => void;
+  onDragSwap: (from: number, to: number) => void;
 }
 
 function MatchCell({
@@ -82,13 +131,46 @@ function MatchCell({
   fallFromRows,
   disabled,
   obstacle,
-  onPress,
+  onDragSwap,
 }: MatchCellProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0)).current;
   const fallToken = useRef(0);
+  const dragHandled = useRef(false);
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !disabled,
+        onStartShouldSetPanResponderCapture: () => !disabled,
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          !disabled && Math.max(Math.abs(gesture.dx), Math.abs(gesture.dy)) >= 4,
+        onMoveShouldSetPanResponderCapture: (_, gesture) =>
+          !disabled && Math.max(Math.abs(gesture.dx), Math.abs(gesture.dy)) >= 4,
+        onPanResponderGrant: () => {
+          dragHandled.current = false;
+        },
+        onPanResponderMove: (_, gesture) => {
+          if (disabled || dragHandled.current) return;
+          const target = getDragSwapTarget(index, gesture.dx, gesture.dy);
+          if (target === null) return;
+          dragHandled.current = true;
+          onDragSwap(index, target);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (disabled || dragHandled.current) return;
+          const target = getDragSwapTarget(index, gesture.dx, gesture.dy);
+          if (target !== null) onDragSwap(index, target);
+        },
+        onPanResponderTerminate: (_, gesture) => {
+          if (disabled || dragHandled.current) return;
+          const target = getDragSwapTarget(index, gesture.dx, gesture.dy);
+          if (target !== null) onDragSwap(index, target);
+        },
+      }),
+    [disabled, index, onDragSwap],
+  );
 
   useEffect(() => {
     if (isHighlighted) {
@@ -142,7 +224,7 @@ function MatchCell({
     return (
       <View style={[styles.cellPressable, positionStyle]}>
         <View style={[styles.cell, styles.cellObstacle, obstacle.health >= 2 && styles.cellObstacleStrong]}>
-          <Text style={styles.obstacleEmoji}>{obstacle.health >= 2 ? '🧱' : '🪨'}</Text>
+        <Text selectable={false} style={styles.obstacleEmoji}>{obstacle.health >= 2 ? '🧱' : '🪨'}</Text>
           {obstacle.health >= 2 ? (
             <View style={styles.obstacleHealthBadge}>
               <Text style={styles.obstacleHealthText}>{obstacle.health}</Text>
@@ -154,9 +236,8 @@ function MatchCell({
   }
 
   return (
-    <Pressable
-      onPress={() => onPress(index)}
-      disabled={disabled}
+    <View
+      {...panResponder.panHandlers}
       accessible={false}
       style={[styles.cellPressable, positionStyle]}
     >
@@ -172,9 +253,9 @@ function MatchCell({
           },
         ]}
       >
-        <Text style={[styles.emoji, special && styles.emojiSpecial]}>{getTileEmoji(tile)}</Text>
+        <Text selectable={false} style={[styles.emoji, special && styles.emojiSpecial]}>{getTileEmoji(tile)}</Text>
       </Animated.View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -223,12 +304,39 @@ function TimeProgressBar({ timeLeft, totalTime }: { timeLeft: number; totalTime:
   );
 }
 
+function MatchItemButton({
+  icon,
+  label,
+  count,
+  disabled,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  count: number;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.itemButton, disabled && styles.itemButtonDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={styles.itemIcon}>{icon}</Text>
+      <Text style={styles.itemLabel} numberOfLines={1}>{label}</Text>
+      <Text style={styles.itemCount}>x{count}</Text>
+    </Pressable>
+  );
+}
+
 export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}) {
   const { t, tArray } = useLocale();
   const { currentStage, loading, refresh } = useMinigameProgress('match');
   const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const stageConfig = useMemo(() => getMatchStageConfig(activeStage), [activeStage]);
-  const [showHelp, setShowHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(true);
+  const [gameStarted, setGameStarted] = useState(false);
 
   const [grid, setGrid] = useState<number[]>(() =>
     createMatchGrid(MATCH_ROWS, MATCH_COLS, stageConfig.tileTypeCount),
@@ -248,6 +356,7 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
   const [combo, setCombo] = useState(0);
   const [floatingScores, setFloatingScores] = useState<FloatingScore[]>([]);
   const [sessionId, setSessionId] = useState(0);
+  const [itemCounts, setItemCounts] = useState<MatchItemCounts>(INITIAL_MATCH_ITEMS);
 
   const busyRef = useRef(false);
   const scoreRef = useRef(0);
@@ -280,6 +389,7 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       setFallOffsets(new Map());
       setCombo(0);
       setFloatingScores([]);
+      setItemCounts(INITIAL_MATCH_ITEMS);
       setSessionId((id) => id + 1);
       busyRef.current = false;
       pendingTimeoutRef.current = false;
@@ -300,23 +410,23 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
   }, [finished, stageConfig.targetScore]);
 
   useEffect(() => {
-    if (finished || timeLeft > 0) return;
+    if (!gameStarted || finished || timeLeft > 0) return;
     if (busyRef.current) {
       pendingTimeoutRef.current = true;
       return;
     }
     setFinished(true);
-  }, [finished, timeLeft]);
+  }, [finished, gameStarted, timeLeft]);
 
   useEffect(() => {
-    if (finished) return;
+    if (!gameStarted || finished) return;
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [finished, sessionId]);
+  }, [finished, gameStarted, sessionId]);
 
   useEffect(() => {
     const listener = scoreAnim.addListener(({ value }) => setDisplayScore(Math.round(value)));
@@ -423,6 +533,7 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
     async (startGrid: number[], initialCleared?: Set<number>) => {
       let current = startGrid;
       let comboLevel = 0;
+      let allowColorClear = !initialCleared;
 
       if (initialCleared && initialCleared.size > 0) {
         comboLevel += 1;
@@ -430,7 +541,8 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       }
 
       while (true) {
-        const resolution = buildMatchResolution(current, MATCH_ROWS, MATCH_COLS);
+        const resolution = buildMatchResolution(current, MATCH_ROWS, MATCH_COLS, { allowColorClear });
+        allowColorClear = false;
         if (resolution.cleared.size === 0) break;
         comboLevel += 1;
         current = await processClearStep(
@@ -446,41 +558,21 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
     [processClearStep],
   );
 
-  const handleCellPress = useCallback(
-    async (index: number) => {
-      if (finished || busyRef.current) return;
-      if (obstacles.has(index)) return;
-
-      if (selected === null) {
-        setSelected(index);
-        return;
-      }
-
-      if (selected === index) {
-        setSelected(null);
-        return;
-      }
-
-      if (!areAdjacent(selected, index, MATCH_COLS)) {
-        setSelected(index);
-        return;
-      }
-
-      if (obstacles.has(index) || obstacles.has(selected)) {
-        setSelected(index);
-        return;
-      }
+  const handleSwap = useCallback(
+    async (first: number, target: number) => {
+      if (!gameStarted || finished || busyRef.current) return;
+      if (!areAdjacent(first, target, MATCH_COLS)) return;
+      if (obstacles.has(first) || obstacles.has(target)) return;
 
       busyRef.current = true;
       setBusy(true);
-      const first = selected;
       setSelected(null);
 
-      let next = swapCells(grid, first, index);
+      let next = swapCells(grid, first, target);
       setGrid(next);
       await delay(140);
 
-      const specialActivation = resolveSwapActivation(next, first, index, MATCH_ROWS, MATCH_COLS);
+      const specialActivation = resolveSwapActivation(next, first, target, MATCH_ROWS, MATCH_COLS);
       if (specialActivation && specialActivation.size > 0) {
         await resolveCascade(next, specialActivation);
         await finishInteraction();
@@ -490,7 +582,7 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       const matches = findMatchCells(next, MATCH_ROWS, MATCH_COLS);
       if (matches.size === 0) {
         await delay(180);
-        next = swapCells(next, first, index);
+        next = swapCells(next, first, target);
         setGrid(next);
         await finishInteraction();
         return;
@@ -499,8 +591,57 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       await resolveCascade(next);
       await finishInteraction();
     },
-    [finishInteraction, finished, grid, obstacles, resolveCascade, selected],
+    [finishInteraction, finished, gameStarted, grid, obstacles, resolveCascade],
   );
+
+  const handleDragSwap = useCallback(
+    (from: number, to: number) => {
+      void handleSwap(from, to);
+    },
+    [handleSwap],
+  );
+
+  const useMatchItem = useCallback(
+    (key: MatchItemKey, action: () => boolean | void) => {
+      if (!gameStarted || finished || busyRef.current || itemCounts[key] <= 0) return;
+      const used = action();
+      if (used === false) return;
+      setItemCounts((prev) => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }));
+    },
+    [finished, gameStarted, itemCounts],
+  );
+
+  const handleShuffleItem = useCallback(() => {
+    useMatchItem('shuffle', () => {
+      setSelected(null);
+      setHighlighted(new Set());
+      setGrid(createMatchGrid(MATCH_ROWS, MATCH_COLS, stageConfig.tileTypeCount));
+      setSessionId((id) => id + 1);
+    });
+  }, [stageConfig.tileTypeCount, useMatchItem]);
+
+  const handleTimeItem = useCallback(() => {
+    useMatchItem('time', () => {
+      setTimeLeft((value) => value + MATCH_TIME_EXTENSION_SECONDS);
+      setSessionId((id) => id + 1);
+    });
+  }, [useMatchItem]);
+
+  const handleHintItem = useCallback(() => {
+    useMatchItem('hint', () => {
+      const move = findHintMove(grid, obstacles);
+      if (!move) return false;
+      setSelected(null);
+      setHighlighted(new Set(move));
+      setTimeout(() => {
+        setHighlighted((current) => {
+          const [first, second] = move;
+          if (!current.has(first) || !current.has(second)) return current;
+          return new Set();
+        });
+      }, 1600);
+    });
+  }, [grid, obstacles, useMatchItem]);
 
   const handleNextStage = useCallback(async () => {
     await refresh();
@@ -511,6 +652,10 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
   const comboLabel = t('minigames.combo', { count: combo });
   const canAdvance = activeStage < MINIGAME_MAX_STAGE;
   const scoreProgress = Math.min(displayScore / stageConfig.targetScore, 1);
+  const handleHelpClose = () => {
+    if (!gameStarted) setGameStarted(true);
+    setShowHelp(false);
+  };
 
   if (loading) return null;
 
@@ -558,9 +703,9 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
               isHighlighted={highlighted.has(index)}
               isRemoving={removing.has(index)}
               fallFromRows={fallOffsets.get(index) ?? 0}
-              disabled={finished || busy}
+              disabled={!gameStarted || finished || busy}
               obstacle={obstacles.get(index)}
-              onPress={handleCellPress}
+              onDragSwap={handleDragSwap}
             />
           ))}
         </View>
@@ -568,6 +713,30 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
           <FloatingScorePop key={item.id} item={item} onDone={removeFloatingScore} />
         ))}
         <ComboBanner combo={combo} label={comboLabel} reserveSpace />
+      </View>
+
+      <View style={styles.itemRow}>
+        <MatchItemButton
+          icon="🔀"
+          label={t('minigames.matchShuffle')}
+          count={itemCounts.shuffle}
+          disabled={!gameStarted || finished || busy || itemCounts.shuffle <= 0}
+          onPress={handleShuffleItem}
+        />
+        <MatchItemButton
+          icon="⏱"
+          label={t('minigames.matchTimeExtend')}
+          count={itemCounts.time}
+          disabled={!gameStarted || finished || busy || itemCounts.time <= 0}
+          onPress={handleTimeItem}
+        />
+        <MatchItemButton
+          icon="💡"
+          label={t('minigames.matchHintItem')}
+          count={itemCounts.hint}
+          disabled={!gameStarted || finished || busy || itemCounts.hint <= 0}
+          onPress={handleHintItem}
+        />
       </View>
 
       <MinigameResultPanel
@@ -589,9 +758,11 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       />
       <HowToPlayModal
         visible={showHelp}
-        onClose={() => setShowHelp(false)}
+        onClose={handleHelpClose}
         title={t('minigames.howToPlay')}
         rules={tArray('minigames.rulesMatch')}
+        actionLabel={!gameStarted ? t('minigames.startGame') : undefined}
+        dismissible={gameStarted}
       />
     </View>
   );
@@ -704,14 +875,68 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
+    // @ts-ignore web
+    touchAction: 'none',
+    // @ts-ignore web
+    overscrollBehavior: 'contain',
+  },
+  itemRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  itemButton: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.borderGold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    gap: 2,
+  },
+  itemButtonDisabled: {
+    opacity: 0.45,
+  },
+  itemIcon: {
+    fontSize: 17,
+  },
+  itemLabel: {
+    color: theme.colors.text,
+    fontSize: 11,
+    fontWeight: '900',
+    maxWidth: '100%',
+  },
+  itemCount: {
+    color: theme.colors.star,
+    fontSize: 10,
+    fontWeight: '900',
   },
   grid: {
     position: 'relative',
+    // @ts-ignore web
+    touchAction: 'none',
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    overscrollBehavior: 'contain',
   },
   cellPressable: {
     position: 'absolute',
     width: CELL_SIZE,
     height: CELL_SIZE,
+    // @ts-ignore web
+    touchAction: 'none',
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    cursor: 'grab',
+    // @ts-ignore web
+    caretColor: 'transparent',
+    // @ts-ignore web
+    overscrollBehavior: 'contain',
   },
   cell: {
     width: CELL_SIZE,
@@ -722,6 +947,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: theme.colors.border,
+    // @ts-ignore web
+    touchAction: 'none',
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    cursor: 'grab',
+    // @ts-ignore web
+    caretColor: 'transparent',
   },
   cellSpecial: {
     borderColor: theme.colors.star,
@@ -750,7 +983,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(120,100,80,0.55)',
     borderWidth: 2.5,
   },
-  obstacleEmoji: { fontSize: 20 },
+  obstacleEmoji: {
+    fontSize: 20,
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    caretColor: 'transparent',
+  },
   obstacleHealthBadge: {
     position: 'absolute',
     top: -4,
@@ -767,7 +1006,13 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
   },
-  emoji: { fontSize: 22 },
+  emoji: {
+    fontSize: 22,
+    // @ts-ignore web
+    userSelect: 'none',
+    // @ts-ignore web
+    caretColor: 'transparent',
+  },
   emojiSpecial: { fontSize: 20 },
   floatingScore: {
     position: 'absolute',

@@ -67,13 +67,16 @@ import type {
   FeaturePassTier,
 } from '@tingting/shared';
 import { isValidPhone, normalizePhone } from '@/lib/phone';
-import type { MinigameId } from '@/lib/minigames/stages';
+import {
+  getCurrentStage,
+  MINIGAME_SINGLE_PLAY_STAGE,
+  type MinigameId,
+} from '@/lib/minigames/stages';
 import {
   EMPTY_MINIGAME_PROGRESS,
   type MinigameDailyState,
   type MinigameProgress,
 } from '@/lib/minigames/progress';
-import { getCurrentStage } from '@/lib/minigames/stages';
 import {
   DEFAULT_TIMEZONE,
   canChangeTimezone,
@@ -83,10 +86,15 @@ import {
 import PLACES_JSON from '@/constants/places.json';
 import { SEED_PUBLIC_EXPERIENCE_POSTS } from '@/lib/public-feed-seed';
 import {
+  buildMinigameBetPools,
   buildDailyBetQuestions,
+  calculateMinigameBetPayout,
+  canPlaceMinigameBet,
   getBetDayKey,
   getDemoWinningChoiceId,
-  type MinigameBetQuestion,
+  MINIGAME_BET_MAX_STAKE,
+  MINIGAME_BET_MIN_STAKE,
+  type MinigameBetState,
   type MinigameBetTicket,
 } from '@/lib/minigame-bets';
 
@@ -1768,13 +1776,10 @@ export const localStore = {
 
   async syncPedometerSteps(rawSteps: number): Promise<PedometerDayState & { timezone: string }> {
     const full = await this.getPedometerState();
-    let { baselineSteps, dailySteps, dayKey } = full;
-    if (baselineSteps === 0 && rawSteps > 0) baselineSteps = rawSteps;
-    if (rawSteps < baselineSteps) baselineSteps = rawSteps;
-    dailySteps = Math.max(0, rawSteps - baselineSteps);
+    const dailySteps = Math.max(full.dailySteps, Math.max(0, Math.floor(rawSteps)));
     const state: PedometerDayState = {
-      dayKey,
-      baselineSteps,
+      dayKey: full.dayKey,
+      baselineSteps: 0,
       dailySteps,
       rouletteUsed: full.rouletteUsed,
       claimedMilestones: full.claimedMilestones,
@@ -1863,7 +1868,7 @@ export const localStore = {
 
   async settleMinigameBets(): Promise<{ tickets: MinigameBetTicket[]; stars: number }> {
     const profile = await this.getProfile();
-    if (!profile) throw new Error('로그인이 필요합니다');
+    if (!profile) return { tickets: [], stars: 0 };
     const todayKey = getBetDayKey();
     const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
     let changed = false;
@@ -1873,12 +1878,14 @@ export const localStore = {
       const question = buildDailyBetQuestions(ticket.questionId.slice(0, 10)).find((q) => q.id === ticket.questionId);
       if (!question) return ticket;
       const won = getDemoWinningChoiceId(question) === ticket.choiceId;
-      const payout = won ? ticket.stake * 2 : 0;
+      const pool = buildMinigameBetPools([question], tickets)[question.id];
+      const payout = won && pool ? calculateMinigameBetPayout(ticket.stake, ticket.choiceId, pool) : null;
       changed = true;
       return {
         ...ticket,
         status: won ? 'won' as const : 'lost' as const,
-        payout,
+        payout: payout?.payout ?? 0,
+        fee: payout?.fee ?? 0,
         settledAt: new Date().toISOString(),
       };
     });
@@ -1890,11 +1897,12 @@ export const localStore = {
     return { tickets: settled, stars: profile.stars };
   },
 
-  async getMinigameBetState(): Promise<{ questions: MinigameBetQuestion[]; tickets: MinigameBetTicket[] }> {
+  async getMinigameBetState(): Promise<MinigameBetState> {
     await this.settleMinigameBets();
     const questions = buildDailyBetQuestions();
     const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
-    return { questions, tickets };
+    const pools = buildMinigameBetPools(questions, tickets);
+    return { questions, tickets, pools };
   },
 
   async placeMinigameBet(
@@ -1904,8 +1912,11 @@ export const localStore = {
   ): Promise<{ ticket: MinigameBetTicket; stars: number }> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
+    if (!canPlaceMinigameBet()) throw new Error('예측 가능 시간은 오전 7시부터 저녁 10시까지입니다');
     const amount = Math.floor(stake);
-    if (amount < 1 || amount > 10) throw new Error('1~10스타 사이로 걸어주세요');
+    if (amount < MINIGAME_BET_MIN_STAKE || amount > MINIGAME_BET_MAX_STAKE) {
+      throw new Error('1~50스타 사이로 걸어주세요');
+    }
     if (profile.stars < amount) throw new Error('스타가 부족합니다');
 
     const questions = buildDailyBetQuestions();
@@ -1975,7 +1986,10 @@ export const localStore = {
 
     const progress = await this.getMinigameProgress();
     const clearedStage = progress[gameId].clearedStage;
-    const expectedStage = getCurrentStage(clearedStage);
+    const expectedStage =
+      stage === MINIGAME_SINGLE_PLAY_STAGE
+        ? MINIGAME_SINGLE_PLAY_STAGE
+        : getCurrentStage(clearedStage);
     if (stage !== expectedStage) {
       return {
         reward: 0,

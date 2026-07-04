@@ -13,6 +13,7 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -44,7 +45,7 @@ import { savePhotoToGallery } from '@/lib/save-photo';
 import { theme } from '@/constants/theme';
 
 interface Props {
-  sourceUri: string;
+  sourceUri?: string | null;
   onSourceChange?: (uri: string) => void;
   onPickAnother?: () => void;
   onSave?: (uri: string) => Promise<void>;
@@ -79,6 +80,71 @@ const ADJUSTMENT_KEYS: AdjustmentKey[] = [
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+function DraggableSticker({
+  sticker,
+  emoji,
+  onSelect,
+  onUpdate,
+  previewSize,
+}: {
+  sticker: StickerInstance;
+  emoji: string;
+  onSelect: () => void;
+  onUpdate: (id: string, patch: Partial<StickerInstance>) => void;
+  previewSize: { width: number; height: number };
+}) {
+  const posRef = useRef({ x: sticker.x, y: sticker.y });
+  posRef.current = { x: sticker.x, y: sticker.y };
+
+  const sizeRef = useRef(previewSize);
+  sizeRef.current = previewSize;
+
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const idRef = useRef(sticker.id);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        onSelectRef.current();
+        dragStartRef.current = { x: posRef.current.x, y: posRef.current.y };
+      },
+      onPanResponderMove: (_, gesture) => {
+        const start = dragStartRef.current;
+        const size = sizeRef.current;
+        onUpdateRef.current(idRef.current, {
+          x: clamp(start.x + gesture.dx, -32, Math.max(size.width - 20, 0)),
+          y: clamp(start.y + gesture.dy, -32, Math.max(size.height - 20, 0)),
+        });
+      },
+    }),
+  ).current;
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={[
+        styles.stickerOverlay,
+        {
+          left: sticker.x,
+          top: sticker.y,
+          transform: [{ scale: sticker.scale }, { rotate: `${sticker.rotation}deg` }],
+        },
+      ]}
+    >
+      <Text style={styles.stickerOverlayText}>{emoji}</Text>
+    </View>
+  );
+}
+
 const getAdjustmentKey = (effectKey?: string): AdjustmentKey | null => {
   if (!effectKey) return null;
   if (effectKey === 'vignette_adjust') return 'vignette';
@@ -108,9 +174,8 @@ export function PhotoEditorPanel({
   const { refresh } = useAuth();
   const lang = locale === 'ko' ? 'ko' : 'en';
   const previewRef = useRef<View>(null);
-  const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
 
-  const [workingUri, setWorkingUri] = useState(sourceUri);
+  const [workingUri, setWorkingUri] = useState(sourceUri ?? '');
   const [passes, setPasses] = useState<FeaturePass[]>([]);
   const [loading, setLoading] = useState(false);
   const [passModalFeature, setPassModalFeature] = useState<EditorFeature | null>(null);
@@ -133,7 +198,7 @@ export function PhotoEditorPanel({
 
   useFocusEffect(
     useCallback(() => {
-      setWorkingUri(sourceUri);
+      setWorkingUri(sourceUri ?? '');
       setActiveFilterId(null);
       setActiveFrameId(null);
       setActiveStickers([]);
@@ -143,6 +208,8 @@ export function PhotoEditorPanel({
       reloadPasses();
     }, [sourceUri, reloadPasses]),
   );
+
+  const hasPhoto = Boolean(workingUri);
 
   const watermarkUnlocked = isEditorFeatureUnlocked(
     getEditorFeature('watermark_remove')!,
@@ -209,6 +276,10 @@ export function PhotoEditorPanel({
   };
 
   const applyFlattened = async () => {
+    if (!workingUri) {
+      onPickAnother?.();
+      return;
+    }
     setLoading(true);
     try {
       const uri = await flattenPreview();
@@ -268,6 +339,10 @@ export function PhotoEditorPanel({
         return;
       }
       if (!isPhotoTransformKey(feature.effectKey)) return;
+      if (!workingUri) {
+        onPickAnother?.();
+        return;
+      }
       setLoading(true);
       try {
         const uri = await applyPhotoAdjust(workingUri, feature.effectKey);
@@ -306,23 +381,6 @@ export function PhotoEditorPanel({
     setSelectedStickerId(null);
   };
 
-  const createStickerPanResponder = (sticker: StickerInstance) =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        setSelectedStickerId(sticker.id);
-        dragStartRef.current[sticker.id] = { x: sticker.x, y: sticker.y };
-      },
-      onPanResponderMove: (_, gesture) => {
-        const start = dragStartRef.current[sticker.id] ?? { x: sticker.x, y: sticker.y };
-        updateSticker(sticker.id, {
-          x: clamp(start.x + gesture.dx, -32, Math.max(previewSize.width - 20, 0)),
-          y: clamp(start.y + gesture.dy, -32, Math.max(previewSize.height - 20, 0)),
-        });
-      },
-    });
-
   const setAdjustmentValue = (key: AdjustmentKey, value: number) => {
     const min = key === 'vignette' || key === 'grain' ? 0 : -1;
     setAdjustments((prev) => ({ ...prev, [key]: clamp(value, min, 1) }));
@@ -331,6 +389,10 @@ export function PhotoEditorPanel({
   const resetAdjustments = () => setAdjustments(DEFAULT_ADJUSTMENTS);
 
   const handleSave = async () => {
+    if (!workingUri) {
+      onPickAnother?.();
+      return;
+    }
     setLoading(true);
     try {
       let uri = await flattenPreview();
@@ -363,12 +425,14 @@ export function PhotoEditorPanel({
     const unlocked = isEditorFeatureUnlocked(feature, passes);
     const pass = getActiveFeaturePass(passes, feature.id);
     const expiry = formatPassExpiry(pass, lang);
+    const disabled = !hasPhoto;
 
     return (
       <Pressable
         key={feature.id}
-        style={[styles.chip, active && styles.chipActive, !unlocked && styles.chipLocked]}
-        onPress={onPress}
+        style={[styles.chip, active && styles.chipActive, !unlocked && styles.chipLocked, disabled && styles.chipDisabled]}
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
       >
         {preview}
         <Text style={styles.chipName} numberOfLines={1}>
@@ -565,10 +629,25 @@ export function PhotoEditorPanel({
           ]}
         >
           <View style={styles.previewWrap} onLayout={onPreviewLayout}>
-            <Image
-              source={{ uri: workingUri }}
-              style={[styles.preview, filterPreset.imageOpacity ? { opacity: filterPreset.imageOpacity } : null]}
-            />
+            {hasPhoto ? (
+              <Image
+                source={{ uri: workingUri }}
+                style={[styles.preview, filterPreset.imageOpacity ? { opacity: filterPreset.imageOpacity } : null]}
+              />
+            ) : (
+              <Pressable style={styles.previewEmpty} onPress={onPickAnother}>
+                <View style={styles.previewEmptyIcon}>
+                  <Ionicons name="images-outline" size={34} color={theme.colors.primaryLight} />
+                </View>
+                <Text style={styles.previewEmptyTitle}>{t('photos.emptyTitle')}</Text>
+                <Text style={styles.previewEmptySub}>{t('photos.emptySub')}</Text>
+                {onPickAnother ? (
+                  <View style={styles.previewEmptyButton}>
+                    <Text style={styles.previewEmptyButtonText}>{t('photos.pickFromGallery')}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            )}
             {allOverlays.map((layer, index) => (
               <View
                 key={`${layer.backgroundColor}-${index}`}
@@ -586,25 +665,18 @@ export function PhotoEditorPanel({
             {activeStickers.map((sticker) => {
               const feature = getEditorFeature(sticker.featureId);
               if (!feature?.emoji) return null;
-              const panResponder = createStickerPanResponder(sticker);
               return (
-                <View
+                <DraggableSticker
                   key={sticker.id}
-                  {...panResponder.panHandlers}
-                  style={[
-                    styles.stickerOverlay,
-                    {
-                      left: sticker.x,
-                      top: sticker.y,
-                      transform: [{ scale: sticker.scale }, { rotate: `${sticker.rotation}deg` }],
-                    },
-                  ]}
-                >
-                  <Text style={styles.stickerOverlayText}>{feature.emoji}</Text>
-                </View>
+                  sticker={sticker}
+                  emoji={feature.emoji}
+                  onSelect={() => setSelectedStickerId(sticker.id)}
+                  onUpdate={updateSticker}
+                  previewSize={previewSize}
+                />
               );
             })}
-            {showWatermark ? <Text style={styles.watermark}>TingTing</Text> : null}
+            {hasPhoto && showWatermark ? <Text style={styles.watermark}>TingTing</Text> : null}
           </View>
         </View>
 
@@ -618,8 +690,9 @@ export function PhotoEditorPanel({
           {EDITOR_TABS.map((tab) => (
             <Pressable
               key={tab.id}
-              style={[tabPill(activeTab === tab.id), styles.tabItem]}
+              style={[tabPill(activeTab === tab.id), styles.tabItem, !hasPhoto && styles.tabItemDisabled]}
               onPress={() => setActiveTab(tab.id)}
+              disabled={!hasPhoto}
             >
               <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
                 {t(tab.labelKey)}
@@ -630,14 +703,31 @@ export function PhotoEditorPanel({
 
         {renderTabFeatures()}
 
-        <PremiumButton title={t('photos.applyEdits')} onPress={applyFlattened} loading={loading} variant="outline" />
-        <PremiumButton
-          title={saveLabel ?? t('photos.saveToGallery')}
-          onPress={handleSave}
-          loading={loading}
-        />
+        <View style={styles.actionRow}>
+          <PremiumButton
+            title={t('photos.applyEdits')}
+            onPress={applyFlattened}
+            loading={loading}
+            disabled={!hasPhoto}
+            variant="outline"
+            fullWidth={false}
+            style={styles.actionButton}
+          />
+          <PremiumButton
+            title={saveLabel ?? t('photos.saveToGallery')}
+            onPress={handleSave}
+            loading={loading}
+            disabled={!hasPhoto}
+            fullWidth={false}
+            style={styles.actionButton}
+          />
+        </View>
         {showPickAnother && onPickAnother ? (
-          <PremiumButton title={t('photos.pickAnother')} onPress={onPickAnother} variant="outline" />
+          <PremiumButton
+            title={hasPhoto ? t('photos.pickAnother') : t('photos.pickFromGallery')}
+            onPress={onPickAnother}
+            variant={hasPhoto ? 'outline' : 'primary'}
+          />
         ) : null}
       </ScrollView>
 
@@ -657,6 +747,36 @@ const styles = StyleSheet.create({
   previewOuter: { borderRadius: theme.radius.md, overflow: 'hidden' },
   previewWrap: { position: 'relative', borderRadius: theme.radius.md, overflow: 'hidden' },
   preview: { width: '100%', height: 300, backgroundColor: theme.colors.surface },
+  previewEmpty: {
+    width: '100%',
+    height: 300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderStyle: 'dashed',
+  },
+  previewEmptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.tint.soft,
+  },
+  previewEmptyTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '800', textAlign: 'center' },
+  previewEmptySub: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  previewEmptyButton: {
+    marginTop: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: theme.colors.primary,
+  },
+  previewEmptyButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   stickerOverlay: { position: 'absolute', minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   stickerOverlayText: { fontSize: 40, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 3, textShadowOffset: { width: 0, height: 2 } },
   watermark: {
@@ -670,8 +790,16 @@ const styles = StyleSheet.create({
   loader: { marginVertical: 4 },
   tabRow: { gap: 6, paddingRight: theme.spacing.sm },
   tabItem: { alignItems: 'center' },
+  tabItemDisabled: { opacity: 0.45 },
   tabText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
   tabTextActive: { color: theme.colors.primaryLight, fontWeight: '800' },
+  actionRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  actionButton: {
+    flex: 1,
+  },
   watermarkPanel: {
     gap: theme.spacing.xs,
     paddingVertical: theme.spacing.xs,
@@ -744,6 +872,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { borderColor: theme.colors.primaryLight, backgroundColor: theme.colors.tint.soft },
   chipLocked: { opacity: 0.72 },
+  chipDisabled: { opacity: 0.45 },
   chipName: { color: theme.colors.text, fontSize: 11, fontWeight: '700', textAlign: 'center' },
   chipLock: { fontSize: 10 },
   chipExpiry: { color: theme.colors.primaryLight, fontSize: 9, fontWeight: '700' },

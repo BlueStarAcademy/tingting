@@ -1,24 +1,42 @@
 import type { Region } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
+export type KoreaMapVisualVariant = 'default' | 'naver';
+
 export function regionFill(
   code: string,
   visited: Set<string>,
   selectedCode: string | null | undefined,
   region: Region,
+  variant: KoreaMapVisualVariant = 'default',
 ): string {
   const isVisited = visited.has(code);
   const isSelected = selectedCode === code;
+  if (variant === 'naver') {
+    if (isSelected) return '#03C75A';
+    if (isVisited) return '#8ED7A6';
+    return '#DCEBD6';
+  }
   if (isSelected) return theme.colors.mapSelected;
   if (isVisited) return region.color;
   return theme.colors.mapUnvisited;
 }
 
-export function regionStroke(selectedCode: string | null | undefined, code: string): string {
+export function regionStroke(
+  selectedCode: string | null | undefined,
+  code: string,
+  variant: KoreaMapVisualVariant = 'default',
+): string {
+  if (variant === 'naver') return selectedCode === code ? '#FFFFFF' : '#F7FFF5';
   return selectedCode === code ? theme.colors.mapSelectedStroke : theme.colors.mapStroke;
 }
 
-export function regionStrokeWidth(selectedCode: string | null | undefined, code: string): number {
+export function regionStrokeWidth(
+  selectedCode: string | null | undefined,
+  code: string,
+  variant: KoreaMapVisualVariant = 'default',
+): number {
+  if (variant === 'naver') return selectedCode === code ? 3 : 1.2;
   return selectedCode === code ? 2.2 : 1.4;
 }
 

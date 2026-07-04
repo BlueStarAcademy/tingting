@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Modal, View, Pressable, StyleSheet, Platform } from 'react-native';
+import { Modal, View, Pressable, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { useBottomSheetLayout } from '@/hooks/useBottomSheetLayout';
 import { theme } from '@/constants/theme';
 
@@ -16,6 +16,7 @@ interface Props {
   withGroupChat?: boolean;
   /** Tap backdrop to dismiss (default true except fullscreen) */
   dismissOnBackdrop?: boolean;
+  sheetStyle?: StyleProp<ViewStyle>;
 }
 
 export function AppModal({
@@ -27,6 +28,7 @@ export function AppModal({
   transparent = true,
   withGroupChat = false,
   dismissOnBackdrop = variant !== 'fullscreen',
+  sheetStyle,
 }: Props) {
   const { footerInset, maxSheetHeight } = useBottomSheetLayout(withGroupChat);
 
@@ -49,12 +51,12 @@ export function AppModal({
           )}
           {variant === 'bottomSheet' ? (
             <View
-              style={[styles.bottomSheet, { marginBottom: footerInset, maxHeight: maxSheetHeight }]}
+              style={[styles.bottomSheet, { marginBottom: footerInset, maxHeight: maxSheetHeight }, sheetStyle]}
             >
               {children}
             </View>
           ) : (
-            <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.85 }]}>
+            <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.85 }, sheetStyle]}>
               {children}
             </View>
           )}

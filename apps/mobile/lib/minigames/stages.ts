@@ -1,6 +1,8 @@
 import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 
 export type MinigameId = 'match' | 'quiz' | 'slime' | 'memory' | 'guess' | 'code';
+export const MINIGAME_SINGLE_PLAY_STAGE = MINIGAME_MAX_STAGE;
+export const MINIGAME_FIXED_ATTEMPT_LIMIT = 8;
 
 export interface MatchStageConfig {
   timeSeconds: number;
@@ -78,16 +80,16 @@ export type MinigameStageResult =
   | { gameId: 'code'; result: CodeStageResult };
 
 const MATCH_STAGES: MatchStageConfig[] = [
-  { timeSeconds: 60, targetScore: 200, tileTypeCount: 4 },
-  { timeSeconds: 60, targetScore: 300, tileTypeCount: 4 },
-  { timeSeconds: 60, targetScore: 500, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 600, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 750, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 900, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 1050, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 1200, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 1300, tileTypeCount: 5 },
-  { timeSeconds: 60, targetScore: 1400, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 4 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 4 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
+  { timeSeconds: 60, targetScore: 2000, tileTypeCount: 5 },
 ];
 
 const QUIZ_STAGES: QuizStageConfig[] = [
@@ -127,17 +129,17 @@ function clampStage(stage: number): number {
   return Math.min(Math.max(1, stage), MINIGAME_MAX_STAGE);
 }
 
-/** 스테이지 1 = 15회, 스테이지 10 = 6회 */
 export function getMinigameAttemptLimit(stage: number): number {
-  return 16 - clampStage(stage);
+  void stage;
+  return MINIGAME_FIXED_ATTEMPT_LIMIT;
 }
 
-const GUESS_STAGES: GuessStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
-  maxAttempts: 16 - (index + 1),
+const GUESS_STAGES: GuessStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, () => ({
+  maxAttempts: MINIGAME_FIXED_ATTEMPT_LIMIT,
 }));
 
-const CODE_STAGES: CodeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
-  maxAttempts: 16 - (index + 1),
+const CODE_STAGES: CodeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, () => ({
+  maxAttempts: MINIGAME_FIXED_ATTEMPT_LIMIT,
   digitCount: 8,
 }));
 

@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { UserProfile } from '@tingting/shared';
-import { MBTI_TEST_REWARD } from '@tingting/shared';
 import { api } from '@/lib/api';
 import {
   formatBirthDateDisplay,
@@ -23,7 +22,6 @@ import {
 import { useLocale } from '@/hooks/useLocale';
 import { MbtiQuizModal } from '@/components/MbtiQuizModal';
 import { MbtiResultModal } from '@/components/MbtiResultModal';
-import { StarIcon } from '@/components/StarAmount';
 import { StarRewardModal } from '@/components/StarRewardModal';
 import { ProfileEditModal } from '@/components/ProfileEditModal';
 import { accentCard, sectionTitleStyle } from '@/lib/ui';
@@ -235,13 +233,8 @@ export function ProfileSection({
               <View style={styles.mbtiBlock}>
                 {isCompleted && profile.mbti ? (
                   <Text style={styles.mbtiType}>{profile.mbti}</Text>
-                ) : readOnly ? (
-                  <Text style={styles.mbtiEmpty}>{t('profile.mbtiNotTaken')}</Text>
                 ) : (
-                  <View style={styles.mbtiRewardRow}>
-                    <StarIcon />
-                    <Text style={styles.mbtiRewardNum}>{MBTI_TEST_REWARD}</Text>
-                  </View>
+                  <Text style={styles.mbtiEmpty}>{t('profile.mbtiNotTaken')}</Text>
                 )}
                 {isCompleted && profile.mbti ? (
                   <Pressable style={styles.mbtiActionBtn} onPress={openMbtiAction}>
@@ -404,8 +397,6 @@ const styles = StyleSheet.create({
   },
   mbtiType: { color: theme.colors.teal, fontSize: 20, fontWeight: '800' },
   mbtiEmpty: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
-  mbtiRewardRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  mbtiRewardNum: { color: theme.colors.star, fontSize: 16, fontWeight: '800' },
   mbtiActionBtn: {
     backgroundColor: theme.colors.accentSoft,
     paddingHorizontal: 10,

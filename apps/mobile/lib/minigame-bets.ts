@@ -28,8 +28,36 @@ export interface MinigameBetTicket {
   resolveDate: string;
   settledAt?: string;
   payout?: number;
+  fee?: number;
   claimedAt?: string;
 }
+
+export interface MinigameBetPool {
+  questionId: string;
+  totalStars: number;
+  byChoice: Record<string, number>;
+}
+
+export interface MinigameBetState {
+  questions: MinigameBetQuestion[];
+  tickets: MinigameBetTicket[];
+  pools: Record<string, MinigameBetPool>;
+}
+
+export interface MinigameBetPayout {
+  grossPayout: number;
+  payout: number;
+  profit: number;
+  fee: number;
+  odds: number;
+}
+
+export const MINIGAME_BET_MIN_STAKE = 1;
+export const MINIGAME_BET_MAX_STAKE = 50;
+export const MINIGAME_BET_BASE_CHOICE_POOL = 50;
+export const MINIGAME_BET_FEE_RATE = 0.1;
+export const MINIGAME_BET_START_HOUR = 7;
+export const MINIGAME_BET_END_HOUR = 22;
 
 const UP_DOWN: MinigameBetChoice[] = [
   { id: 'up', labelKo: 'UP', labelEn: 'UP' },
@@ -97,6 +125,11 @@ export function getTomorrowKey(date = new Date()): string {
   return dateKey(addDays(date, 1));
 }
 
+export function canPlaceMinigameBet(date = new Date()): boolean {
+  const hour = date.getHours();
+  return hour >= MINIGAME_BET_START_HOUR && hour < MINIGAME_BET_END_HOUR;
+}
+
 export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQuestion[] {
   const baseDate = new Date(`${dayKey}T00:00:00.000Z`);
   const resolveDate = getTomorrowKey(baseDate);
@@ -106,8 +139,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     {
       id: `${dayKey}:kosdaq`,
       category: 'stock',
-      titleKo: '내일 코스닥지수 UP / DOWN',
-      titleEn: "Tomorrow's KOSDAQ index UP / DOWN",
+      titleKo: '코스닥 상승팀 vs 하락팀',
+      titleEn: 'KOSDAQ Up Team vs Down Team',
       descriptionKo: '내일 주식시장 마감 기준 코스닥지수가 전 거래일보다 오를지 내려갈지 예측하세요.',
       descriptionEn: "Predict whether tomorrow's KOSDAQ close will be up or down versus the previous session.",
       resolveDate,
@@ -116,8 +149,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     {
       id: `${dayKey}:kospi`,
       category: 'stock',
-      titleKo: '내일 코스피지수 UP / DOWN',
-      titleEn: "Tomorrow's KOSPI index UP / DOWN",
+      titleKo: '코스피 상승팀 vs 하락팀',
+      titleEn: 'KOSPI Up Team vs Down Team',
       descriptionKo: '내일 주식시장 마감 기준 코스피지수가 전 거래일보다 오를지 내려갈지 예측하세요.',
       descriptionEn: "Predict whether tomorrow's KOSPI close will be up or down versus the previous session.",
       resolveDate,
@@ -126,8 +159,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     {
       id: `${dayKey}:usdkrw`,
       category: 'stock',
-      titleKo: '내일 원/달러 환율 UP / DOWN',
-      titleEn: "Tomorrow's USD/KRW rate UP / DOWN",
+      titleKo: '원/달러 상승팀 vs 하락팀',
+      titleEn: 'USD/KRW Up Team vs Down Team',
       descriptionKo: '내일 고시 환율이 오늘보다 오를지 내려갈지 예측하세요.',
       descriptionEn: "Predict whether tomorrow's USD/KRW reference rate will rise or fall.",
       resolveDate,
@@ -136,8 +169,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     {
       id: `${dayKey}:baseball`,
       category: 'sports',
-      titleKo: `내일 야구 승자 · ${baseball.titleKo}`,
-      titleEn: `Baseball winner · ${baseball.titleEn}`,
+      titleKo: `야구 대결 · ${baseball.titleKo}`,
+      titleEn: `Baseball matchup · ${baseball.titleEn}`,
       descriptionKo: '내일 실제 진행 예정인 대표 경기 중 승자를 예측하세요.',
       descriptionEn: "Pick the winner from tomorrow's featured matchup.",
       resolveDate,
@@ -146,8 +179,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     {
       id: `${dayKey}:temp-even`,
       category: 'weather',
-      titleKo: '내일 서울 최고기온 홀 / 짝',
-      titleEn: "Tomorrow Seoul high temp odd / even",
+      titleKo: '서울 최고기온 홀수팀 vs 짝수팀',
+      titleEn: 'Seoul High Temp Odd Team vs Even Team',
       descriptionKo: '내일 공식 최고기온의 정수값이 홀수일지 짝수일지 예측하세요.',
       descriptionEn: "Predict whether tomorrow's official high temperature integer is odd or even.",
       resolveDate,
@@ -162,8 +195,8 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
     questions.splice(3, 0, {
       id: `${dayKey}:lotto3`,
       category: 'lottery',
-      titleKo: '내일 로또 1등 당첨자 3명 UP / DOWN',
-      titleEn: "Tomorrow's lotto jackpot winners over/under 3",
+      titleKo: '로또 1등 3명 초과팀 vs 이하팀',
+      titleEn: 'Lotto Jackpot Over 3 Team vs 3 Or Fewer Team',
       descriptionKo: '내일 추첨 결과 1등 당첨자가 3명보다 많을지 적을지 예측하세요.',
       descriptionEn: 'Predict whether jackpot winners will be more or fewer than 3.',
       resolveDate,
@@ -180,4 +213,55 @@ export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQues
 export function getDemoWinningChoiceId(question: MinigameBetQuestion): string {
   const index = stableHash(question.id) % question.choices.length;
   return question.choices[index]?.id ?? question.choices[0].id;
+}
+
+export function buildMinigameBetPool(
+  question: MinigameBetQuestion,
+  tickets: MinigameBetTicket[],
+): MinigameBetPool {
+  const byChoice = question.choices.reduce<Record<string, number>>((acc, choice) => {
+    acc[choice.id] = MINIGAME_BET_BASE_CHOICE_POOL;
+    return acc;
+  }, {});
+
+  tickets
+    .filter((ticket) => ticket.questionId === question.id)
+    .forEach((ticket) => {
+      byChoice[ticket.choiceId] = (byChoice[ticket.choiceId] ?? 0) + ticket.stake;
+    });
+
+  return {
+    questionId: question.id,
+    byChoice,
+    totalStars: Object.values(byChoice).reduce((sum, amount) => sum + amount, 0),
+  };
+}
+
+export function buildMinigameBetPools(
+  questions: MinigameBetQuestion[],
+  tickets: MinigameBetTicket[],
+): Record<string, MinigameBetPool> {
+  return questions.reduce<Record<string, MinigameBetPool>>((acc, question) => {
+    acc[question.id] = buildMinigameBetPool(question, tickets);
+    return acc;
+  }, {});
+}
+
+export function calculateMinigameBetPayout(
+  stake: number,
+  choiceId: string,
+  pool: MinigameBetPool,
+): MinigameBetPayout {
+  const winningPool = Math.max(1, pool.byChoice[choiceId] ?? 0);
+  const odds = pool.totalStars / winningPool;
+  const grossPayout = Math.max(stake, Math.floor(stake * odds));
+  const profit = Math.max(0, grossPayout - stake);
+  const fee = Math.floor(profit * MINIGAME_BET_FEE_RATE);
+  return {
+    grossPayout,
+    payout: stake + profit - fee,
+    profit,
+    fee,
+    odds,
+  };
 }

@@ -213,6 +213,7 @@ export function buildMatchResolution(
   grid: number[],
   rows: number,
   cols: number,
+  options: { allowColorClear?: boolean } = {},
 ): MatchResolution {
   const runs = findMatchRuns(grid, rows, cols);
   const cleared = new Set<number>();
@@ -224,7 +225,7 @@ export function buildMatchResolution(
 
   for (const run of runs) {
     const center = run.cells[Math.floor(run.cells.length / 2)];
-    if (run.length >= 5) {
+    if (run.length === 5 && options.allowColorClear) {
       specialsToSpawn.set(center, SPECIAL_COLOR_CLEAR);
       continue;
     }

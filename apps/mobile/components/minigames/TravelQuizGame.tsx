@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, ScrollView } from 'react-native';
 import { PremiumButton } from '@/components/PremiumButton';
 import { ComboBanner } from '@/components/minigames/ComboBanner';
 import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel';
@@ -82,12 +82,6 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
     return () => scoreAnim.removeListener(listener);
   }, [scoreAnim]);
 
-  useEffect(() => {
-    if (finished || correctCount < stageConfig.requiredCorrect) return;
-    const timer = setTimeout(() => setFinished(true), 700);
-    return () => clearTimeout(timer);
-  }, [correctCount, finished, stageConfig.requiredCorrect]);
-
   const animateScoreTo = useCallback(
     (next: number) => {
       Animated.timing(scoreAnim, {
@@ -117,7 +111,7 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
     [gainOpacity, gainTranslate],
   );
 
-  const handlePick = (optionIndex: number) => {
+  const handlePick = useCallback((optionIndex: number) => {
     if (picked !== null || !current || finished) return;
     setPicked(optionIndex);
 
@@ -136,9 +130,9 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
     } else {
       setCombo(0);
     }
-  };
+  }, [animateScoreTo, combo, current, finished, picked, showGainPopup]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (finished) return;
     if (correctCount >= stageConfig.requiredCorrect) {
       setFinished(true);
@@ -150,7 +144,13 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
     }
     setIndex((value) => value + 1);
     setPicked(null);
-  };
+  }, [correctCount, finished, index, stageConfig.requiredCorrect, total]);
+
+  useEffect(() => {
+    if (picked === null || finished) return;
+    const timer = setTimeout(handleNext, 3000);
+    return () => clearTimeout(timer);
+  }, [finished, handleNext, picked]);
 
   const handleNextStage = useCallback(async () => {
     await refresh();
@@ -165,76 +165,88 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.headerRow}>
-        <GameStatsBar
-          stats={[
-            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-            { label: t('minigames.score'), value: displayScore },
-            { label: t('minigames.question'), value: `${index + 1}/${total}` },
-          ]}
-        />
-      </View>
-      <View style={styles.helpRow}>
-        <MinigameHelpButton
-          accessibilityLabel={t('minigames.howToPlay')}
-          label={t('minigames.howToPlay')}
-          onPress={() => setShowHelp(true)}
-        />
-      </View>
-      <ComboBanner combo={combo} label={comboLabel} minCombo={2} />
-      <View style={styles.card}>
-        <Text style={styles.question}>{pickLocalizedText(current.question, locale)}</Text>
-        <View style={styles.options}>
-          {pickLocalizedOptions(current.options, locale).map((option, optionIndex) => {
-            const isPicked = picked === optionIndex;
-            const isCorrect = optionIndex === current.correctIndex;
-            const showResult = picked !== null;
-            const variant =
-              showResult && isCorrect
-                ? 'primary'
-                : showResult && isPicked && !isCorrect
-                  ? 'danger'
-                  : 'outline';
-
-            return (
-              <PremiumButton
-                key={`${current.id}-${optionIndex}`}
-                title={option}
-                onPress={() => handlePick(optionIndex)}
-                disabled={picked !== null || finished}
-                variant={variant}
-                compact
-                fullWidth
-              />
-            );
-          })}
-        </View>
-        {picked !== null ? (
-          <Text style={[styles.feedback, picked === current.correctIndex ? styles.correct : styles.wrong]}>
-            {picked === current.correctIndex
-              ? combo >= 2
-                ? t('minigames.correctCombo', { combo, gain: scoreQuizCorrect(combo) })
-                : t('minigames.correct')
-              : t('minigames.wrong')}
-          </Text>
-        ) : null}
-        {lastGain !== null ? (
-          <Animated.Text
-            style={[
-              styles.gainPop,
-              { opacity: gainOpacity, transform: [{ translateY: gainTranslate }] },
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.headerRow}>
+          <GameStatsBar
+            stats={[
+              { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
+              { label: t('minigames.score'), value: displayScore },
+              { label: t('minigames.question'), value: `${index + 1}/${total}` },
             ]}
-          >
-            +{lastGain}
-          </Animated.Text>
-        ) : null}
-        {picked !== null && !finished ? (
-          <PremiumButton
-            title={index + 1 >= total ? t('minigames.seeResult') : t('minigames.next')}
-            onPress={handleNext}
           />
-        ) : null}
-      </View>
+        </View>
+        <View style={styles.helpRow}>
+          <MinigameHelpButton
+            accessibilityLabel={t('minigames.howToPlay')}
+            label={t('minigames.howToPlay')}
+            onPress={() => setShowHelp(true)}
+          />
+        </View>
+        <ComboBanner combo={combo} label={comboLabel} minCombo={2} />
+        <View style={styles.card}>
+          <Text style={styles.question}>{pickLocalizedText(current.question, locale)}</Text>
+          <View style={styles.options}>
+            {pickLocalizedOptions(current.options, locale).map((option, optionIndex) => {
+              const isPicked = picked === optionIndex;
+              const isCorrect = optionIndex === current.correctIndex;
+              const showResult = picked !== null;
+              const variant =
+                showResult && isCorrect
+                  ? 'primary'
+                  : showResult && isPicked && !isCorrect
+                    ? 'danger'
+                    : 'outline';
+
+              return (
+                <PremiumButton
+                  key={`${current.id}-${optionIndex}`}
+                  title={option}
+                  onPress={() => handlePick(optionIndex)}
+                  disabled={picked !== null || finished}
+                  variant={variant}
+                  compact
+                  fullWidth
+                />
+              );
+            })}
+          </View>
+          <View style={styles.answerArea}>
+            <View style={styles.feedbackSlot}>
+              {picked !== null ? (
+                <Text style={[styles.feedback, picked === current.correctIndex ? styles.correct : styles.wrong]}>
+                  {picked === current.correctIndex
+                    ? combo >= 2
+                      ? t('minigames.correctCombo', { combo, gain: scoreQuizCorrect(combo) })
+                      : t('minigames.correct')
+                    : t('minigames.wrong')}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.nextButtonSlot}>
+              {picked !== null && !finished ? (
+                <PremiumButton
+                  title={index + 1 >= total ? t('minigames.seeResult') : t('minigames.next')}
+                  onPress={handleNext}
+                />
+              ) : null}
+            </View>
+          </View>
+          {lastGain !== null ? (
+            <Animated.Text
+              style={[
+                styles.gainPop,
+                { opacity: gainOpacity, transform: [{ translateY: gainTranslate }] },
+              ]}
+            >
+              +{lastGain}
+            </Animated.Text>
+          ) : null}
+        </View>
+      </ScrollView>
       <MinigameResultPanel
         gameId="quiz"
         stage={activeStage}
@@ -264,6 +276,13 @@ export function TravelQuizGame({ initialStage }: { initialStage?: number } = {})
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, minHeight: 0 },
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollContent: {
+    paddingBottom: theme.spacing.md,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -291,6 +310,19 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   options: { gap: theme.spacing.sm },
+  answerArea: {
+    minHeight: 82,
+    justifyContent: 'flex-end',
+    gap: theme.spacing.sm,
+  },
+  feedbackSlot: {
+    minHeight: 20,
+    justifyContent: 'center',
+  },
+  nextButtonSlot: {
+    minHeight: 46,
+    justifyContent: 'center',
+  },
   feedback: {
     fontSize: 14,
     fontWeight: '700',

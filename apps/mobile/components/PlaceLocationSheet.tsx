@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Place } from '@tingting/shared';
 import { getRegion } from '@tingting/shared';
 import { getPlaceImageUrl } from '@/lib/place-images';
+import { openPlaceNavigation, type PlaceNavigationProvider } from '@/lib/place-navigation';
 import { PremiumButton } from '@/components/PremiumButton';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useLocale } from '@/hooks/useLocale';
@@ -18,6 +19,11 @@ export function PlaceLocationSheet({ place, onClose, onViewDetail }: Props) {
   const { t } = useLocale();
   const region = getRegion(place.regionCode);
   const imageUri = getPlaceImageUrl(place);
+  const navButtons: { provider: PlaceNavigationProvider; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { provider: 'naver', label: t('place.openNaverMap'), icon: 'map-outline' },
+    { provider: 'kakaoNavi', label: t('place.openKakaoNavi'), icon: 'car-outline' },
+    { provider: 'tmap', label: t('place.openTmap'), icon: 'trail-sign-outline' },
+  ];
 
   return (
     <View style={styles.wrap}>
@@ -56,10 +62,23 @@ export function PlaceLocationSheet({ place, onClose, onViewDetail }: Props) {
       <Text style={styles.desc} numberOfLines={2}>
         {place.description}
       </Text>
-      <Text style={styles.coords}>
-        {place.lat.toFixed(4)}, {place.lng.toFixed(4)}
-      </Text>
 
+      <View style={styles.navGrid}>
+        {navButtons.map((button) => (
+          <Pressable
+            key={button.provider}
+            onPress={() => openPlaceNavigation(place, button.provider)}
+            style={styles.navButton}
+            accessibilityRole="button"
+            accessibilityLabel={button.label}
+          >
+            <View style={styles.navIcon}>
+              <Ionicons name={button.icon} size={18} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.navButtonText}>{button.label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <PremiumButton title={t('place.viewDetail')} onPress={onViewDetail} />
     </View>
   );
@@ -107,5 +126,26 @@ const styles = StyleSheet.create({
   },
   locationText: { color: theme.colors.primaryDark, fontSize: 13, fontWeight: '700' },
   desc: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
-  coords: { color: theme.colors.textSubtle, fontSize: 12 },
+  navGrid: { gap: 8 },
+  navButton: {
+    minHeight: 46,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.tint.border,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  navIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.tint.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonText: { flex: 1, color: theme.colors.primaryDark, fontSize: 14, fontWeight: '800' },
 });

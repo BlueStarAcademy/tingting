@@ -51,6 +51,7 @@ export function KoreaMapPicker({
         focusZoom={6}
         onPinPress={onPinPress}
         regionProgress={regionProgress}
+        visualVariant={compact ? 'naver' : 'default'}
       />
       {!compact ? (
         <View style={styles.legend}>

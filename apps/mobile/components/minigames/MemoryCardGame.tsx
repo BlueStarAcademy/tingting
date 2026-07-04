@@ -33,7 +33,8 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
   const { currentStage, loading, refresh } = useMinigameProgress('memory');
   const [activeStage, setActiveStage] = useState(initialStage ?? 1);
   const initialStageSynced = useRef(false);
-  const [showHelp, setShowHelp] = useState(false);
+  const [showHelp, setShowHelp] = useState(true);
+  const [gameStarted, setGameStarted] = useState(false);
 
   const stageConfig = useMemo(() => getMemoryStageConfig(activeStage), [activeStage]);
 
@@ -77,7 +78,7 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
   }, [activeStage, loading, restart]);
 
   useEffect(() => {
-    if (loading || finished) return;
+    if (loading || finished || !gameStarted) return;
     if (timeLeft <= 0) {
       setFinalMoves(moves);
       setFinished(true);
@@ -91,10 +92,10 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [finished, loading, moves, timeLeft]);
+  }, [finished, gameStarted, loading, moves, timeLeft]);
 
   const handleFlip = (card: Card) => {
-    if (lock || finished) return;
+    if (!gameStarted || lock || finished) return;
     if (flipped.includes(card.id) || matched.has(card.pairId)) return;
 
     const nextFlipped = [...flipped, card.id];
@@ -140,6 +141,10 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
   const canAdvance = activeStage < MINIGAME_MAX_STAGE;
   const resultMoves = finished ? finalMoves : moves;
   const allMatched = matchedCount >= totalPairs;
+  const handleHelpClose = () => {
+    if (!gameStarted) setGameStarted(true);
+    setShowHelp(false);
+  };
 
   if (loading) return null;
 
@@ -168,7 +173,7 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
             <Pressable
               key={card.id}
               onPress={() => handleFlip(card)}
-              disabled={lock || finished || isOpen}
+              disabled={!gameStarted || lock || finished || isOpen}
               accessible={false}
               {...({ focusable: false, tabIndex: -1 } as any)}
               style={[
@@ -204,9 +209,11 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
       />
       <HowToPlayModal
         visible={showHelp}
-        onClose={() => setShowHelp(false)}
+        onClose={handleHelpClose}
         title={t('minigames.howToPlay')}
         rules={tArray('minigames.rulesMemory')}
+        actionLabel={!gameStarted ? t('minigames.startGame') : undefined}
+        dismissible={gameStarted}
       />
     </View>
   );

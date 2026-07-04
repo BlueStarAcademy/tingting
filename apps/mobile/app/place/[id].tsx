@@ -15,11 +15,11 @@ import { pickPhoto } from '@/lib/pick-photo';
 import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
-import type { Place, PlaceRecommendation } from '@tingting/shared';
+import type { Place, PlaceRecommendation, Visit } from '@tingting/shared';
 import { getRegion } from '@tingting/shared';
 import { useLocale } from '@/hooks/useLocale';
 import { getPlaceImageUrl } from '@/lib/place-images';
-import { getPlaceTransport, type TransportLine } from '@/lib/place-transport';
+import { openPlaceNavigation, type PlaceNavigationProvider } from '@/lib/place-navigation';
 import { distanceMeters, getCurrentCoords } from '@/lib/location';
 import { theme } from '@/constants/theme';
 
@@ -27,31 +27,27 @@ type PlaceTab = 'transport' | 'reviews' | 'verify';
 
 const VERIFY_RADIUS_M = 500;
 
-const TRANSPORT_ICONS: Record<TransportLine['icon'], keyof typeof Ionicons.glyphMap> = {
-  train: 'train-outline',
-  bus: 'bus-outline',
-  subway: 'git-network-outline',
-  car: 'car-outline',
-  plane: 'airplane-outline',
-};
-
 export default function PlaceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { t } = useLocale();
   const [place, setPlace] = useState<Place | null>(null);
   const [recs, setRecs] = useState<PlaceRecommendation[]>([]);
+  const [visits, setVisits] = useState<Visit[]>([]);
   const [text, setText] = useState('');
-  const [rating, setRating] = useState(5);
   const [tab, setTab] = useState<PlaceTab>('transport');
   const [distance, setDistance] = useState<number | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
+        setImageLoadFailed(false);
         setPlace(await api.getPlace(id));
         setRecs(await api.getRecommendations(id));
+        setVisits(await api.getVisits());
       })();
     }, [id]),
   );
@@ -69,6 +65,7 @@ export default function PlaceDetailScreen() {
       const coords = await getCurrentCoords();
       const meters = Math.round(distanceMeters(coords.lat, coords.lng, place.lat, place.lng));
       setDistance(meters);
+      setGpsAccuracy(coords.accuracy ? Math.round(coords.accuracy) : null);
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('auth.unknownError'));
     } finally {
@@ -99,7 +96,11 @@ export default function PlaceDetailScreen() {
 
   const submitRec = async () => {
     if (!text.trim()) return;
-    await api.addRecommendation(id, text.trim(), rating);
+    if (!canSubmitReview) {
+      Alert.alert(t('common.alert'), t('place.reviewGpsRequired'));
+      return;
+    }
+    await api.addRecommendation(id, text.trim(), 5);
     setText('');
     setRecs(await api.getRecommendations(id));
     Alert.alert(t('common.thanks'), t('place.submitted'));
@@ -108,21 +109,35 @@ export default function PlaceDetailScreen() {
   if (!place) return null;
   const region = getRegion(place.regionCode);
   const imageUri = getPlaceImageUrl(place);
-  const transportLines = getPlaceTransport(place);
   const verified = distance !== null && distance <= VERIFY_RADIUS_M;
+  const hasVerifiedVisit = visits.some((visit) => visit.placeId === place.id);
+  const canSubmitReview = verified || hasVerifiedVisit;
+  const navButtons: { provider: PlaceNavigationProvider; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { provider: 'naver', label: t('place.openNaverMap'), icon: 'map-outline' },
+    { provider: 'kakaoMap', label: t('place.openKakaoMap'), icon: 'navigate-outline' },
+    { provider: 'kakaoNavi', label: t('place.openKakaoNavi'), icon: 'car-outline' },
+    { provider: 'tmap', label: t('place.openTmap'), icon: 'trail-sign-outline' },
+  ];
 
   return (
     <AppScreen title={place.name} showBack>
-      {imageUri ? (
-        <Image source={{ uri: imageUri }} style={styles.hero} resizeMode="cover" />
-      ) : null}
+      {imageUri && !imageLoadFailed ? (
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.hero}
+          resizeMode="cover"
+          onError={() => setImageLoadFailed(true)}
+        />
+      ) : (
+        <View style={[styles.hero, styles.heroFallback]}>
+          <Ionicons name="image-outline" size={34} color={theme.colors.primary} />
+          <Text style={styles.heroFallbackText}>{place.name}</Text>
+        </View>
+      )}
       <Text style={styles.region}>
         {region?.name} · {place.category}
       </Text>
       <Text style={styles.desc}>{place.description}</Text>
-      <Text style={styles.coords}>
-        {place.lat.toFixed(4)}, {place.lng.toFixed(4)}
-      </Text>
 
       <View style={styles.tabRow}>
         {tabs.map((item) => (
@@ -138,58 +153,67 @@ export default function PlaceDetailScreen() {
 
       {tab === 'transport' ? (
         <View style={styles.section}>
-          {transportLines.map((line, i) => (
-            <View key={`${line.icon}-${i}`} style={styles.transportCard}>
+          {navButtons.map((button) => (
+            <Pressable
+              key={button.provider}
+              style={styles.transportCard}
+              onPress={() => openPlaceNavigation(place, button.provider)}
+            >
               <View style={styles.transportIcon}>
-                <Ionicons name={TRANSPORT_ICONS[line.icon]} size={22} color={theme.colors.primary} />
+                <Ionicons name={button.icon} size={22} color={theme.colors.primary} />
               </View>
               <View style={styles.transportBody}>
-                <Text style={styles.transportTitle}>{line.title}</Text>
-                <Text style={styles.transportDetail}>{line.detail}</Text>
+                <Text style={styles.transportTitle}>{button.label}</Text>
+                <Text style={styles.transportDetail}>{t('place.openDirectionsDetail')}</Text>
               </View>
-            </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+            </Pressable>
           ))}
         </View>
       ) : null}
 
       {tab === 'reviews' ? (
-        <ScrollView style={styles.section} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionTitle}>{t('place.recommendations')}</Text>
-          {recs.length === 0 ? (
-            <Text style={styles.empty}>{t('place.noReviews')}</Text>
-          ) : (
-            recs.map((r) => (
-              <View key={r.id} style={styles.rec}>
-                <Text style={styles.stars}>{'★'.repeat(r.rating)}</Text>
-                <Text style={styles.recText}>{r.text}</Text>
-              </View>
-            ))
-          )}
-          <TextInput
-            style={styles.input}
-            placeholder={t('place.shareTip')}
-            placeholderTextColor={theme.colors.textMuted}
-            value={text}
-            onChangeText={setText}
-            multiline
-          />
-          <View style={styles.ratingRow}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <PremiumButton
-                key={n}
-                title={String(n)}
-                onPress={() => setRating(n)}
-                variant={rating === n ? 'primary' : 'outline'}
-              />
-            ))}
+        <View style={styles.section}>
+          <View style={styles.reviewPanel}>
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {recs.length === 0 ? (
+                <Text style={styles.empty}>{t('place.noReviews')}</Text>
+              ) : (
+                recs.map((r) => (
+                  <View key={r.id} style={styles.rec}>
+                    <View style={styles.recHeader}>
+                      <Ionicons name="person-circle-outline" size={24} color={theme.colors.primaryLight} />
+                      <Text style={styles.recMeta}>{new Date(r.createdAt).toLocaleDateString()}</Text>
+                    </View>
+                    <Text style={styles.recText}>{r.text}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
           </View>
-          <PremiumButton title={t('place.submit')} onPress={submitRec} variant="outline" />
-        </ScrollView>
+          <View style={styles.reviewInputRow}>
+            <TextInput
+              style={styles.input}
+              placeholder={t('place.shareTip')}
+              placeholderTextColor={theme.colors.textMuted}
+              value={text}
+              onChangeText={setText}
+              returnKeyType="send"
+              onSubmitEditing={submitRec}
+            />
+            <PremiumButton
+              title={t('place.submit')}
+              onPress={submitRec}
+              variant="outline"
+              fullWidth={false}
+              style={styles.submitButton}
+            />
+          </View>
+        </View>
       ) : null}
 
       {tab === 'verify' ? (
         <View style={styles.section}>
-          <Text style={styles.verifyIntro}>{t('place.verifyIntro')}</Text>
           <View style={styles.verifyCard}>
             <Ionicons name="location-outline" size={28} color={theme.colors.primary} />
             <Text style={styles.verifyRadius}>
@@ -210,6 +234,9 @@ export default function PlaceDetailScreen() {
                   : t('place.verifyTooFar', { meters: distance })}
               </Text>
             </View>
+          ) : null}
+          {gpsAccuracy !== null ? (
+            <Text style={styles.accuracyText}>{t('place.gpsAccuracy', { meters: gpsAccuracy })}</Text>
           ) : null}
 
           <PremiumButton
@@ -232,9 +259,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     marginBottom: theme.spacing.sm,
   },
+  heroFallback: {
+    backgroundColor: theme.colors.tint.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  heroFallbackText: { color: theme.colors.primaryDark, fontSize: 16, fontWeight: '800' },
   region: { color: theme.colors.primaryLight, fontWeight: '600' },
-  desc: { color: theme.colors.text, fontSize: 15, lineHeight: 22, marginTop: theme.spacing.xs },
-  coords: { color: theme.colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: theme.spacing.md },
+  desc: { color: theme.colors.text, fontSize: 15, lineHeight: 22, marginTop: theme.spacing.xs, marginBottom: theme.spacing.md },
   tabRow: {
     flexDirection: 'row',
     gap: theme.spacing.xs,
@@ -259,6 +292,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '700' },
   transportCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: theme.spacing.sm,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
@@ -278,27 +312,41 @@ const styles = StyleSheet.create({
   transportTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
   transportDetail: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
   empty: { color: theme.colors.textMuted, textAlign: 'center', paddingVertical: theme.spacing.md },
+  reviewPanel: {
+    height: 220,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.sm,
+  },
   rec: {
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
     borderRadius: theme.radius.sm,
     marginTop: theme.spacing.sm,
+    gap: 8,
   },
-  stars: { color: theme.colors.star },
-  recText: { color: theme.colors.text, marginTop: 4 },
+  recHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
+  recMeta: { color: theme.colors.textMuted, fontSize: 12 },
+  recText: { color: theme.colors.text, lineHeight: 20 },
+  reviewInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
   input: {
+    flex: 1,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     color: theme.colors.text,
-    minHeight: 80,
-    textAlignVertical: 'top',
+    minHeight: 48,
     borderWidth: 1,
     borderColor: theme.colors.surfaceLight,
-    marginTop: theme.spacing.sm,
   },
-  ratingRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
-  verifyIntro: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 20 },
+  submitButton: { width: 96 },
   verifyCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,4 +368,5 @@ const styles = StyleSheet.create({
   },
   distanceBadgeOk: { backgroundColor: 'rgba(52,211,153,0.15)' },
   distanceText: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '600' },
+  accuracyText: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center' },
 });

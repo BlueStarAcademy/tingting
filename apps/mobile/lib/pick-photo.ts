@@ -15,7 +15,12 @@ type PickPhotoLabels = {
 async function pickFromLibrary(): Promise<string | null> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return null;
-  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    quality: 0.8,
+    defaultTab: 'photos',
+    legacy: false,
+  });
   if (result.canceled || !result.assets[0]) return null;
   return result.assets[0].uri;
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import MapView, { Marker, Polygon, type Region as MapRegion } from 'react-native-maps';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import type { Region } from '@tingting/shared';
@@ -10,7 +10,7 @@ import {
   placeFocusRegion,
   REGION_POLYGONS,
 } from '@/lib/korea-map-geo';
-import { regionFill, regionStroke } from '@/lib/korea-map-visual';
+import { regionFill, regionStroke, type KoreaMapVisualVariant } from '@/lib/korea-map-visual';
 import { TravelProgressBar } from '@/components/TravelProgressBar';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useLocale } from '@/hooks/useLocale';
@@ -21,6 +21,7 @@ const DEFAULT_MIN_ZOOM = 2;
 const DEFAULT_MAX_ZOOM = 8;
 const DEFAULT_ZOOM_STEP = 0.5;
 const VIEWPORT_HEIGHT_RATIO = 0.52;
+const NAVER_GREEN = '#03C75A';
 
 type Props = {
   visitedRegionCodes?: string[];
@@ -42,6 +43,8 @@ type Props = {
   focusPlace?: Place | null;
   focusZoom?: number;
   onPinPress?: () => void;
+  regionProgress?: Record<string, number>;
+  visualVariant?: KoreaMapVisualVariant;
 };
 
 function zoomToRegion(zoom: number): MapRegion {
@@ -72,6 +75,7 @@ export function ScrollableKoreaMap({
   focusPlace,
   focusZoom = 5.5,
   onPinPress,
+  visualVariant = 'default',
 }: Props) {
   const { t } = useLocale();
   const { height: windowHeight } = useWindowDimensions();
@@ -128,19 +132,28 @@ export function ScrollableKoreaMap({
       REGION_POLYGONS.map(({ code, region, coordinates }) => {
         const isVisited = visited.has(code);
         const isSelected = selectedCode === code;
-        const fill = regionFill(code, visited, selectedCode, region);
-        const stroke = regionStroke(selectedCode, code);
+        const fill = regionFill(code, visited, selectedCode, region, visualVariant);
+        const stroke = regionStroke(selectedCode, code, visualVariant);
         return {
           code,
           region,
           coordinates,
-          fillColor: isVisited || isSelected ? `${fill}88` : `${fill}44`,
+          fillColor:
+            visualVariant === 'naver'
+              ? isSelected
+                ? `${fill}50`
+                : isVisited
+                  ? `${fill}38`
+                  : `${fill}24`
+              : isVisited || isSelected
+                ? `${fill}88`
+                : `${fill}44`,
           strokeColor: stroke,
-          strokeWidth: isSelected ? 2.5 : 1.5,
+          strokeWidth: visualVariant === 'naver' ? (isSelected ? 3 : 1.2) : isSelected ? 2.5 : 1.5,
           zIndex: isSelected ? 3 : isVisited ? 2 : 1,
         };
       }),
-    [visited, selectedCode],
+    [visited, selectedCode, visualVariant],
   );
 
   const handleMapPress = useCallback(
@@ -162,7 +175,7 @@ export function ScrollableKoreaMap({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={zoomToRegion(initialZoom)}
-        mapType="hybrid"
+        mapType={visualVariant === 'naver' ? 'standard' : 'hybrid'}
         rotateEnabled={false}
         pitchEnabled={false}
         scrollEnabled={interactive}
@@ -185,11 +198,18 @@ export function ScrollableKoreaMap({
           <Marker
             coordinate={{ latitude: focusPlace.lat, longitude: focusPlace.lng }}
             title={focusPlace.name}
-            pinColor="#E11D48"
+            pinColor={visualVariant === 'naver' ? NAVER_GREEN : '#E11D48'}
             onPress={() => onPinPress?.()}
           />
         ) : null}
       </MapView>
+
+      {visualVariant === 'naver' ? (
+        <View style={styles.naverBadge} pointerEvents="none">
+          <View style={styles.naverDot} />
+          <Text style={styles.naverBadgeText}>지도</Text>
+        </View>
+      ) : null}
 
       {showNationalProgress ? (
         <View style={styles.progressOverlay} pointerEvents="none">
@@ -255,6 +275,42 @@ const styles = StyleSheet.create({
     left: theme.spacing.sm,
     right: theme.spacing.sm,
     zIndex: 2,
+  },
+  naverBadge: {
+    position: 'absolute',
+    top: theme.spacing.sm,
+    left: theme.spacing.sm,
+    zIndex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(3,199,90,0.22)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+      },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  naverDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: NAVER_GREEN,
+  },
+  naverBadgeText: {
+    color: '#173B23',
+    fontSize: 12,
+    fontWeight: '800',
   },
   zoomControls: {
     position: 'absolute',

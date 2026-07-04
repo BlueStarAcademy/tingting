@@ -27,11 +27,14 @@ import {
 import type { PedometerDayState } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
+type StepSensorStatus = 'checking' | 'ready' | 'permissionDenied' | 'unavailable';
+
 export default function StepsScreen() {
   const { t } = useLocale();
   const { session, refresh } = useAuth();
   const [state, setState] = useState<(PedometerDayState & { timezone: string; timezoneLockedUntil?: string }) | null>(null);
   const [available, setAvailable] = useState(false);
+  const [sensorStatus, setSensorStatus] = useState<StepSensorStatus>('checking');
   const [rouletteOpen, setRouletteOpen] = useState(false);
   const [pendingMilestone, setPendingMilestone] = useState(0);
   const [tzOpen, setTzOpen] = useState(false);
@@ -51,35 +54,94 @@ export default function StepsScreen() {
 
   useEffect(() => {
     let sub: { remove: () => void } | null = null;
-    (async () => {
-      const ok = await Pedometer.isAvailableAsync();
-      setAvailable(ok);
-      if (!ok) return;
+    let cancelled = false;
 
-      if (Platform.OS === 'ios') {
-        sub = Pedometer.watchStepCount(async (result: { steps: number }) => {
-          await api.syncPedometerSteps(result.steps);
-          load();
-        });
-      } else {
-        const poll = async () => {
-          const tz = (await api.getPedometerState()).timezone ?? DEFAULT_TIMEZONE;
-          const end = new Date();
-          const start = getDayStartInTimezone(tz, end);
-          try {
-            const r = await Pedometer.getStepCountAsync(start, end);
-            await api.syncPedometerSteps(r.steps);
-            load();
-          } catch {
-            /* ignore */
+    const syncSteps = async (steps: number) => {
+      const normalized = Math.max(0, Math.floor(steps));
+      const next = await api.syncPedometerSteps(normalized);
+      if (!cancelled) setState(next);
+      return next;
+    };
+
+    const getIosTodaySteps = async () => {
+      const tz = (await api.getPedometerState()).timezone ?? DEFAULT_TIMEZONE;
+      const end = new Date();
+      const start = getDayStartInTimezone(tz, end);
+      const result = await Pedometer.getStepCountAsync(start, end);
+      return result.steps;
+    };
+
+    (async () => {
+      try {
+        setSensorStatus('checking');
+        const existingPermission = await Pedometer.getPermissionsAsync();
+        const permission = existingPermission.granted
+          ? existingPermission
+          : await Pedometer.requestPermissionsAsync();
+        if (!permission.granted) {
+          if (!cancelled) {
+            setAvailable(false);
+            setSensorStatus('permissionDenied');
           }
-        };
-        poll();
-        const id = setInterval(poll, 15000);
-        sub = { remove: () => clearInterval(id) };
+          return;
+        }
+
+        const ok = await Pedometer.isAvailableAsync();
+        if (!ok) {
+          if (!cancelled) {
+            setAvailable(false);
+            setSensorStatus('unavailable');
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setAvailable(true);
+          setSensorStatus('ready');
+        }
+
+        let baseSteps = (await api.getPedometerState()).dailySteps;
+        if (Platform.OS === 'ios') {
+          baseSteps = await getIosTodaySteps();
+          await syncSteps(baseSteps);
+        }
+
+        sub = Pedometer.watchStepCount(async (result: { steps: number }) => {
+          try {
+            await syncSteps(baseSteps + result.steps);
+          } catch {
+            /* ignore transient sensor/store errors */
+          }
+        });
+
+        if (Platform.OS === 'ios') {
+          const id = setInterval(async () => {
+            try {
+              baseSteps = await getIosTodaySteps();
+              await syncSteps(baseSteps);
+            } catch {
+              /* ignore transient sensor errors */
+            }
+          }, 30000);
+          const sensorSub = sub;
+          sub = {
+            remove: () => {
+              sensorSub?.remove();
+              clearInterval(id);
+            },
+          };
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailable(false);
+          setSensorStatus('unavailable');
+        }
       }
     })();
-    return () => sub?.remove();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
   }, []);
 
   const dailySteps = state?.dailySteps ?? 0;
@@ -148,7 +210,11 @@ export default function StepsScreen() {
         </Pressable>
       </View>
 
-      {!available ? <Text style={styles.warn}>{t('steps.unavailable')}</Text> : null}
+      {!available ? (
+        <Text style={styles.warn}>
+          {sensorStatus === 'permissionDenied' ? t('steps.permissionDenied') : t('steps.unavailable')}
+        </Text>
+      ) : null}
 
       <Pressable
         style={({ pressed }) => [

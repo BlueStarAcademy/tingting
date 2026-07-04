@@ -1,24 +1,16 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  SCHEDULE_STICKERS,
-  STICKER_PACK_OPTIONS,
-  type ScheduleSticker,
-  type StickerPackOption,
-} from '@tingting/shared';
 import { TabPage } from '@/components/TabPage';
 import { PremiumButton } from '@/components/PremiumButton';
 import { StarIcon } from '@/components/StarAmount';
 import { StarChip } from '@/components/StarChip';
 import { cardSurface, tabPill } from '@/lib/ui';
-import { api } from '@/lib/api';
-import { useAuth } from '@/hooks/useAuth';
 import { useAdFree } from '@/hooks/useAdFree';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
 
-type ShopTab = 'stars' | 'stickers' | 'packages' | 'subscription' | 'etc';
+type ShopTab = 'stars' | 'subscription';
 
 type ShopProduct = {
   id: string;
@@ -47,55 +39,32 @@ function ShopStarBonus({ amount }: { amount: number }) {
   );
 }
 
-const PACKAGES = [
-  { id: 'p1', name: '여행 스타터', price: '₩9,900', desc: '스타 300 + AI 필터 2종' },
-  { id: 'p2', name: '전국일주 패키지', price: '₩19,900', desc: '스타 800 + 그룹 슬롯 1개' },
-];
-
 const SUBS = [
-  { id: 'sub1', name: 'TingTing Premium', price: '₩4,900/월', desc: '매일 스타 50 + 광고 제거' },
-  { id: 'sub2', name: 'TingTing Premium+', price: '₩9,900/월', desc: '매일 스타 120 + AI 무제한' },
+  {
+    id: 'premium',
+    name: 'TingTing Premium',
+    price: '₩9,900',
+    desc: '30일 동안 매일 스타 25 + 사진편집 스티커 무제한 사용',
+  },
+  {
+    id: 'premium_plus',
+    name: 'TingTing Premium+',
+    price: '₩19,900',
+    desc: '30일 동안 매일 스타 50 + 모든 사진편집 기능 무제한 사용',
+  },
 ];
 
 export default function ShopTabScreen() {
   const { t } = useLocale();
-  const { profile, refresh } = useAuth();
   const { adFree, purchase: purchaseAdFree } = useAdFree();
   const [tab, setTab] = useState<ShopTab>('stars');
-  const ownedStickers: Record<string, number> = (profile as any)?.ownedStickers ?? {};
 
   const tabs: { id: ShopTab; label: string }[] = [
     { id: 'stars', label: t('shop.tabStars') },
-    { id: 'stickers', label: t('shop.tabStickers') },
-    { id: 'packages', label: t('shop.tabPackages') },
     { id: 'subscription', label: t('shop.tabSubscription') },
-    { id: 'etc', label: t('shop.tabEtc') },
   ];
 
   const comingSoon = () => Alert.alert(t('shop.comingSoonTitle'), t('shop.comingSoonMessage'));
-
-  const buySticker = async (sticker: ScheduleSticker, pack: StickerPackOption) => {
-    Alert.alert(
-      t('group.stickerPackTitle'),
-      t('group.stickerPackDesc', { name: sticker.emoji + ' ' + sticker.label, count: pack.count }) +
-        `\n\n${pack.starCost} 스타`,
-      [
-        { text: t('header.cancel'), style: 'cancel' },
-        {
-          text: `${pack.starCost} 스타 ${t('shop.purchase')}`,
-          onPress: async () => {
-            try {
-              await api.purchaseStickers(sticker.id, pack.id);
-              await refresh();
-              Alert.alert(t('group.stickerPurchased'));
-            } catch (e: unknown) {
-              Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const renderProductCard = (product: ShopProduct, fullWidth = false) => (
     <View key={product.id} style={[styles.card, fullWidth && styles.cardFull, cardSurface()]}>
@@ -155,45 +124,10 @@ export default function ShopTabScreen() {
           )
         : null}
 
-      {tab === 'stickers' ? (
-        <View style={styles.stickerSection}>
-          {SCHEDULE_STICKERS.filter((s) => !s.free).map((sticker) => {
-            const count = ownedStickers[sticker.id] ?? 0;
-            return (
-              <View key={sticker.id} style={[styles.stickerCard, cardSurface()]}>
-                <Text style={styles.stickerEmoji}>{sticker.emoji}</Text>
-                <Text style={styles.stickerLabel}>{sticker.label}</Text>
-                <Text style={styles.stickerOwned}>
-                  {t('shop.stickerOwned', { count })}
-                </Text>
-                <View style={styles.stickerPacks}>
-                  {STICKER_PACK_OPTIONS.map((pack) => (
-                    <PremiumButton
-                      key={pack.id}
-                      title={`${pack.count}개 · ${pack.starCost}스타`}
-                      size="sm"
-                      onPress={() => buySticker(sticker, pack)}
-                    />
-                  ))}
-                </View>
-              </View>
-            );
-          })}
-          <View style={[styles.stickerCard, styles.stickerFreeCard, cardSurface()]}>
-            <Text style={styles.stickerEmoji}>
-              {SCHEDULE_STICKERS.find((s) => s.free)?.emoji ?? '❤️'}
-            </Text>
-            <Text style={styles.stickerLabel}>
-              {SCHEDULE_STICKERS.find((s) => s.free)?.label ?? '하트'}
-            </Text>
-            <Text style={styles.stickerFreeTag}>{t('shop.stickerFree')}</Text>
-          </View>
-        </View>
-      ) : null}
-
-      {tab === 'packages'
-        ? renderProductGrid(
-            PACKAGES.map((p) => ({
+      {tab === 'subscription' ? (
+        <>
+          {renderProductGrid(
+            SUBS.map((p) => ({
               id: p.id,
               name: p.name,
               desc: p.desc,
@@ -201,52 +135,37 @@ export default function ShopTabScreen() {
               onPress: comingSoon,
             })),
             true,
-          )
-        : null}
-
-      {tab === 'subscription'
-        ? renderProductGrid(
-            SUBS.map((p) => ({
-              id: p.id,
-              name: p.name,
-              desc: p.desc,
-              actionTitle: t('shop.subscribe'),
-              onPress: comingSoon,
-            })),
-            true,
-          )
-        : null}
-
-      {tab === 'etc' ? (
-        <View style={[styles.adRemovalCard, cardSurface()]}>
-          <View style={styles.adRemovalIcon}>
-            <Ionicons name="shield-checkmark" size={28} color={theme.colors.teal} />
-          </View>
-          <Text style={styles.adRemovalTitle}>{t('shop.adRemovalTitle')}</Text>
-          <Text style={styles.adRemovalDesc}>{t('shop.adRemovalDesc')}</Text>
-          <PremiumButton
-            title={adFree ? t('shop.adRemovalPurchased') : t('shop.adRemovalPrice')}
-            onPress={() => {
-              if (adFree) return;
-              Alert.alert(
-                t('shop.adRemovalTitle'),
-                t('shop.adRemovalConfirm'),
-                [
-                  { text: t('header.cancel'), style: 'cancel' },
-                  {
-                    text: t('shop.adRemovalPrice'),
-                    onPress: async () => {
-                      await purchaseAdFree();
-                      Alert.alert(t('shop.adRemovalSuccess'));
+          )}
+          <View style={[styles.adRemovalCard, cardSurface()]}>
+            <View style={styles.adRemovalIcon}>
+              <Ionicons name="shield-checkmark" size={28} color={theme.colors.teal} />
+            </View>
+            <Text style={styles.adRemovalTitle}>{t('shop.adRemovalTitle')}</Text>
+            <Text style={styles.adRemovalDesc}>{t('shop.adRemovalDesc')}</Text>
+            <PremiumButton
+              title={adFree ? t('shop.adRemovalPurchased') : t('shop.adRemovalPrice')}
+              onPress={() => {
+                if (adFree) return;
+                Alert.alert(
+                  t('shop.adRemovalTitle'),
+                  t('shop.adRemovalConfirm'),
+                  [
+                    { text: t('header.cancel'), style: 'cancel' },
+                    {
+                      text: t('shop.adRemovalPrice'),
+                      onPress: async () => {
+                        await purchaseAdFree();
+                        Alert.alert(t('shop.adRemovalSuccess'));
+                      },
                     },
-                  },
-                ],
-              );
-            }}
-            disabled={adFree}
-            fullWidth
-          />
-        </View>
+                  ],
+                );
+              }}
+              disabled={adFree}
+              fullWidth
+            />
+          </View>
+        </>
       ) : null}
     </TabPage>
   );
@@ -292,18 +211,6 @@ const styles = StyleSheet.create({
   descSpacer: { flex: 1 },
   desc: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, flex: 1 },
   descFull: { fontSize: 14, lineHeight: 20 },
-  stickerSection: { gap: theme.spacing.sm },
-  stickerCard: {
-    padding: theme.spacing.md,
-    gap: 8,
-    alignItems: 'center',
-  },
-  stickerFreeCard: { opacity: 0.7 },
-  stickerEmoji: { fontSize: 32 },
-  stickerLabel: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
-  stickerOwned: { color: theme.colors.textMuted, fontSize: 12 },
-  stickerPacks: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'center' },
-  stickerFreeTag: { color: theme.colors.success, fontSize: 12, fontWeight: '700' },
   adRemovalCard: {
     padding: theme.spacing.lg,
     gap: theme.spacing.sm,

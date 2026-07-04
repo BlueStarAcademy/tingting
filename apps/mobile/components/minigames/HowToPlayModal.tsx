@@ -8,20 +8,25 @@ interface Props {
   onClose: () => void;
   title: string;
   rules: string[];
+  actionLabel?: string;
+  dismissible?: boolean;
 }
 
-export function HowToPlayModal({ visible, onClose, title, rules }: Props) {
+export function HowToPlayModal({ visible, onClose, title, rules, actionLabel, dismissible = true }: Props) {
   const { t } = useLocale();
+  const handleRequestClose = dismissible ? onClose : () => undefined;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleRequestClose}>
+      <Pressable style={styles.backdrop} onPress={dismissible ? onClose : undefined}>
         <View style={styles.card} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <Ionicons name="close" size={22} color={theme.colors.textMuted} />
-            </Pressable>
+            {dismissible ? (
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Ionicons name="close" size={22} color={theme.colors.textMuted} />
+              </Pressable>
+            ) : null}
           </View>
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
             {rules.map((rule, idx) => (
@@ -32,7 +37,7 @@ export function HowToPlayModal({ visible, onClose, title, rules }: Props) {
             ))}
           </ScrollView>
           <Pressable style={styles.closeBtn} onPress={onClose}>
-            <Text style={styles.closeBtnText}>{t('minigames.understood')}</Text>
+            <Text style={styles.closeBtnText}>{actionLabel ?? t('minigames.understood')}</Text>
           </Pressable>
         </View>
       </Pressable>

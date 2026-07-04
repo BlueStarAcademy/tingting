@@ -23,7 +23,7 @@ import { getAuthRedirectUrl, getSupabase, isSupabaseConfigured } from './supabas
 import { httpApi, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
 import type { MinigameId } from '@/lib/minigames/stages';
-import type { MinigameBetQuestion, MinigameBetTicket } from '@/lib/minigame-bets';
+import type { MinigameBetState, MinigameBetTicket } from '@/lib/minigame-bets';
 
 export { isSupabaseConfigured, isHttpApiConfigured };
 
@@ -469,7 +469,7 @@ export const api = {
     return localStore.skipGroupStationQuestPurchase(groupId, questId);
   },
 
-  async getMinigameBetState(): Promise<{ questions: MinigameBetQuestion[]; tickets: MinigameBetTicket[] }> {
+  async getMinigameBetState(): Promise<MinigameBetState> {
     return localStore.getMinigameBetState();
   },
 

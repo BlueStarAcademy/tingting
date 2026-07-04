@@ -11,6 +11,7 @@ import { useContentWidth } from '@/hooks/useContentWidth';
 import { useLocale } from '@/hooks/useLocale';
 import { findRegionAtPoint } from '@/lib/korea-map-hit';
 import { theme } from '@/constants/theme';
+import type { KoreaMapVisualVariant } from '@/lib/korea-map-visual';
 
 const DEFAULT_ZOOM = 5;
 const DEFAULT_MIN_ZOOM = 2;
@@ -43,6 +44,7 @@ type Props = {
   /** Fired when the user taps the place pin on the map */
   onPinPress?: () => void;
   regionProgress?: Record<string, number>;
+  visualVariant?: KoreaMapVisualVariant;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -70,6 +72,7 @@ export function ScrollableKoreaMap({
   focusZoom = 5.5,
   onPinPress,
   regionProgress,
+  visualVariant = 'default',
 }: Props) {
   const { t } = useLocale();
   const { height: windowHeight } = useWindowDimensions();
@@ -282,6 +285,7 @@ export function ScrollableKoreaMap({
             frameless
             pins={pins}
             regionProgress={regionProgress}
+            visualVariant={visualVariant}
           />
         </View>
       </View>

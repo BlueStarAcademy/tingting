@@ -25,6 +25,7 @@ import {
   regionFill,
   regionStroke,
   regionStrokeWidth,
+  type KoreaMapVisualVariant,
 } from '@/lib/korea-map-visual';
 import { theme } from '@/constants/theme';
 import { mapPinPathD, type MapPin } from '@/lib/korea-map-coords';
@@ -74,13 +75,14 @@ function renderVisualRegion(
   visited: Set<string>,
   selectedCode: string | null | undefined,
   showLabels: boolean,
+  visualVariant: KoreaMapVisualVariant,
 ) {
   const region = REGION_BY_CODE[code];
   if (!region) return null;
 
-  const fill = regionFill(code, visited, selectedCode, region);
-  const stroke = regionStroke(selectedCode, code);
-  const strokeWidth = regionStrokeWidth(selectedCode, code);
+  const fill = regionFill(code, visited, selectedCode, region, visualVariant);
+  const stroke = regionStroke(selectedCode, code, visualVariant);
+  const strokeWidth = regionStrokeWidth(selectedCode, code, visualVariant);
   const isVisited = visited.has(code);
   const text = labelText(region);
   const fontSize = labelFontSize(code, selectedCode);
@@ -105,14 +107,14 @@ function renderVisualRegion(
             width={w}
             height={h}
             rx={h / 2}
-            fill={theme.colors.mapLabelBg}
-            stroke="rgba(255,255,255,0.35)"
+            fill={visualVariant === 'naver' ? 'rgba(255,255,255,0.92)' : theme.colors.mapLabelBg}
+            stroke={visualVariant === 'naver' ? 'rgba(3,199,90,0.22)' : 'rgba(255,255,255,0.35)'}
             strokeWidth={0.6}
           />
           <SvgText
             x={label.cx}
             y={label.cy + fontSize * 0.34}
-            fill={theme.colors.mapLabel}
+            fill={visualVariant === 'naver' ? '#1F2933' : theme.colors.mapLabel}
             fontSize={fontSize}
             fontWeight="700"
             textAnchor="middle"
@@ -135,6 +137,8 @@ interface Props {
   interactive?: boolean;
   frameless?: boolean;
   pins?: MapPin[];
+  regionProgress?: Record<string, number>;
+  visualVariant?: KoreaMapVisualVariant;
 }
 
 export function KoreaSvgMap({
@@ -147,6 +151,7 @@ export function KoreaSvgMap({
   interactive = true,
   frameless = false,
   pins = [],
+  visualVariant = 'default',
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const mapWidth = width ?? Math.min(windowWidth - 32, 360);
@@ -161,14 +166,22 @@ export function KoreaSvgMap({
       <Svg width={mapWidth} height={mapHeight} viewBox={KOREA_MAP_VIEWBOX}>
         <Defs>
           <LinearGradient id="mapSea" x1="0" y1="0" x2="1000" y2="1000" gradientUnits="userSpaceOnUse">
-            <Stop offset="0" stopColor={theme.colors.mapSeaStart} />
-            <Stop offset="1" stopColor={theme.colors.mapSeaEnd} />
+            <Stop offset="0" stopColor={visualVariant === 'naver' ? '#DDF3FF' : theme.colors.mapSeaStart} />
+            <Stop offset="1" stopColor={visualVariant === 'naver' ? '#C7EAF8' : theme.colors.mapSeaEnd} />
           </LinearGradient>
         </Defs>
         <Rect x={0} y={0} width={1000} height={1000} fill="url(#mapSea)" />
+        {visualVariant === 'naver' ? (
+          <G pointerEvents="none">
+            <Path d="M80 280 C250 250 350 350 520 318 S800 255 930 308" stroke="rgba(255,255,255,0.34)" strokeWidth={13} fill="none" strokeLinecap="round" />
+            <Path d="M110 610 C280 520 410 620 570 548 S790 468 940 532" stroke="rgba(255,255,255,0.34)" strokeWidth={11} fill="none" strokeLinecap="round" />
+            <Path d="M300 95 C380 250 350 450 465 610 S585 805 535 945" stroke="rgba(255,255,255,0.34)" strokeWidth={10} fill="none" strokeLinecap="round" />
+            <Path d="M690 130 C625 270 740 430 660 585 S590 760 710 920" stroke="rgba(255,255,255,0.34)" strokeWidth={9} fill="none" strokeLinecap="round" />
+          </G>
+        ) : null}
         {getMapRegionsForRender().map((entry) => (
           <Fragment key={`vis-${entry.code}`}>
-            {renderVisualRegion(entry, visited, selectedCode, showLabels)}
+            {renderVisualRegion(entry, visited, selectedCode, showLabels, visualVariant)}
           </Fragment>
         ))}
         {pins.map((pin, i) => renderMapPin(pin, `pin-${i}`))}

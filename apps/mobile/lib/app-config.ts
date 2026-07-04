@@ -16,17 +16,28 @@ export const getApkQrImageUrl = getDownloadQrImageUrl;
 
 export function openDownloadUrl(url: string): boolean {
   if (!url) return false;
-  if (typeof window !== 'undefined') {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'tingting.apk';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    return true;
-  }
-  return false;
+  if (typeof window === 'undefined') return false;
+
+  fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.blob();
+    })
+    .then((blob) => {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = 'tingting.apk';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    })
+    .catch(() => {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    });
+
+  return true;
 }
 
 /** @deprecated Use openDownloadUrl */

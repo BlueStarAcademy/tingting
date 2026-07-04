@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';
@@ -52,8 +53,13 @@ import type { Place } from '@tingting/shared';
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const JWT_SECRET = process.env.JWT_SECRET ?? 'tingting-dev-secret-change-me';
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
+
+const supabaseJwks = SUPABASE_URL
+  ? createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
+  : null;
 const KAKAO_APP_ID = process.env.KAKAO_APP_ID ? Number(process.env.KAKAO_APP_ID) : null;
 const REGION_PHOTO_REVIEW_QUEST_TARGET = 3;
 const REGION_PHOTO_REVIEW_QUEST_REWARD = 20;
@@ -97,6 +103,8 @@ app.get('/health', (_req, res) => res.json({
   service: 'tingting-api',
   config: {
     supabaseJwtSecret: SUPABASE_JWT_SECRET ? `set (${SUPABASE_JWT_SECRET.length} chars)` : 'NOT SET',
+    supabaseUrl: SUPABASE_URL || 'NOT SET',
+    supabaseJwks: supabaseJwks ? 'configured' : 'NOT configured',
     jwtSecret: JWT_SECRET === 'tingting-dev-secret-change-me' ? 'DEFAULT (not production)' : `set (${JWT_SECRET.length} chars)`,
     corsOrigin: CORS_ORIGIN,
     nodeEnv: process.env.NODE_ENV ?? 'undefined',
@@ -112,6 +120,7 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
   }
   const token = header.slice(7);
   try {
+    // Try HS256 with legacy secret
     const supabasePayload = verifySupabaseAccessToken(token);
     if (supabasePayload) {
       const user = await ensureUserProfile(supabasePayload);
@@ -119,6 +128,15 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
       next();
       return;
     }
+    // Try JWKS (new Supabase signing keys - ES256/RS256)
+    const jwksPayload = await verifySupabaseAccessTokenJwks(token);
+    if (jwksPayload) {
+      const user = await ensureUserProfile(jwksPayload);
+      req.user = { ...jwksPayload, userId: user.id, email: user.email };
+      next();
+      return;
+    }
+    // Try local JWT secret
     req.user = jwt.verify(token, JWT_SECRET) as AuthPayload;
     next();
   } catch (e) {
@@ -161,7 +179,31 @@ function verifySupabaseAccessToken(token: string): AuthPayload | null {
       isSupabaseAuth: true,
     };
   } catch (e) {
-    console.error('[verifySupabaseAccessToken] failed:', e instanceof Error ? e.message : e);
+    console.error('[verifySupabaseAccessToken] HS256 failed:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+async function verifySupabaseAccessTokenJwks(token: string): Promise<AuthPayload | null> {
+  if (!supabaseJwks) return null;
+  try {
+    const { payload } = await jwtVerify(token, supabaseJwks, {
+      issuer: SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : undefined,
+    });
+    const email = payload.email as string | undefined;
+    const role = payload.role as string | undefined;
+    if (!payload.sub || !email) return null;
+    if (role && role !== 'authenticated') return null;
+    return {
+      userId: payload.sub,
+      email: email.toLowerCase(),
+      emailVerified: Boolean(
+        payload.email_verified || payload.email_confirmed_at || role === 'authenticated'
+      ),
+      isSupabaseAuth: true,
+    };
+  } catch (e) {
+    console.error('[verifySupabaseAccessTokenJwks] failed:', e instanceof Error ? e.message : e);
     return null;
   }
 }

@@ -92,7 +92,17 @@ const app = express();
 app.use(cors({ origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(','), credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'tingting-api' }));
+app.get('/health', (_req, res) => res.json({
+  ok: true,
+  service: 'tingting-api',
+  config: {
+    supabaseJwtSecret: SUPABASE_JWT_SECRET ? `set (${SUPABASE_JWT_SECRET.length} chars)` : 'NOT SET',
+    jwtSecret: JWT_SECRET === 'tingting-dev-secret-change-me' ? 'DEFAULT (not production)' : `set (${JWT_SECRET.length} chars)`,
+    corsOrigin: CORS_ORIGIN,
+    nodeEnv: process.env.NODE_ENV ?? 'undefined',
+    databaseUrl: DATABASE_URL ? 'set' : 'NOT SET',
+  },
+}));
 
 async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;

@@ -7,14 +7,17 @@ import { PremiumButton } from '@/components/PremiumButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { APP_ENTRY_HREF } from '@/lib/navigation';
-import { handleSupabaseAuthUrl } from '@/lib/supabase';
+import { handleSupabaseAuthUrl, EmailVerifiedButSessionFailedError } from '@/lib/supabase';
 import { theme } from '@/constants/theme';
+
+type CallbackState = 'loading' | 'verified_go_login' | 'error';
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
   const incomingUrl = Linking.useURL();
   const { refresh } = useAuth();
   const { t } = useLocale();
+  const [state, setState] = useState<CallbackState>('loading');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,7 +34,13 @@ export default function AuthCallbackScreen() {
         await refresh();
         if (!cancelled) router.replace(APP_ENTRY_HREF);
       } catch (e: unknown) {
-        if (!cancelled) setError(e instanceof Error ? e.message : t('auth.authLinkFailed'));
+        if (cancelled) return;
+        if (e instanceof EmailVerifiedButSessionFailedError) {
+          setState('verified_go_login');
+        } else {
+          setError(e instanceof Error ? e.message : t('auth.authLinkFailed'));
+          setState('error');
+        }
       }
     };
 
@@ -44,13 +53,22 @@ export default function AuthCallbackScreen() {
   return (
     <GradientBackground>
       <View style={styles.container}>
-        {error ? (
+        {state === 'error' && (
           <View style={styles.card}>
             <Text style={styles.title}>{t('auth.authLinkFailed')}</Text>
             <Text style={styles.sub}>{error}</Text>
             <PremiumButton title={t('auth.backToLogin')} onPress={() => router.replace('/(auth)/login')} />
           </View>
-        ) : (
+        )}
+        {state === 'verified_go_login' && (
+          <View style={styles.card}>
+            <Text style={styles.successIcon}>✓</Text>
+            <Text style={styles.title}>{t('auth.authCompleteTitle')}</Text>
+            <Text style={styles.sub}>{t('auth.authVerifiedPleaseLogin')}</Text>
+            <PremiumButton title={t('auth.login')} onPress={() => router.replace('/(auth)/login')} />
+          </View>
+        )}
+        {state === 'loading' && (
           <View style={styles.card}>
             <ActivityIndicator size="large" color={theme.colors.primaryLight} />
             <Text style={styles.title}>{t('auth.authCompleteTitle')}</Text>
@@ -72,6 +90,10 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
+  },
+  successIcon: {
+    fontSize: 48,
+    color: '#22c55e',
   },
   title: {
     color: theme.colors.primaryDark,

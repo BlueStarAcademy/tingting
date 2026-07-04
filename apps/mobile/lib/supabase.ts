@@ -49,6 +49,13 @@ function paramsFromUrl(urlToParse: string): URLSearchParams {
   return params;
 }
 
+export class EmailVerifiedButSessionFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmailVerifiedButSessionFailedError';
+  }
+}
+
 export async function handleSupabaseAuthUrl(urlToHandle: string): Promise<{ type?: string }> {
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase is not configured');
@@ -61,7 +68,17 @@ export async function handleSupabaseAuthUrl(urlToHandle: string): Promise<{ type
 
   if (code) {
     const { error } = await sb.auth.exchangeCodeForSession(code);
-    if (error) throw error;
+    if (error) {
+      const isCodeVerifierMissing =
+        error.message?.includes('code verifier') ||
+        error.message?.includes('code_verifier') ||
+        error.message?.includes('invalid request') ||
+        error.message?.includes('both auth code and code verifier');
+      if (isCodeVerifierMissing) {
+        throw new EmailVerifiedButSessionFailedError(error.message);
+      }
+      throw error;
+    }
     return { type };
   }
 
@@ -74,5 +91,9 @@ export async function handleSupabaseAuthUrl(urlToHandle: string): Promise<{ type
     return { type };
   }
 
-  return { type };
+  if (type === 'signup' || type === 'email') {
+    throw new EmailVerifiedButSessionFailedError('no_session_params');
+  }
+
+  throw new Error('No authentication parameters found in URL');
 }

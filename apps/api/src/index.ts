@@ -121,8 +121,9 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
     }
     req.user = jwt.verify(token, JWT_SECRET) as AuthPayload;
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid token' });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Unknown error';
+    res.status(401).json({ error: 'Invalid token', detail: msg });
   }
 }
 
@@ -159,7 +160,8 @@ function verifySupabaseAccessToken(token: string): AuthPayload | null {
       emailVerified: Boolean(payload.email_verified || payload.email_confirmed_at || payload.role === 'authenticated'),
       isSupabaseAuth: true,
     };
-  } catch {
+  } catch (e) {
+    console.error('[verifySupabaseAccessToken] failed:', e instanceof Error ? e.message : e);
     return null;
   }
 }

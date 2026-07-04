@@ -112,6 +112,17 @@ app.get('/health', (_req, res) => res.json({
   },
 }));
 
+app.get('/debug/jwks', async (_req, res) => {
+  const jwksUrl = `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
+  try {
+    const response = await fetch(jwksUrl);
+    const data = await response.json();
+    res.json({ jwksUrl, status: response.status, keys: data });
+  } catch (e) {
+    res.json({ jwksUrl, error: e instanceof Error ? e.message : 'unknown error' });
+  }
+});
+
 async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
@@ -119,6 +130,7 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
     return;
   }
   const token = header.slice(7);
+  const attempts: string[] = [];
   try {
     // Try HS256 with legacy secret
     const supabasePayload = verifySupabaseAccessToken(token);
@@ -128,6 +140,11 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
       next();
       return;
     }
+    attempts.push('HS256: no match');
+  } catch (e) {
+    attempts.push(`HS256: ${e instanceof Error ? e.message : e}`);
+  }
+  try {
     // Try JWKS (new Supabase signing keys - ES256/RS256)
     const jwksPayload = await verifySupabaseAccessTokenJwks(token);
     if (jwksPayload) {
@@ -136,12 +153,17 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
       next();
       return;
     }
+    attempts.push('JWKS: returned null (no keys or payload missing sub/email)');
+  } catch (e) {
+    attempts.push(`JWKS: ${e instanceof Error ? e.message : e}`);
+  }
+  try {
     // Try local JWT secret
     req.user = jwt.verify(token, JWT_SECRET) as AuthPayload;
     next();
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown error';
-    res.status(401).json({ error: 'Invalid token', detail: msg });
+    attempts.push(`Local: ${e instanceof Error ? e.message : e}`);
+    res.status(401).json({ error: 'Invalid token', attempts });
   }
 }
 
@@ -163,49 +185,39 @@ function signToken(userId: string, email: string) {
 
 function verifySupabaseAccessToken(token: string): AuthPayload | null {
   if (!SUPABASE_JWT_SECRET) return null;
-  try {
-    const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload & {
-      email?: string;
-      email_verified?: boolean;
-      email_confirmed_at?: string;
-      role?: string;
-    };
-    if (!payload.sub || !payload.email) return null;
-    if (payload.role && payload.role !== 'authenticated') return null;
-    return {
-      userId: payload.sub,
-      email: payload.email.toLowerCase(),
-      emailVerified: Boolean(payload.email_verified || payload.email_confirmed_at || payload.role === 'authenticated'),
-      isSupabaseAuth: true,
-    };
-  } catch (e) {
-    console.error('[verifySupabaseAccessToken] HS256 failed:', e instanceof Error ? e.message : e);
-    return null;
-  }
+  const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload & {
+    email?: string;
+    email_verified?: boolean;
+    email_confirmed_at?: string;
+    role?: string;
+  };
+  if (!payload.sub || !payload.email) return null;
+  if (payload.role && payload.role !== 'authenticated') return null;
+  return {
+    userId: payload.sub,
+    email: payload.email.toLowerCase(),
+    emailVerified: Boolean(payload.email_verified || payload.email_confirmed_at || payload.role === 'authenticated'),
+    isSupabaseAuth: true,
+  };
 }
 
 async function verifySupabaseAccessTokenJwks(token: string): Promise<AuthPayload | null> {
   if (!supabaseJwks) return null;
-  try {
-    const { payload } = await jwtVerify(token, supabaseJwks, {
-      issuer: SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : undefined,
-    });
-    const email = payload.email as string | undefined;
-    const role = payload.role as string | undefined;
-    if (!payload.sub || !email) return null;
-    if (role && role !== 'authenticated') return null;
-    return {
-      userId: payload.sub,
-      email: email.toLowerCase(),
-      emailVerified: Boolean(
-        payload.email_verified || payload.email_confirmed_at || role === 'authenticated'
-      ),
-      isSupabaseAuth: true,
-    };
-  } catch (e) {
-    console.error('[verifySupabaseAccessTokenJwks] failed:', e instanceof Error ? e.message : e);
-    return null;
-  }
+  const { payload } = await jwtVerify(token, supabaseJwks, {
+    issuer: SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : undefined,
+  });
+  const email = payload.email as string | undefined;
+  const role = payload.role as string | undefined;
+  if (!payload.sub || !email) return null;
+  if (role && role !== 'authenticated') return null;
+  return {
+    userId: payload.sub,
+    email: email.toLowerCase(),
+    emailVerified: Boolean(
+      payload.email_verified || payload.email_confirmed_at || role === 'authenticated'
+    ),
+    isSupabaseAuth: true,
+  };
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {

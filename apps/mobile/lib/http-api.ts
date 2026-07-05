@@ -432,15 +432,6 @@ export const httpApi = {
     });
   },
 
-  async skipGroupStationQuestPurchase(
-    groupId: string,
-    questId: string
-  ): Promise<{ rewardGallerySlots: number }> {
-    return request(`/groups/${groupId}/quests/${encodeURIComponent(questId)}/skip-purchase`, {
-      method: 'POST',
-    });
-  },
-
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
     return request<GroupSchedule[]>(`/groups/${groupId}/schedules`);
   },
@@ -472,6 +463,14 @@ export const httpApi = {
 
   async spendStars(amount: number, reason: string): Promise<number> {
     const { stars } = await request<{ stars: number }>('/stars/spend', {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason }),
+    });
+    return stars;
+  },
+
+  async earnStars(amount: number, reason: string): Promise<number> {
+    const { stars } = await request<{ stars: number }>('/stars/earn', {
       method: 'POST',
       body: JSON.stringify({ amount, reason }),
     });

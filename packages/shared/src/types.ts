@@ -137,7 +137,7 @@ export interface UserProfile {
   profilePublic?: boolean;
 }
 
-export type MailboxMessageType = 'notice' | 'notification' | 'group_invite';
+export type MailboxMessageType = 'notice' | 'notification' | 'group_invite' | 'star_reward';
 
 export type GroupInviteStatus = 'pending' | 'accepted' | 'declined';
 
@@ -174,6 +174,12 @@ export interface MailboxMessage {
   inviterId?: string;
   inviterName?: string;
   inviteStatus?: GroupInviteStatus;
+  /** 구독 일일 스타 우편 */
+  rewardStars?: number;
+  rewardClaimedAt?: string;
+  subscriptionPlanId?: 'premium' | 'premium_plus';
+  subscriptionDayKey?: string;
+  subscriptionDayIndex?: number;
 }
 
 export interface Quest {
@@ -192,8 +198,8 @@ export interface Quest {
   /** 그룹 대표역 방문 퀘스트 */
   isStationQuest?: boolean;
   regionCode?: string;
-  /** 자동 완료되는 지역 활동 퀘스트 */
-  questKind?: 'photo_reviews' | 'public_review' | 'station_gps';
+  /** 지역 활동 퀘스트 */
+  questKind?: 'photo_reviews' | 'recommended_visits';
   targetCount?: number;
   progressCount?: number;
 }
@@ -262,6 +268,8 @@ export interface PedometerDayState {
   dailySteps: number;
   rouletteUsed: number;
   claimedMilestones: number[];
+  /** 만보기 룰렛 2배 수령 완료 마일스톤 */
+  doubledMilestones?: number[];
 }
 
 export interface RankingEntry {

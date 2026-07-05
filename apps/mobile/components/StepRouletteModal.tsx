@@ -6,6 +6,7 @@ import { PremiumButton } from '@/components/PremiumButton';
 import { StarAmount } from '@/components/StarAmount';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
+import { useAdFree } from '@/hooks/useAdFree';
 import { theme } from '@/constants/theme';
 
 const SEGMENTS = [1, 2, 3, 4, 5] as const;
@@ -113,16 +114,22 @@ export function StepRouletteModal({
   onContinueAfterWin,
 }: Props) {
   const { t } = useLocale();
+  const { watchAd } = useAdFree();
   const spinAnim = useRef(new Animated.Value(0)).current;
   const rotationRef = useRef(0);
   const [phase, setPhase] = useState<'idle' | 'spinning' | 'result'>('idle');
   const [reward, setReward] = useState<number | null>(null);
+  const [doubleUsed, setDoubleUsed] = useState(false);
+  const [doubleLoading, setDoubleLoading] = useState(false);
+  const [displayReward, setDisplayReward] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible) {
       spinAnim.setValue(rotationRef.current);
       setPhase('idle');
       setReward(null);
+      setDisplayReward(null);
+      setDoubleUsed(false);
     }
   }, [visible, milestone, spinAnim]);
 
@@ -147,6 +154,7 @@ export function StepRouletteModal({
         if (finished) {
           rotationRef.current = target;
           setReward(result.reward);
+          setDisplayReward(result.reward);
           setPhase('result');
         }
       });
@@ -163,6 +171,22 @@ export function StepRouletteModal({
     extrapolate: 'extend',
   });
 
+  const handleDouble = async () => {
+    if (phase !== 'result' || doubleUsed) return;
+    setDoubleLoading(true);
+    try {
+      const watched = await watchAd('steps_roulette_double');
+      if (!watched) return;
+      const result = await api.doubleStepRouletteReward(milestone);
+      setDisplayReward((reward ?? 0) + result.bonus);
+      setDoubleUsed(true);
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('steps.failed'));
+    } finally {
+      setDoubleLoading(false);
+    }
+  };
+
   const handleContinue = async () => {
     if (phase !== 'result') return;
     const stayOpen = await onContinueAfterWin();
@@ -170,6 +194,8 @@ export function StepRouletteModal({
       spinAnim.setValue(rotationRef.current);
       setPhase('idle');
       setReward(null);
+      setDisplayReward(null);
+      setDoubleUsed(false);
       return;
     }
     onClose();
@@ -196,10 +222,18 @@ export function StepRouletteModal({
           </Animated.View>
         </View>
 
-        {phase === 'result' && reward !== null ? (
+        {phase === 'result' && displayReward !== null ? (
           <>
             <Text style={styles.resultLabel}>{t('steps.rouletteWon')}</Text>
-            <StarAmount amount={reward} iconSize={34} textStyle={styles.resultValue} />
+            <StarAmount amount={displayReward} iconSize={34} textStyle={styles.resultValue} />
+            {!doubleUsed ? (
+              <PremiumButton
+                title={t('minigames.watchAdDouble')}
+                onPress={handleDouble}
+                loading={doubleLoading}
+                variant="outline"
+              />
+            ) : null}
             <PremiumButton title={t('common.continue')} onPress={handleContinue} />
           </>
         ) : (

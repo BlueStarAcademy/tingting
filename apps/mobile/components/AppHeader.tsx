@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isAdminProfile } from '@tingting/shared';
+import { isAdminProfile, type ShopSubscriptionPlanId } from '@tingting/shared';
 import { StarChip } from '@/components/StarChip';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,6 +11,7 @@ import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { api } from '@/lib/api';
 import { safeBack } from '@/lib/navigation';
+import { getSubscriptionBadgeLabel, isSubscriptionActive } from '@/lib/subscription';
 import { theme } from '@/constants/theme';
 
 interface AppHeaderProps {
@@ -28,21 +29,28 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
   const { requestLogout } = useLogoutConfirm();
   const { t } = useLocale();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<ShopSubscriptionPlanId | null>(null);
   const narrow = contentWidth < 380;
   const label = title ?? t('appName');
 
-  const loadUnread = useCallback(async () => {
+  const loadHeaderState = useCallback(async () => {
     if (!profile) {
       setUnreadCount(0);
+      setSubscriptionPlan(null);
       return;
     }
-    setUnreadCount(await api.getUnreadMailboxCount());
+    const [count, subscription] = await Promise.all([
+      api.getUnreadMailboxCount(),
+      api.getSubscriptionState(),
+    ]);
+    setUnreadCount(count);
+    setSubscriptionPlan(isSubscriptionActive(subscription) ? subscription!.planId : null);
   }, [profile]);
 
   useFocusEffect(
     useCallback(() => {
-      loadUnread();
-    }, [loadUnread])
+      loadHeaderState();
+    }, [loadHeaderState])
   );
 
   return (
@@ -54,6 +62,25 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
             onPress={() => safeBack(router)}
             accessibilityLabel={t('common.back')}
           />
+        ) : null}
+
+        {subscriptionPlan ? (
+          <View
+            style={[
+              styles.subBadge,
+              subscriptionPlan === 'premium_plus' && styles.subBadgePlus,
+            ]}
+            accessibilityLabel={getSubscriptionBadgeLabel(subscriptionPlan)}
+          >
+            <Text
+              style={[
+                styles.subBadgeText,
+                subscriptionPlan === 'premium_plus' && styles.subBadgeTextPlus,
+              ]}
+            >
+              {getSubscriptionBadgeLabel(subscriptionPlan)}
+            </Text>
+          </View>
         ) : null}
 
         {!narrow || showBack ? (
@@ -173,5 +200,27 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryDark,
     fontSize: 12,
     fontWeight: '800',
+  },
+  subBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.tealSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.teal,
+    flexShrink: 0,
+  },
+  subBadgePlus: {
+    backgroundColor: theme.colors.starGlow,
+    borderColor: theme.colors.borderGold,
+  },
+  subBadgeText: {
+    color: theme.colors.teal,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  subBadgeTextPlus: {
+    color: theme.colors.star,
   },
 });

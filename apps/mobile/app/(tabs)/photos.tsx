@@ -9,6 +9,7 @@ import { theme } from '@/constants/theme';
 export default function PhotosScreen() {
   const { t } = useLocale();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [scrollLocked, setScrollLocked] = useState(false);
 
   const pickPhoto = async () => {
     const uri = await pickGalleryPhoto({
@@ -19,12 +20,14 @@ export default function PhotosScreen() {
   };
 
   return (
-    <TabPage contentContainerStyle={styles.page}>
+    <TabPage contentContainerStyle={styles.page} scrollEnabled={!scrollLocked}>
       <PhotoEditorPanel
         sourceUri={photoUri}
         onSourceChange={setPhotoUri}
         onPickAnother={() => void pickPhoto()}
         showPickAnother={false}
+        saveToDevice
+        onScrollLockChange={setScrollLocked}
       />
     </TabPage>
   );

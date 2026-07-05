@@ -1,3 +1,4 @@
+export * from './group-quests';
 export * from './types';
 export * from './admin';
 export * from './regions';

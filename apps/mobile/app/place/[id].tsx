@@ -17,7 +17,10 @@ import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
 import type { Place, PlaceRecommendation, Visit } from '@tingting/shared';
 import { getRegion } from '@tingting/shared';
+import { VISIT_AD_BONUS_STARS, REVIEW_AD_BONUS_STARS } from '@tingting/shared';
 import { useLocale } from '@/hooks/useLocale';
+import { useAuth } from '@/hooks/useAuth';
+import { useAdFree } from '@/hooks/useAdFree';
 import { getPlaceImageUrl } from '@/lib/place-images';
 import { openPlaceNavigation, type PlaceNavigationProvider } from '@/lib/place-navigation';
 import { distanceMeters, getCurrentCoords } from '@/lib/location';
@@ -31,6 +34,8 @@ export default function PlaceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { t } = useLocale();
+  const { refresh } = useAuth();
+  const { watchAd } = useAdFree();
   const [place, setPlace] = useState<Place | null>(null);
   const [recs, setRecs] = useState<PlaceRecommendation[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -73,6 +78,46 @@ export default function PlaceDetailScreen() {
     }
   };
 
+  const offerVisitAdBonus = () => {
+    Alert.alert(t('place.visitBonusTitle'), t('ads.watchForBonus', { amount: VISIT_AD_BONUS_STARS }), [
+      { text: t('header.cancel'), style: 'cancel' },
+      {
+        text: t('ads.watch'),
+        onPress: async () => {
+          const watched = await watchAd('visit_bonus');
+          if (!watched) return;
+          try {
+            const result = await api.grantVisitAdBonus();
+            await refresh();
+            Alert.alert(t('common.alert'), t('place.visitBonusClaimed', { amount: result.bonus }));
+          } catch (e: unknown) {
+            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('auth.unknownError'));
+          }
+        },
+      },
+    ]);
+  };
+
+  const offerReviewAdBonus = () => {
+    Alert.alert(t('place.reviewBonusTitle'), t('ads.watchForBonus', { amount: REVIEW_AD_BONUS_STARS }), [
+      { text: t('header.cancel'), style: 'cancel' },
+      {
+        text: t('ads.watch'),
+        onPress: async () => {
+          const watched = await watchAd('review_bonus');
+          if (!watched) return;
+          try {
+            const result = await api.grantReviewAdBonus();
+            await refresh();
+            Alert.alert(t('common.alert'), t('place.reviewBonusClaimed', { amount: result.bonus }));
+          } catch (e: unknown) {
+            Alert.alert(t('common.error'), e instanceof Error ? e.message : t('auth.unknownError'));
+          }
+        },
+      },
+    ]);
+  };
+
   const recordVisit = async () => {
     if (!place) return;
     if (distance === null || distance > VERIFY_RADIUS_M) {
@@ -91,6 +136,7 @@ export default function PlaceDetailScreen() {
     });
     if (!photoUri) return;
     const visit = await api.createVisit({ placeId: id, photoUri });
+    offerVisitAdBonus();
     router.push(`/editor/${visit.id}` as Href);
   };
 
@@ -104,6 +150,7 @@ export default function PlaceDetailScreen() {
     setText('');
     setRecs(await api.getRecommendations(id));
     Alert.alert(t('common.thanks'), t('place.submitted'));
+    offerReviewAdBonus();
   };
 
   if (!place) return null;

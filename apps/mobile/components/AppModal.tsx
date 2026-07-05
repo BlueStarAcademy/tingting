@@ -43,22 +43,38 @@ export function AppModal({
       {variant === 'fullscreen' ? (
         <View style={[styles.fullscreen, { paddingBottom: footerInset }]}>{children}</View>
       ) : (
-        <View style={[styles.root, variant === 'center' && styles.rootCenter]}>
-          {dismissOnBackdrop ? (
-            <Pressable style={styles.backdrop} onPress={onRequestClose} accessibilityRole="button" />
+        <View style={[styles.root, variant === 'center' ? styles.rootCenterSplit : null]}>
+          {variant === 'center' ? (
+            <>
+              {dismissOnBackdrop ? (
+                <Pressable style={styles.flexDismiss} onPress={onRequestClose} accessibilityRole="button" />
+              ) : (
+                <View style={styles.flexDismiss} />
+              )}
+              <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.92 }, sheetStyle]}>
+                {children}
+              </View>
+              {dismissOnBackdrop ? (
+                <Pressable style={styles.flexDismiss} onPress={onRequestClose} accessibilityRole="button" />
+              ) : (
+                <View style={styles.flexDismiss} />
+              )}
+            </>
           ) : (
-            <View style={styles.backdrop} />
-          )}
-          {variant === 'bottomSheet' ? (
-            <View
-              style={[styles.bottomSheet, { marginBottom: footerInset, maxHeight: maxSheetHeight }, sheetStyle]}
-            >
-              {children}
-            </View>
-          ) : (
-            <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.85 }, sheetStyle]}>
-              {children}
-            </View>
+            <>
+              {dismissOnBackdrop ? (
+                <Pressable style={styles.backdrop} onPress={onRequestClose} accessibilityRole="button" />
+              ) : (
+                <View style={styles.backdrop} />
+              )}
+              {variant === 'bottomSheet' ? (
+                <View
+                  style={[styles.bottomSheet, { marginBottom: footerInset, maxHeight: maxSheetHeight }, sheetStyle]}
+                >
+                  {children}
+                </View>
+              ) : null}
+            </>
           )}
         </View>
       )}
@@ -78,6 +94,14 @@ const styles = StyleSheet.create({
   rootCenter: {
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.lg,
+  },
+  rootCenterSplit: {
+    flex: 1,
+    paddingHorizontal: theme.spacing.lg,
+  },
+  flexDismiss: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
@@ -103,6 +127,10 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    ...Platform.select({
+      android: { elevation: 12 },
+      default: {},
+    }),
   },
   fullscreen: {
     flex: 1,

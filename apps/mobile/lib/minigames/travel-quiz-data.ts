@@ -1,4 +1,5 @@
 import type { Locale } from '@/lib/i18n/translations';
+import { QUIZ_QUESTIONS_EXTRA } from '@/lib/minigames/travel-quiz-extra';
 
 type LocalizedText = { ko: string; en: string };
 type LocalizedOptions = { ko: string[]; en: string[] };
@@ -586,6 +587,7 @@ export const QUIZ_QUESTIONS: QuizQuestion[] = [
     },
     correctIndex: 0,
   },
+  ...QUIZ_QUESTIONS_EXTRA,
 ];
 
 /** @deprecated use QUIZ_QUESTIONS */
@@ -601,6 +603,11 @@ function shuffleOptionOrder(question: QuizQuestion): QuizQuestion {
     },
     correctIndex: order.indexOf(question.correctIndex),
   };
+}
+
+export function pickNextQuizQuestion(excludeIds: Set<string> = new Set()): QuizQuestion {
+  const [question] = pickQuizQuestions(1, excludeIds);
+  return question;
 }
 
 export function pickQuizQuestions(count = 8, excludeIds: Set<string> = new Set()): QuizQuestion[] {

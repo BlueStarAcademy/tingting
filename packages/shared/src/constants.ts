@@ -71,13 +71,42 @@ export function getGallerySlotUnlockCost(): number {
   return GALLERY_SLOT_BATCH_COST;
 }
 
-/** 그룹 대표역 퀘스트 클리어 보상 (갤러리 슬롯) */
+/** 그룹 지역 GPS 인증 퀘스트 클리어 보상 (갤러리 슬롯) */
 export const GROUP_STATION_QUEST_GALLERY_REWARD = GALLERY_SLOT_BATCH_SIZE;
 
-/** 대표역 퀘스트 현금 즉시 해금 가격 (원) */
-export const GROUP_STATION_QUEST_SKIP_PRICE_KRW = 2900;
+/** 상점 일일 무료 스타 (광고 없음) */
+export const DAILY_FREE_STARS_BASIC = 5;
 
-export const GROUP_STATION_QUEST_SKIP_PRODUCT_ID = 'gallery_quest_skip';
+/** 상점 일일 무료 스타 (광고 시청) */
+export const DAILY_FREE_STARS = 10;
+
+/** 미니게임 일일 캡 광고 확장량 */
+export const MINIGAME_CAP_AD_EXTENSION = 10;
+
+/** GPS 퀘스트 완료 후 광고 보너스 */
+export const QUEST_AD_BONUS_STARS = 5;
+
+/** 장소 방문/리뷰 광고 보너스 */
+export const VISIT_AD_BONUS_STARS = 5;
+export const REVIEW_AD_BONUS_STARS = 5;
+
+/** 내기 당첨 수령 광고 보너스 비율 (50%) */
+export const BET_CLAIM_AD_BONUS_RATE = 0.5;
+
+/** 구독 기간 (일) */
+export const SUBSCRIPTION_DURATION_DAYS = 30;
+
+/** 구독 플랜 일일 스타 (우편 수령) */
+export const SUBSCRIPTION_PREMIUM_DAILY_STARS = 25;
+export const SUBSCRIPTION_PREMIUM_PLUS_DAILY_STARS = 50;
+
+export type ShopSubscriptionPlanId = 'premium' | 'premium_plus';
+
+export function getSubscriptionDailyStars(planId: ShopSubscriptionPlanId): number {
+  return planId === 'premium_plus'
+    ? SUBSCRIPTION_PREMIUM_PLUS_DAILY_STARS
+    : SUBSCRIPTION_PREMIUM_DAILY_STARS;
+}
 
 /** 그룹 지역 여행 진행도: 사진 포함 후기 1개당 5%, 20개면 100% */
 export const GROUP_REGION_REVIEW_PROGRESS_PERCENT = 5;
@@ -85,13 +114,11 @@ export const GROUP_REGION_REVIEW_PROGRESS_TARGET = 20;
 
 /** 지역별 활동 퀘스트 */
 export const REGION_PHOTO_REVIEW_QUEST_TARGET = 3;
-export const REGION_PHOTO_REVIEW_QUEST_REWARD = 20;
-export const REGION_PUBLIC_REVIEW_QUEST_TARGET = 1;
-export const REGION_PUBLIC_REVIEW_QUEST_REWARD = 30;
+export const REGION_PHOTO_REVIEW_QUEST_REWARD = 10;
 
-export type RegionActivityQuestKind = 'photo_reviews' | 'public_review';
+export type RegionActivityQuestKind = 'photo_reviews';
 
-export function buildRegionActivityQuestId(regionCode: string, kind: RegionActivityQuestKind): string {
+export function buildRegionActivityQuestId(regionCode: string, kind: RegionActivityQuestKind = 'photo_reviews'): string {
   return `region-activity-${regionCode}-${kind}`;
 }
 
@@ -117,7 +144,7 @@ export const FEATURE_PASS_DAYS: Record<FeaturePassTier, number | null> = {
   permanent: null,
 };
 
-export const FEATURE_PASS_TIERS: FeaturePassTier[] = ['day1', 'day7', 'day30', 'permanent'];
+export const FEATURE_PASS_TIERS: FeaturePassTier[] = ['day1', 'day7', 'day30'];
 
 /** @deprecated 이용권(pass) 방식으로 대체됨 */
 export const AI_FEATURE_COSTS: Record<string, number> = {

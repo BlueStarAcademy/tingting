@@ -23,6 +23,7 @@ export interface SlimeStageConfig {
 export interface MemoryStageConfig {
   pairCount: number;
   maxMoves: number;
+  timeSeconds: number;
   columns: number;
 }
 
@@ -93,16 +94,16 @@ const MATCH_STAGES: MatchStageConfig[] = [
 ];
 
 const QUIZ_STAGES: QuizStageConfig[] = [
-  { questionCount: 5, requiredCorrect: 3 },
-  { questionCount: 5, requiredCorrect: 4 },
-  { questionCount: 6, requiredCorrect: 4 },
-  { questionCount: 6, requiredCorrect: 5 },
-  { questionCount: 7, requiredCorrect: 6 },
-  { questionCount: 7, requiredCorrect: 6 },
-  { questionCount: 8, requiredCorrect: 7 },
-  { questionCount: 9, requiredCorrect: 8 },
-  { questionCount: 9, requiredCorrect: 8 },
-  { questionCount: 10, requiredCorrect: 9 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
+  { questionCount: 10, requiredCorrect: 10 },
 ];
 
 const SLIME_STAGES: SlimeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
@@ -110,18 +111,15 @@ const SLIME_STAGES: SlimeStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE
   aiTarget: 5,
 }));
 
-const MEMORY_STAGES: MemoryStageConfig[] = [
-  { pairCount: 6, maxMoves: 28, columns: 4 },
-  { pairCount: 6, maxMoves: 26, columns: 4 },
-  { pairCount: 7, maxMoves: 26, columns: 4 },
-  { pairCount: 7, maxMoves: 25, columns: 4 },
-  { pairCount: 8, maxMoves: 24, columns: 4 },
-  { pairCount: 8, maxMoves: 23, columns: 4 },
-  { pairCount: 9, maxMoves: 22, columns: 5 },
-  { pairCount: 9, maxMoves: 21, columns: 5 },
-  { pairCount: 10, maxMoves: 21, columns: 5 },
-  { pairCount: 10, maxMoves: 20, columns: 5 },
-];
+const MEMORY_MAX_TURNS = 20;
+const MEMORY_TIME_SECONDS = 60;
+
+const MEMORY_STAGES: MemoryStageConfig[] = Array.from({ length: MINIGAME_MAX_STAGE }, (_, index) => ({
+  pairCount: 6 + Math.min(index, 4),
+  maxMoves: MEMORY_MAX_TURNS,
+  timeSeconds: MEMORY_TIME_SECONDS,
+  columns: index >= 6 ? 5 : 4,
+}));
 
 export const MEMORY_PAIR_EMOJIS = ['🏔️', '🌊', '🏯', '🍜', '🚂', '🌸', '⛱️', '🎎', '🗼', '🎡'] as const;
 
@@ -219,7 +217,7 @@ export function getStageTargetLabelKey(gameId: MinigameId): string {
     case 'slime':
       return 'minigames.targetSlimeCaptures';
     case 'memory':
-      return 'minigames.targetMoves';
+      return 'minigames.targetTurns';
     case 'guess':
     case 'code':
       return 'minigames.targetAttempts';
@@ -253,7 +251,7 @@ export function formatStageTarget(
     }
     case 'memory': {
       const config = getMemoryStageConfig(stage);
-      return { key: 'minigames.targetMoves', params: { moves: config.maxMoves } };
+      return { key: 'minigames.targetTurns', params: { turns: config.maxMoves } };
     }
     case 'guess': {
       const config = getGuessStageConfig(stage);

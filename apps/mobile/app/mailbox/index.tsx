@@ -14,9 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import type { MailboxMessage } from '@tingting/shared';
 import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
+import { StarAmount } from '@/components/StarAmount';
 import { useLocale } from '@/hooks/useLocale';
 import { useFooterInset } from '@/hooks/useFooterInset';
+import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { isStarRewardClaimable, isStarRewardMessage, isMailboxUnread } from '@/lib/subscription';
 import { tabPill } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
@@ -25,12 +28,14 @@ type MailboxTab = 'invites' | 'mail';
 function typeLabel(type: MailboxMessage['type'], t: (key: string) => string) {
   if (type === 'notice') return t('mailbox.notice');
   if (type === 'notification') return t('mailbox.notification');
+  if (type === 'star_reward') return t('mailbox.starReward');
   return t('mailbox.groupInvite');
 }
 
 function typeIcon(type: MailboxMessage['type']) {
   if (type === 'notice') return 'megaphone-outline' as const;
   if (type === 'notification') return 'notifications-outline' as const;
+  if (type === 'star_reward') return 'star' as const;
   return 'people-outline' as const;
 }
 
@@ -52,6 +57,7 @@ const LIST_PANEL_HEIGHT = BAR_HEIGHT * LIST_VISIBLE_ROWS + BAR_GAP * (LIST_VISIB
 
 export default function MailboxScreen() {
   const { t, formatDate } = useLocale();
+  const { refresh } = useAuth();
   const footerInset = useFooterInset();
   const router = useRouter();
   const listRef = useRef<ScrollView>(null);
@@ -116,6 +122,16 @@ export default function MailboxScreen() {
         if (group) router.push(`/group/${group.id}` as Href);
         return;
       }
+      if (isStarRewardClaimable(selected)) {
+        const result = await api.claimMailboxStarReward(selected.id);
+        await refresh();
+        await load();
+        Alert.alert(
+          t('mailbox.received'),
+          t('mailbox.starRewardClaimed', { amount: result.reward }),
+        );
+        return;
+      }
       if (selected.readAt) return;
       await api.markMailboxMessageRead(selected.id);
       setMessages((prev) =>
@@ -178,7 +194,11 @@ export default function MailboxScreen() {
   const receiveDisabled =
     !selected ||
     busy ||
-    (!isPendingInvite(selected) && Boolean(selected.readAt));
+    (isPendingInvite(selected)
+      ? false
+      : isStarRewardMessage(selected)
+        ? !isStarRewardClaimable(selected)
+        : Boolean(selected.readAt));
   const deleteDisabled = !selected || busy;
 
   const emptyLabel = tab === 'invites' ? t('mailbox.emptyInvites') : t('mailbox.emptyMail');
@@ -186,7 +206,13 @@ export default function MailboxScreen() {
   const viewerActions = selected ? (
     <View style={styles.viewerActions}>
       <PremiumButton
-        title={isPendingInvite(selected) ? t('mailbox.accept') : t('mailbox.receive')}
+        title={
+          isPendingInvite(selected)
+            ? t('mailbox.accept')
+            : isStarRewardMessage(selected)
+              ? t('mailbox.claimStars')
+              : t('mailbox.receive')
+        }
         onPress={receiveSelected}
         loading={busy}
         disabled={receiveDisabled}
@@ -247,7 +273,7 @@ export default function MailboxScreen() {
               >
                 {filteredMessages.map((message) => {
                   const active = message.id === selectedId;
-                  const unread = !message.readAt;
+                  const unread = isMailboxUnread(message);
                   return (
                     <Pressable
                       key={message.id}
@@ -290,12 +316,24 @@ export default function MailboxScreen() {
                       <Ionicons name={typeIcon(selected.type)} size={16} color={theme.colors.primaryLight} />
                       <Text style={styles.typeText}>{typeLabel(selected.type, t)}</Text>
                     </View>
-                    {!selected.readAt ? (
+                    {!isMailboxUnread(selected) ? (
+                      <Text style={styles.unreadBadge}>{t('mailbox.claimed')}</Text>
+                    ) : (
                       <Text style={styles.unreadBadge}>{t('mailbox.unread')}</Text>
-                    ) : null}
+                    )}
                   </View>
                   <Text style={styles.viewerTitle}>{selected.title}</Text>
                   <Text style={styles.viewerDate}>{formatDate(selected.createdAt)}</Text>
+                  {isStarRewardMessage(selected) && selected.rewardStars ? (
+                    <View style={styles.rewardRow}>
+                      <StarAmount amount={selected.rewardStars} iconSize={20} textStyle={styles.rewardAmount} />
+                      <Text style={styles.rewardHint}>
+                        {isStarRewardClaimable(selected)
+                          ? t('mailbox.starRewardHint')
+                          : t('mailbox.starRewardClaimedShort')}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text style={styles.viewerBody}>{selected.body}</Text>
                 </ScrollView>
                 {viewerActions}
@@ -404,6 +442,18 @@ const styles = StyleSheet.create({
   viewerTitle: { color: theme.colors.text, fontSize: 20, fontWeight: '800', lineHeight: 28 },
   viewerDate: { color: theme.colors.textMuted, fontSize: 13 },
   viewerBody: { color: theme.colors.text, fontSize: 15, lineHeight: 24 },
+  rewardRow: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.starGlow,
+    borderWidth: 1,
+    borderColor: theme.colors.borderGold,
+  },
+  rewardAmount: { fontSize: 22, color: theme.colors.star },
+  rewardHint: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   viewerActions: {
     flexDirection: 'row',
     gap: theme.spacing.sm,

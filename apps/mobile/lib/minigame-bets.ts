@@ -1,3 +1,5 @@
+import { DEFAULT_TIMEZONE, getDayKey, getDayStartInTimezone } from '@/lib/timezone';
+
 export type MinigameBetCategory = 'stock' | 'lottery' | 'sports' | 'weather';
 export type MinigameBetTicketStatus = 'pending' | 'won' | 'lost';
 
@@ -30,6 +32,13 @@ export interface MinigameBetTicket {
   payout?: number;
   fee?: number;
   claimedAt?: string;
+  adBonusClaimed?: boolean;
+}
+
+export interface MinigameBetDailyState {
+  dayKey: string;
+  betsPlaced: number;
+  extraSlotUnlocked: boolean;
 }
 
 export interface MinigameBetPool {
@@ -58,6 +67,8 @@ export const MINIGAME_BET_BASE_CHOICE_POOL = 50;
 export const MINIGAME_BET_FEE_RATE = 0.1;
 export const MINIGAME_BET_START_HOUR = 7;
 export const MINIGAME_BET_END_HOUR = 22;
+export const MINIGAME_BET_RESOLVE_HOUR = 22;
+export const MINIGAME_BET_RESOLVE_MINUTE = 0;
 
 const UP_DOWN: MinigameBetChoice[] = [
   { id: 'up', labelKo: 'UP', labelEn: 'UP' },
@@ -99,16 +110,6 @@ const BASEBALL_MATCHUPS = [
   },
 ] as const;
 
-function dateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
 function stableHash(value: string): number {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
@@ -117,12 +118,85 @@ function stableHash(value: string): number {
   return hash;
 }
 
-export function getBetDayKey(date = new Date()): string {
-  return dateKey(date);
+function getWeekdayInTimezone(dayKey: string, timeZone = DEFAULT_TIMEZONE): number {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const anchor = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(anchor);
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[weekday] ?? 0;
 }
 
-export function getTomorrowKey(date = new Date()): string {
-  return dateKey(addDays(date, 1));
+export function getBetDayKey(date = new Date(), timeZone = DEFAULT_TIMEZONE): string {
+  return getDayKey(timeZone, date);
+}
+
+export function getTomorrowKey(date = new Date(), timeZone = DEFAULT_TIMEZONE): string {
+  const dayStart = getDayStartInTimezone(timeZone, date);
+  const tomorrow = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  return getDayKey(timeZone, tomorrow);
+}
+
+export function getMinigameBetResolveAt(
+  resolveDate: string,
+  timeZone = DEFAULT_TIMEZONE,
+): Date {
+  const [year, month, day] = resolveDate.split('-').map(Number);
+  const anchor = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dayStart = getDayStartInTimezone(timeZone, anchor);
+  return new Date(
+    dayStart.getTime()
+      + MINIGAME_BET_RESOLVE_HOUR * 60 * 60 * 1000
+      + MINIGAME_BET_RESOLVE_MINUTE * 60 * 1000,
+  );
+}
+
+export function formatMinigameBetResolveAt(
+  resolveDate: string,
+  locale: 'ko' | 'en',
+  timeZone = DEFAULT_TIMEZONE,
+): string {
+  const at = getMinigameBetResolveAt(resolveDate, timeZone);
+  const loc = locale === 'ko' ? 'ko-KR' : 'en-US';
+  const datePart = new Intl.DateTimeFormat(loc, {
+    timeZone,
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(at);
+  const timePart = new Intl.DateTimeFormat(loc, {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: locale === 'en',
+  }).format(at);
+  if (locale === 'ko') {
+    return `${datePart} ${timePart}`;
+  }
+  return `${datePart} at ${timePart}`;
+}
+
+export function hasMinigameBetResultReady(
+  ticket: Pick<MinigameBetTicket, 'resolveDate'>,
+  now = new Date(),
+  timeZone = DEFAULT_TIMEZONE,
+): boolean {
+  return now.getTime() >= getMinigameBetResolveAt(ticket.resolveDate, timeZone).getTime();
+}
+
+export function canSettleMinigameBet(
+  ticket: MinigameBetTicket,
+  now = new Date(),
+  timeZone = DEFAULT_TIMEZONE,
+): boolean {
+  return ticket.status === 'pending' && hasMinigameBetResultReady(ticket, now, timeZone);
+}
+
+export function isMinigameBetAwaitingResult(
+  ticket: MinigameBetTicket,
+  now = new Date(),
+  timeZone = DEFAULT_TIMEZONE,
+): boolean {
+  return ticket.status === 'pending' && !hasMinigameBetResultReady(ticket, now, timeZone);
 }
 
 export function canPlaceMinigameBet(date = new Date()): boolean {
@@ -130,10 +204,58 @@ export function canPlaceMinigameBet(date = new Date()): boolean {
   return hour >= MINIGAME_BET_START_HOUR && hour < MINIGAME_BET_END_HOUR;
 }
 
+export function getMinigameBetRemainingSlots(state: MinigameBetDailyState): {
+  remaining: number;
+  max: number;
+} {
+  if (!state.extraSlotUnlocked) {
+    return { remaining: state.betsPlaced < 1 ? 1 : 0, max: 1 };
+  }
+  return { remaining: state.betsPlaced < 2 ? 1 : 0, max: 1 };
+}
+
+export function canUnlockMinigameBetExtraSlot(state: MinigameBetDailyState): boolean {
+  return state.betsPlaced >= 1 && !state.extraSlotUnlocked;
+}
+
+export function formatBetPredictionDate(resolveDate: string, locale: 'ko' | 'en'): string {
+  const [year, month, day] = resolveDate.split('-').map(Number);
+  if (locale === 'ko') return `${month}월${day}일`;
+  const anchor = new Date(Date.UTC(year, month - 1, day, 12));
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(anchor);
+}
+
+const BET_CARD_SUBJECTS: Record<string, { ko: string; en: string }> = {
+  kosdaq: { ko: '코스닥 상승 vs 하락', en: 'KOSDAQ Up vs Down' },
+  kospi: { ko: '코스피 상승 vs 하락', en: 'KOSPI Up vs Down' },
+  usdkrw: { ko: '원/달러 상승 vs 하락', en: 'USD/KRW Up vs Down' },
+  'temp-even': { ko: '서울 최고기온 홀수 vs 짝수', en: 'Seoul High Odd vs Even' },
+  lotto3: { ko: '로또 1등 3명 초과 vs 이하', en: 'Lotto Winners Over 3 vs 3 or Fewer' },
+};
+
+export function getBetCardTitle(question: MinigameBetQuestion, locale: 'ko' | 'en'): string {
+  const dateLabel = formatBetPredictionDate(question.resolveDate, locale);
+  const questionKey = question.id.split(':').pop() ?? '';
+
+  if (question.category === 'sports') {
+    const left = locale === 'ko' ? question.choices[0]?.labelKo : question.choices[0]?.labelEn;
+    const right = locale === 'ko' ? question.choices[1]?.labelKo : question.choices[1]?.labelEn;
+    const league = locale === 'ko' ? 'KBO리그' : 'KBO';
+    return `${league} ${dateLabel} ${left} vs ${right}`;
+  }
+
+  const subject = BET_CARD_SUBJECTS[questionKey];
+  if (subject) {
+    return `${dateLabel} ${locale === 'ko' ? subject.ko : subject.en}`;
+  }
+
+  const fallback = locale === 'ko' ? question.titleKo : question.titleEn;
+  return `${dateLabel} ${fallback}`;
+}
+
 export function buildDailyBetQuestions(dayKey = getBetDayKey()): MinigameBetQuestion[] {
-  const baseDate = new Date(`${dayKey}T00:00:00.000Z`);
-  const resolveDate = getTomorrowKey(baseDate);
-  const weekday = baseDate.getUTCDay();
+  const resolveDate = getTomorrowKey(new Date(`${dayKey}T12:00:00Z`));
+  const weekday = getWeekdayInTimezone(dayKey);
   const baseball = BASEBALL_MATCHUPS[stableHash(`${dayKey}:baseball-match`) % BASEBALL_MATCHUPS.length];
   const questions: MinigameBetQuestion[] = [
     {

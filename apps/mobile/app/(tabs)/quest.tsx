@@ -6,16 +6,24 @@ import { StarRewardModal } from '@/components/StarRewardModal';
 import { TabPage } from '@/components/TabPage';
 import { api } from '@/lib/api';
 import { getCurrentCoords } from '@/lib/location';
+import { QUEST_AD_BONUS_STARS } from '@tingting/shared';
 import type { Quest } from '@tingting/shared';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdFree } from '@/hooks/useAdFree';
 import { theme } from '@/constants/theme';
 
 export default function QuestScreen() {
   const { t } = useLocale();
   const { refresh } = useAuth();
+  const { watchAd } = useAdFree();
   const [quests, setQuests] = useState<Quest[]>([]);
-  const [rewardModal, setRewardModal] = useState<{ reward: number; total: number } | null>(null);
+  const [rewardModal, setRewardModal] = useState<{
+    reward: number;
+    total: number;
+    questId: string;
+    adBonusClaimed: boolean;
+  } | null>(null);
 
   const load = async () => setQuests(await api.getQuests());
   useFocusEffect(useCallback(() => { load(); }, []));
@@ -24,11 +32,33 @@ export default function QuestScreen() {
     try {
       const coords = await getCurrentCoords();
       const result = await api.completeQuest(quest.id, coords.lat, coords.lng);
-      setRewardModal({ reward: result.reward, total: result.stars });
+      setRewardModal({
+        reward: result.reward,
+        total: result.stars,
+        questId: quest.id,
+        adBonusClaimed: false,
+      });
       await refresh();
       load();
     } catch (e: unknown) {
       Alert.alert(t('quest.failed'), e instanceof Error ? e.message : t('auth.unknownError'));
+    }
+  };
+
+  const handleQuestAdBonus = async () => {
+    if (!rewardModal) return;
+    const watched = await watchAd('quest_bonus');
+    if (!watched) return;
+    try {
+      const result = await api.grantQuestAdBonus(rewardModal.questId);
+      setRewardModal({
+        ...rewardModal,
+        total: result.stars,
+        adBonusClaimed: true,
+      });
+      await refresh();
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('auth.unknownError'));
     }
   };
 
@@ -55,6 +85,9 @@ export default function QuestScreen() {
         totalStars={rewardModal?.total}
         title={t('quest.completeTitle')}
         subtitle={t('reward.questMessage', { amount: rewardModal?.reward ?? 0 })}
+        adBonusAmount={QUEST_AD_BONUS_STARS}
+        onAdBonus={handleQuestAdBonus}
+        adBonusUsed={rewardModal?.adBonusClaimed}
         onClose={() => setRewardModal(null)}
       />
     </TabPage>

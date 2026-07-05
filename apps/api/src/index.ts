@@ -26,6 +26,15 @@ import {
   pickRecommendedPlaces,
   REGION_MAIN_STATIONS,
   buildGroupStationQuestId,
+  buildRegionActivityQuestId,
+  buildRegionRecommendedVisitQuestId,
+  REGION_PHOTO_REVIEW_QUEST_TARGET,
+  REGION_PHOTO_REVIEW_QUEST_REWARD,
+  REGION_RECOMMENDED_VISIT_QUESTS,
+  findNearbyRecommendedPlace,
+  findNearbyUnvisitedRecommendedPlace,
+  sortGroupQuests,
+  sanitizeGroupQuests,
   GROUP_STATION_QUEST_GALLERY_REWARD,
   SEED_PUBLIC_EXPERIENCE_POSTS,
   ADMIN_EMAIL,
@@ -61,14 +70,6 @@ const supabaseJwks = SUPABASE_URL
   ? createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
   : null;
 const KAKAO_APP_ID = process.env.KAKAO_APP_ID ? Number(process.env.KAKAO_APP_ID) : null;
-const REGION_PHOTO_REVIEW_QUEST_TARGET = 3;
-const REGION_PHOTO_REVIEW_QUEST_REWARD = 20;
-const REGION_PUBLIC_REVIEW_QUEST_TARGET = 1;
-const REGION_PUBLIC_REVIEW_QUEST_REWARD = 30;
-
-function buildRegionActivityQuestId(regionCode: string, kind: 'photo_reviews' | 'public_review'): string {
-  return `region-activity-${regionCode}-${kind}`;
-}
 
 if (!DATABASE_URL) {
   console.error('DATABASE_URL is required');
@@ -89,7 +90,13 @@ interface AuthedRequest extends Request {
 }
 
 type ActivityQuest = Quest & {
-  questKind: 'photo_reviews' | 'public_review';
+  questKind: 'photo_reviews';
+  targetCount: number;
+  progressCount: number;
+};
+
+type RecommendedVisitQuest = Quest & {
+  questKind: 'recommended_visits';
   targetCount: number;
   progressCount: number;
 };
@@ -340,6 +347,16 @@ async function migrate() {
   if (fs.existsSync(supabaseAuthSqlPath)) {
     await pool.query(fs.readFileSync(supabaseAuthSqlPath, 'utf8'));
   }
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS group_recommended_place_visits (
+      group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      region_code TEXT NOT NULL,
+      place_id TEXT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (group_id, place_id)
+    )`,
+  );
 
   // Ensure every group owner has a group_members row (legacy data repair).
   await pool.query(
@@ -988,10 +1005,18 @@ app.get('/groups/:id/quests', authMiddleware, async (req: AuthedRequest, res) =>
   );
   const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
   const activityCounts = await getGroupRegionReviewCounts(groupId);
-  res.json([
-    ...buildGroupStationQuests(visitedRegions, completedIds),
-    ...buildGroupActivityQuests(activityCounts, completedIds),
-  ]);
+  const recommendedCounts = await getGroupRecommendedVisitCounts(groupId);
+  const { rows: placeRows } = await pool.query('SELECT * FROM places ORDER BY region_code, name');
+  const places = placeRows.map(mapPlace);
+  res.json(
+    sanitizeGroupQuests(
+      sortGroupQuests([
+        ...buildGroupStationQuests(visitedRegions, completedIds),
+        ...buildGroupActivityQuests(activityCounts, completedIds),
+        ...buildGroupRecommendedVisitQuests(recommendedCounts, completedIds),
+      ]),
+    ),
+  );
 });
 
 app.post('/groups/:id/quests/:questId/complete', authMiddleware, async (req: AuthedRequest, res) => {
@@ -1012,7 +1037,15 @@ app.post('/groups/:id/quests/:questId/complete', authMiddleware, async (req: Aut
     [groupId]
   );
   const completedIds = new Set(completedResult.rows.map((r) => r.quest_id as string));
-  const quests = buildGroupStationQuests(visitedRegions, completedIds);
+  const activityCounts = await getGroupRegionReviewCounts(groupId);
+  const recommendedCounts = await getGroupRecommendedVisitCounts(groupId);
+  const { rows: placeRows } = await pool.query('SELECT * FROM places ORDER BY region_code, name');
+  const places = placeRows.map(mapPlace);
+  const quests = sortGroupQuests([
+    ...buildGroupStationQuests(visitedRegions, completedIds),
+    ...buildGroupActivityQuests(activityCounts, completedIds),
+    ...buildGroupRecommendedVisitQuests(recommendedCounts, completedIds),
+  ]);
   const quest = quests.find((q) => q.id === questId);
   if (!quest) {
     res.status(404).json({ error: 'Quest not found' });
@@ -1022,13 +1055,76 @@ app.post('/groups/:id/quests/:questId/complete', authMiddleware, async (req: Aut
     res.status(400).json({ error: 'Already completed' });
     return;
   }
+
+  if (quest.questKind === 'recommended_visits') {
+    if (!quest.regionCode) {
+      res.status(404).json({ error: 'Quest not found' });
+      return;
+    }
+    const visitedIds = await getGroupRecommendedVisitedPlaceIds(groupId, quest.regionCode);
+    const nearby = findNearbyUnvisitedRecommendedPlace(places, quest.regionCode, lat, lng, visitedIds);
+    if (!nearby) {
+      const alreadyVisitedNearby = findNearbyRecommendedPlace(places, quest.regionCode, lat, lng);
+      if (alreadyVisitedNearby && visitedIds.has(alreadyVisitedNearby.id)) {
+        res.status(400).json({ error: '이미 인증한 추천 장소입니다. 다른 추천 장소 근처에서 시도해 주세요.' });
+        return;
+      }
+      res.status(400).json({ error: '추천 장소 근처에서 GPS 인증해 주세요' });
+      return;
+    }
+
+    await pool.query(
+      `INSERT INTO group_recommended_place_visits (group_id, region_code, place_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [groupId, quest.regionCode, nearby.id],
+    );
+
+    const visitCount = visitedIds.size + 1;
+    const newlyCompleted = REGION_RECOMMENDED_VISIT_QUESTS.filter(({ target }) => {
+      const id = buildRegionRecommendedVisitQuestId(quest.regionCode!, target);
+      return visitCount >= target && !completedIds.has(id);
+    });
+
+    let rewardStars = 0;
+    for (const item of newlyCompleted) {
+      const id = buildRegionRecommendedVisitQuestId(quest.regionCode!, item.target);
+      await pool.query('INSERT INTO group_quest_completions (group_id, quest_id) VALUES ($1,$2)', [groupId, id]);
+      rewardStars += item.reward;
+    }
+    if (rewardStars > 0) {
+      await pool.query('UPDATE users SET stars = stars + $1 WHERE id = $2', [rewardStars, userId]);
+      await pool.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+        userId,
+        rewardStars,
+        `group_recommended_quests:${groupId}:${quest.regionCode}`,
+      ]);
+    }
+    res.json({ rewardGallerySlots: 0, rewardStars: rewardStars || undefined, placeName: nearby.name });
+    return;
+  }
+
   const dist = haversineMeters(lat, lng, quest.targetLat, quest.targetLng);
   if (dist > quest.radiusMeters) {
     res.status(400).json({ error: 'Too far from quest location', distance: Math.round(dist) });
     return;
   }
   await pool.query('INSERT INTO group_quest_completions (group_id, quest_id) VALUES ($1,$2)', [groupId, questId]);
-  res.json({ rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD });
+  if (quest.isStationQuest) {
+    res.json({ rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD });
+    return;
+  }
+  if (quest.rewardStars > 0) {
+    await pool.query('UPDATE users SET stars = stars + $1 WHERE id = $2', [quest.rewardStars, userId]);
+    await pool.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+      userId,
+      quest.rewardStars,
+      `group_quest:${groupId}:${questId}`,
+    ]);
+    res.json({ rewardGallerySlots: 0, rewardStars: quest.rewardStars });
+    return;
+  }
+  res.json({ rewardGallerySlots: 0 });
 });
 
 app.post('/groups/:id/quests/:questId/skip-purchase', authMiddleware, async (req: AuthedRequest, res) => {
@@ -1278,6 +1374,39 @@ app.post('/quests/:id/complete', authMiddleware, async (req: AuthedRequest, res)
 });
 
 // --- Stars & AI ---
+
+app.post('/stars/earn', authMiddleware, async (req: AuthedRequest, res) => {
+  const { amount, reason } = req.body as { amount?: number; reason?: string };
+  if (amount == null || amount === 0 || !Number.isFinite(amount)) {
+    res.status(400).json({ error: 'Invalid amount' });
+    return;
+  }
+  const userId = req.user!.userId;
+  if (await userIsAdmin(userId)) {
+    const { rows } = await pool.query('SELECT stars FROM users WHERE id = $1', [userId]);
+    res.json({ stars: rows[0]?.stars ?? 0 });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    const nextStars = Math.max(0, Number(rows[0]?.stars ?? 0) + amount);
+    await client.query('UPDATE users SET stars = $1 WHERE id = $2', [nextStars, userId]);
+    await client.query('INSERT INTO star_transactions (user_id, amount, reason) VALUES ($1,$2,$3)', [
+      userId,
+      amount,
+      reason ?? 'earn',
+    ]);
+    await client.query('COMMIT');
+    res.json({ stars: nextStars });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Earn failed' });
+  } finally {
+    client.release();
+  }
+});
 
 app.post('/stars/spend', authMiddleware, async (req: AuthedRequest, res) => {
   const { amount, reason } = req.body as { amount?: number; reason?: string };
@@ -1860,44 +1989,35 @@ async function getGroupRegionReviewCounts(groupId: string) {
             COUNT(*) FILTER (
               WHERE COALESCE(v.photo_uri, v.edited_photo_uri) IS NOT NULL
                 AND COALESCE(NULLIF(TRIM(v.note), ''), '') <> ''
-            )::int AS photo_reviews,
-            COUNT(*) FILTER (
-              WHERE v.is_public = true
-                AND COALESCE(v.photo_uri, v.edited_photo_uri) IS NOT NULL
-                AND COALESCE(NULLIF(TRIM(v.note), ''), '') <> ''
-            )::int AS public_reviews
+            )::int AS photo_reviews
      FROM visits v
      JOIN places p ON p.id = v.place_id
      WHERE v.group_id = $1
      GROUP BY p.region_code`,
     [groupId],
   );
-  const counts = new Map<string, { photoReviews: number; publicReviews: number }>();
+  const counts = new Map<string, number>();
   for (const row of rows) {
-    counts.set(String(row.region_code), {
-      photoReviews: Number(row.photo_reviews ?? 0),
-      publicReviews: Number(row.public_reviews ?? 0),
-    });
+    counts.set(String(row.region_code), Number(row.photo_reviews ?? 0));
   }
   return counts;
 }
 
 function buildGroupActivityQuests(
-  counts: Map<string, { photoReviews: number; publicReviews: number }>,
+  counts: Map<string, number>,
   completedIds: Set<string>,
 ): ActivityQuest[] {
   return REGIONS.flatMap((region) => {
     const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
     if (!station) return [];
-    const regionCounts = counts.get(region.code) ?? { photoReviews: 0, publicReviews: 0 };
+    const photoReviews = counts.get(region.code) ?? 0;
     const photoQuestId = buildRegionActivityQuestId(region.code, 'photo_reviews');
-    const publicQuestId = buildRegionActivityQuestId(region.code, 'public_review');
     return [
       {
         id: photoQuestId,
         placeId: station.placeId,
         title: `${region.name} 사진 후기 3개`,
-        description: `${region.name} 여행 사진과 후기를 3개 남기세요.`,
+        description: `${region.name} 여행 사진과 후기를 3개 남기면 10스타를 받습니다.`,
         rewardStars: REGION_PHOTO_REVIEW_QUEST_REWARD,
         targetLat: station.lat,
         targetLng: station.lng,
@@ -1905,26 +2025,71 @@ function buildGroupActivityQuests(
         regionCode: region.code,
         questKind: 'photo_reviews' as const,
         targetCount: REGION_PHOTO_REVIEW_QUEST_TARGET,
-        progressCount: Math.min(regionCounts.photoReviews, REGION_PHOTO_REVIEW_QUEST_TARGET),
+        progressCount: Math.min(photoReviews, REGION_PHOTO_REVIEW_QUEST_TARGET),
         completed: completedIds.has(photoQuestId),
       },
-      {
-        id: publicQuestId,
+    ];
+  });
+}
+
+function buildGroupRecommendedVisitQuests(
+  visitCounts: Map<string, number>,
+  completedIds: Set<string>,
+): RecommendedVisitQuest[] {
+  return REGIONS.flatMap((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
+    if (!station) return [];
+    const visitCount = visitCounts.get(region.code) ?? 0;
+    return REGION_RECOMMENDED_VISIT_QUESTS.map(({ target, reward }) => {
+      const questId = buildRegionRecommendedVisitQuestId(region.code, target);
+      const title =
+        target === 1
+          ? `${region.name} 추천장소 방문`
+          : `${region.name} 추천장소 ${target}개 방문`;
+      const description =
+        target === 1
+          ? `${region.name} 추천 장소 어디서든 GPS 인증하기`
+          : `${region.name} 추천 장소 ${target}곳에서 GPS 인증하기`;
+      return {
+        id: questId,
         placeId: station.placeId,
-        title: `${region.name} 공개 후기`,
-        description: `${region.name} 여행 후기를 공개로 1개 올리세요.`,
-        rewardStars: REGION_PUBLIC_REVIEW_QUEST_REWARD,
+        title,
+        description,
+        rewardStars: reward,
         targetLat: station.lat,
         targetLng: station.lng,
         radiusMeters: 0,
         regionCode: region.code,
-        questKind: 'public_review' as const,
-        targetCount: REGION_PUBLIC_REVIEW_QUEST_TARGET,
-        progressCount: Math.min(regionCounts.publicReviews, REGION_PUBLIC_REVIEW_QUEST_TARGET),
-        completed: completedIds.has(publicQuestId),
-      },
-    ];
+        questKind: 'recommended_visits' as const,
+        targetCount: target,
+        progressCount: Math.min(visitCount, target),
+        completed: completedIds.has(questId),
+      };
+    });
   });
+}
+
+async function getGroupRecommendedVisitCounts(groupId: string): Promise<Map<string, number>> {
+  const { rows } = await pool.query(
+    `SELECT region_code, COUNT(*)::int AS visit_count
+     FROM group_recommended_place_visits
+     WHERE group_id = $1
+     GROUP BY region_code`,
+    [groupId],
+  );
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(String(row.region_code), Number(row.visit_count ?? 0));
+  }
+  return counts;
+}
+
+async function getGroupRecommendedVisitedPlaceIds(groupId: string, regionCode: string): Promise<Set<string>> {
+  const { rows } = await pool.query(
+    `SELECT place_id FROM group_recommended_place_visits WHERE group_id = $1 AND region_code = $2`,
+    [groupId, regionCode],
+  );
+  return new Set(rows.map((row) => String(row.place_id)));
 }
 
 async function awardCompletedActivityQuests(groupId: string, userId: string) {

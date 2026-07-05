@@ -643,14 +643,7 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
     });
   }, [grid, obstacles, useMatchItem]);
 
-  const handleNextStage = useCallback(async () => {
-    await refresh();
-    setFinished(false);
-    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
-  }, [refresh]);
-
   const comboLabel = t('minigames.combo', { count: combo });
-  const canAdvance = activeStage < MINIGAME_MAX_STAGE;
   const scoreProgress = Math.min(displayScore / stageConfig.targetScore, 1);
   const handleHelpClose = () => {
     if (!gameStarted) setGameStarted(true);
@@ -664,12 +657,12 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
       {/* Header stats */}
       <View style={styles.headerRow}>
         <View style={styles.statChip}>
-          <Text style={styles.statLabel}>{t('minigames.stage')}</Text>
-          <Text style={styles.statValue}>{activeStage}/{MINIGAME_MAX_STAGE}</Text>
+          <Text style={styles.statLabel}>{t('minigames.score')}</Text>
+          <Text style={styles.statValue}>{displayScore}</Text>
         </View>
         <View style={[styles.statChip, styles.statChipScore]}>
-          <Text style={styles.statLabel}>{t('minigames.score')}</Text>
-          <Text style={styles.statValueScore}>{displayScore}<Text style={styles.statTarget}>/{stageConfig.targetScore}</Text></Text>
+          <Text style={styles.statLabel}>{t('minigames.targetScoreShort')}</Text>
+          <Text style={styles.statValueScore}>{stageConfig.targetScore}</Text>
         </View>
       </View>
       <View style={styles.helpRow}>
@@ -753,8 +746,6 @@ export function MatchPuzzleGame({ initialStage }: { initialStage?: number } = {}
           else restart(target);
         }}
         onProgressUpdated={refresh}
-        onNextStage={canAdvance ? handleNextStage : undefined}
-        nextStageLabel={t('minigames.nextStage')}
       />
       <HowToPlayModal
         visible={showHelp}

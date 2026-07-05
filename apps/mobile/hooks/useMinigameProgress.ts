@@ -4,13 +4,17 @@ import { api } from '@/lib/api';
 import { getClearedStage, type MinigameDailyState, type MinigameProgress } from '@/lib/minigames/progress';
 import { getCurrentStage, type MinigameId } from '@/lib/minigames/stages';
 
+type RefreshOptions = {
+  silent?: boolean;
+};
+
 export function useMinigameProgress(gameId?: MinigameId) {
   const [progress, setProgress] = useState<MinigameProgress | null>(null);
   const [daily, setDaily] = useState<MinigameDailyState | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (options?: RefreshOptions) => {
+    if (!options?.silent) setLoading(true);
     try {
       const [nextProgress, nextDaily] = await Promise.all([
         api.getMinigameProgress(),
@@ -19,7 +23,7 @@ export function useMinigameProgress(gameId?: MinigameId) {
       setProgress(nextProgress);
       setDaily(nextDaily);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 

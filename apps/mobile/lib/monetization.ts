@@ -51,20 +51,6 @@ export const STAR_IAP_CATALOG: StarPack[] = [
   { id: 'stars_xl', stars: 1000, priceLabel: '₩17,900', bonus: '+500', revenueCatProductId: 'stars_xl' },
 ];
 
-export interface GalleryQuestSkipProduct {
-  id: string;
-  priceLabel: string;
-  priceKrw: number;
-  revenueCatProductId: string;
-}
-
-export const GALLERY_QUEST_SKIP_PRODUCT: GalleryQuestSkipProduct = {
-  id: 'gallery_quest_skip',
-  priceLabel: '₩2,900',
-  priceKrw: 2900,
-  revenueCatProductId: 'gallery_quest_skip',
-};
-
 export interface MonetizationOfferings {
   plusPlans: PlusPlan[];
   starPacks: StarPack[];
@@ -93,14 +79,6 @@ export async function purchasePlus(_planId: SubscriptionPlanId): Promise<{ succe
 
 export async function purchaseStarPack(_packId: string): Promise<{ success: boolean; message: string }> {
   return { success: false, message: '출시 예정 — 스타 IAP 출시 예정' };
-}
-
-/** 대표역 퀘스트 현금 즉시 해금 (RevenueCat 미연동 시 데모 모드에서 성공 처리) */
-export async function purchaseGalleryQuestSkip(): Promise<{ success: boolean; message: string }> {
-  if (!REVENUECAT_API_KEY) {
-    return { success: true, message: '' };
-  }
-  return { success: false, message: '출시 예정 — 갤러리 퀘스트 구매 연동 예정' };
 }
 
 export async function restorePurchases(): Promise<{ success: boolean; message: string }> {

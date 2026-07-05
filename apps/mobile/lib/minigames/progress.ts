@@ -1,3 +1,4 @@
+import { MINIGAME_CAP_AD_EXTENSION, MINIGAME_DAILY_STAR_CAP } from '@tingting/shared';
 import type { MinigameId } from '@/lib/minigames/stages';
 
 export interface MinigameGameProgress {
@@ -17,6 +18,14 @@ export interface MinigameProgress {
 export interface MinigameDailyState {
   dayKey: string;
   starsEarnedToday: number;
+  /** 광고로 일일 캡 +10 확장 여부 */
+  capBonusApplied?: boolean;
+}
+
+export function getMinigameEffectiveCap(daily: MinigameDailyState): number {
+  return daily.capBonusApplied
+    ? MINIGAME_DAILY_STAR_CAP + MINIGAME_CAP_AD_EXTENSION
+    : MINIGAME_DAILY_STAR_CAP;
 }
 
 export const EMPTY_MINIGAME_PROGRESS: MinigameProgress = {

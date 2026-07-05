@@ -4,6 +4,13 @@ import {
   MINIGAME_DAILY_STAR_CAP,
   MINIGAME_MAX_STAGE,
   rollMinigameFinalStarReward,
+  DAILY_FREE_STARS,
+  DAILY_FREE_STARS_BASIC,
+  MINIGAME_CAP_AD_EXTENSION,
+  QUEST_AD_BONUS_STARS,
+  VISIT_AD_BONUS_STARS,
+  REVIEW_AD_BONUS_STARS,
+  BET_CLAIM_AD_BONUS_RATE,
   getGroupSlotUnlockCost,
   getGroupMemberSlotUnlockCost,
   getGallerySlotUnlockCost,
@@ -23,6 +30,7 @@ import {
   buildFeaturePass,
   mergeFeaturePass,
   FEATURE_PASS_COSTS,
+  FEATURE_PASS_TIERS,
   REGIONS,
   REGION_MAIN_STATIONS,
   buildGroupStationQuestId,
@@ -41,9 +49,15 @@ import {
   renderQuestTemplate,
   REGION_PHOTO_REVIEW_QUEST_TARGET,
   REGION_PHOTO_REVIEW_QUEST_REWARD,
-  REGION_PUBLIC_REVIEW_QUEST_TARGET,
-  REGION_PUBLIC_REVIEW_QUEST_REWARD,
+  REGION_RECOMMENDED_VISIT_QUESTS,
   buildRegionActivityQuestId,
+  buildRegionRecommendedVisitQuestId,
+  findNearbyRecommendedPlace,
+  findNearbyUnvisitedRecommendedPlace,
+  sortGroupQuests,
+  mergeRemoteGroupQuestState,
+  sanitizeGroupQuests,
+  type ShopSubscriptionPlanId,
 } from '@tingting/shared';
 import type {
   AdminUserSummary,
@@ -76,11 +90,13 @@ import {
   EMPTY_MINIGAME_PROGRESS,
   type MinigameDailyState,
   type MinigameProgress,
+  getMinigameEffectiveCap,
 } from '@/lib/minigames/progress';
 import {
   DEFAULT_TIMEZONE,
   canChangeTimezone,
   getDayKey,
+  getDayStartInTimezone,
   timezoneLockExpiry,
 } from '@/lib/timezone';
 import PLACES_JSON from '@/constants/places.json';
@@ -92,11 +108,23 @@ import {
   canPlaceMinigameBet,
   getBetDayKey,
   getDemoWinningChoiceId,
+  canSettleMinigameBet,
   MINIGAME_BET_MAX_STAKE,
   MINIGAME_BET_MIN_STAKE,
   type MinigameBetState,
   type MinigameBetTicket,
+  type MinigameBetDailyState,
 } from '@/lib/minigame-bets';
+import {
+  type SubscriptionState,
+  buildSubscriptionDeliveryDayKeys,
+  buildSubscriptionMail,
+  getFirstDeliveryDayKey,
+  isDeliveryDayDue,
+  isMailboxUnread,
+  isStarRewardClaimable,
+  SUBSCRIPTION_TIMEZONE,
+} from '@/lib/subscription';
 
 const KEYS = {
   session: '@tingting/session',
@@ -112,6 +140,7 @@ const KEYS = {
   phoneDirectory: '@tingting/phoneDirectory',
   groupChats: '@tingting/groupChats',
   groupQuestCompletions: '@tingting/groupQuestCompletions',
+  groupRecommendedPlaceVisits: '@tingting/groupRecommendedPlaceVisits',
   groupSchedules: '@tingting/groupSchedules',
   pedometer: '@tingting/pedometer',
   accountPassword: '@tingting/accountPassword',
@@ -123,11 +152,52 @@ const KEYS = {
   minigameProgress: '@tingting/minigame-progress',
   minigameDaily: '@tingting/minigame-daily',
   minigameBets: '@tingting/minigame-bets',
+  minigameRewardBonus: '@tingting/minigame-reward-bonus',
+  minigameBetDaily: '@tingting/minigame-bet-daily',
+  dailyFreeStars: '@tingting/daily-free-stars',
+  questAdBonus: '@tingting/quest-ad-bonus',
+  visitReviewAdBonus: '@tingting/visit-review-ad-bonus',
+  stepRouletteBonus: '@tingting/step-roulette-bonus',
+  subscription: '@tingting/subscription',
 };
 
 interface FeedRecommendStore {
   counts: Record<string, number>;
   likes: Record<string, string[]>;
+}
+
+interface MinigameRewardBonus {
+  dayKey: string;
+  gameId: MinigameId;
+  stage: number;
+  baseReward: number;
+  rerolled: boolean;
+  doubled: boolean;
+}
+
+interface DailyFreeStarsState {
+  dayKey: string;
+  freeClaimed?: boolean;
+  adClaimed?: boolean;
+  /** @deprecated 이전 단일 클레임 플래그 */
+  claimed?: boolean;
+}
+
+interface QuestAdBonusState {
+  dayKey: string;
+  questIds: string[];
+}
+
+interface VisitReviewAdBonusState {
+  dayKey: string;
+  visitClaimed: boolean;
+  reviewClaimed: boolean;
+}
+
+interface StepRouletteBonusState {
+  dayKey: string;
+  rewards: Record<string, number>;
+  doubledMilestones: number[];
 }
 
 function getBaseRecommendCount(postId: string): number {
@@ -276,15 +346,13 @@ function buildGroupActivityQuests(
       if (visit.groupId !== groupId || !hasPhotoReview(visit)) return false;
       return places.find((p) => p.id === visit.placeId)?.regionCode === region.code;
     });
-    const publicVisits = regionVisits.filter((visit) => visit.isPublic === true);
     const photoQuestId = buildRegionActivityQuestId(region.code, 'photo_reviews');
-    const publicQuestId = buildRegionActivityQuestId(region.code, 'public_review');
     return [
       {
         id: photoQuestId,
         placeId: station.placeId,
         title: `${region.name} 사진 후기 3개`,
-        description: `${region.name} 여행 사진과 후기를 3개 남기세요.`,
+        description: `${region.name} 여행 사진과 후기를 3개 남기면 10스타를 받습니다.`,
         rewardStars: REGION_PHOTO_REVIEW_QUEST_REWARD,
         targetLat: station.lat,
         targetLng: station.lng,
@@ -295,22 +363,62 @@ function buildGroupActivityQuests(
         progressCount: Math.min(regionVisits.length, REGION_PHOTO_REVIEW_QUEST_TARGET),
         completed: completedIds.has(photoQuestId),
       },
-      {
-        id: publicQuestId,
+    ];
+  });
+}
+
+type GroupRecommendedPlaceVisits = Record<string, Record<string, string[]>>;
+
+async function readGroupRecommendedPlaceVisits(): Promise<GroupRecommendedPlaceVisits> {
+  return readJson<GroupRecommendedPlaceVisits>(KEYS.groupRecommendedPlaceVisits, {});
+}
+
+async function getGroupRecommendedVisitCount(
+  groupId: string,
+  regionCode: string,
+): Promise<{ count: number; visitedIds: Set<string> }> {
+  const all = await readGroupRecommendedPlaceVisits();
+  const visitedIds = new Set(all[groupId]?.[regionCode] ?? []);
+  return { count: visitedIds.size, visitedIds };
+}
+
+function buildGroupRecommendedVisitQuests(
+  groupId: string,
+  places: Place[],
+  completedIds: Set<string>,
+  visitedByRegion: Map<string, Set<string>>,
+): Quest[] {
+  return REGIONS.flatMap((region) => {
+    const station = REGION_MAIN_STATIONS.find((s) => s.regionCode === region.code);
+    if (!station) return [];
+    const visitedIds = visitedByRegion.get(region.code) ?? new Set<string>();
+    const visitCount = visitedIds.size;
+    return REGION_RECOMMENDED_VISIT_QUESTS.map(({ target, reward }) => {
+      const questId = buildRegionRecommendedVisitQuestId(region.code, target);
+      const title =
+        target === 1
+          ? `${region.name} 추천장소 방문`
+          : `${region.name} 추천장소 ${target}개 방문`;
+      const description =
+        target === 1
+          ? `${region.name} 추천 장소 어디서든 GPS 인증하기`
+          : `${region.name} 추천 장소 ${target}곳에서 GPS 인증하기`;
+      return {
+        id: questId,
         placeId: station.placeId,
-        title: `${region.name} 공개 후기`,
-        description: `${region.name} 여행 후기를 공개로 1개 올리세요.`,
-        rewardStars: REGION_PUBLIC_REVIEW_QUEST_REWARD,
+        title,
+        description,
+        rewardStars: reward,
         targetLat: station.lat,
         targetLng: station.lng,
         radiusMeters: 0,
         regionCode: region.code,
-        questKind: 'public_review' as const,
-        targetCount: REGION_PUBLIC_REVIEW_QUEST_TARGET,
-        progressCount: Math.min(publicVisits.length, REGION_PUBLIC_REVIEW_QUEST_TARGET),
-        completed: completedIds.has(publicQuestId),
-      },
-    ];
+        questKind: 'recommended_visits' as const,
+        targetCount: target,
+        progressCount: Math.min(visitCount, target),
+        completed: completedIds.has(questId),
+      };
+    });
   });
 }
 
@@ -988,6 +1096,7 @@ export const localStore = {
   },
 
   async getMailboxMessages(): Promise<MailboxMessage[]> {
+    await this.syncSubscriptionStarMails();
     const session = await this.getSession();
     if (!session) return [];
     const all = await readMailbox();
@@ -998,7 +1107,7 @@ export const localStore = {
 
   async getUnreadMailboxCount(): Promise<number> {
     const messages = await this.getMailboxMessages();
-    return messages.filter((m) => !m.readAt).length;
+    return messages.filter((m) => isMailboxUnread(m)).length;
   },
 
   async markMailboxMessageRead(messageId: string): Promise<void> {
@@ -1007,8 +1116,97 @@ export const localStore = {
     const all = await readMailbox();
     const idx = all.findIndex((m) => m.id === messageId && m.userId === session.userId);
     if (idx < 0 || all[idx].readAt) return;
+    if (isStarRewardClaimable(all[idx])) {
+      throw new Error('스타 우편은 수령 버튼으로 받아 주세요');
+    }
     all[idx] = { ...all[idx], readAt: new Date().toISOString() };
     await writeMailbox(all);
+  },
+
+  async claimMailboxStarReward(messageId: string): Promise<{ reward: number; stars: number }> {
+    const session = await this.getSession();
+    if (!session) throw new Error('로그인이 필요합니다');
+    const all = await readMailbox();
+    const idx = all.findIndex((m) => m.id === messageId && m.userId === session.userId);
+    if (idx < 0) throw new Error('우편을 찾을 수 없습니다');
+
+    const message = all[idx];
+    if (!isStarRewardClaimable(message)) throw new Error('이미 수령했거나 수령할 수 없는 우편입니다');
+
+    const reward = message.rewardStars ?? 0;
+    const now = new Date().toISOString();
+    all[idx] = { ...message, rewardClaimedAt: now, readAt: message.readAt ?? now };
+    await writeMailbox(all);
+
+    const profile = await this.getProfile();
+    return { reward, stars: profile?.stars ?? 0 };
+  },
+
+  async getSubscriptionState(): Promise<SubscriptionState | null> {
+    return readJson<SubscriptionState | null>(KEYS.subscription, null);
+  },
+
+  async purchaseSubscription(planId: ShopSubscriptionPlanId): Promise<SubscriptionState> {
+    const session = await this.getSession();
+    const profile = await this.getProfile();
+    if (!session || !profile) throw new Error('로그인이 필요합니다');
+
+    const purchasedAt = new Date().toISOString();
+    const state: SubscriptionState = {
+      planId,
+      purchasedAt,
+      firstDeliveryDayKey: getFirstDeliveryDayKey(new Date(purchasedAt)),
+      deliveredCount: 0,
+    };
+    await writeJson(KEYS.subscription, state);
+    await this.syncSubscriptionStarMails();
+    return state;
+  },
+
+  async syncSubscriptionStarMails(): Promise<void> {
+    const session = await this.getSession();
+    if (!session) return;
+
+    const state = await readJson<SubscriptionState | null>(KEYS.subscription, null);
+    if (!state) return;
+
+    const all = await readMailbox();
+    const deliveryDayKeys = buildSubscriptionDeliveryDayKeys(state.firstDeliveryDayKey);
+    const now = new Date();
+    let deliveredCount = 0;
+    let mailboxChanged = false;
+
+    for (let index = 0; index < deliveryDayKeys.length; index += 1) {
+      const deliveryDayKey = deliveryDayKeys[index];
+      if (!isDeliveryDayDue(deliveryDayKey, now)) break;
+
+      const alreadySent = all.some(
+        (m) =>
+          m.userId === session.userId &&
+          m.type === 'star_reward' &&
+          m.subscriptionDayKey === deliveryDayKey &&
+          m.subscriptionPlanId === state.planId,
+      );
+      deliveredCount += 1;
+      if (alreadySent) continue;
+
+      const [year, month, day] = deliveryDayKey.split('-').map(Number);
+      const probe = new Date(year, month - 1, day, 12, 0, 0);
+      const createdAt = getDayStartInTimezone(SUBSCRIPTION_TIMEZONE, probe).toISOString();
+
+      all.unshift({
+        id: uid(),
+        userId: session.userId,
+        createdAt,
+        ...buildSubscriptionMail(state.planId, deliveryDayKey, index),
+      });
+      mailboxChanged = true;
+    }
+
+    if (mailboxChanged) await writeMailbox(all);
+    if (deliveredCount !== state.deliveredCount) {
+      await writeJson(KEYS.subscription, { ...state, deliveredCount });
+    }
   },
 
   async markAllMailboxRead(): Promise<number> {
@@ -1021,6 +1219,7 @@ export const localStore = {
       const message = all[i];
       if (message.userId !== session.userId || message.readAt) continue;
       if (message.type === 'group_invite' && message.inviteStatus === 'pending') continue;
+      if (isStarRewardClaimable(message)) continue;
       all[i] = { ...message, readAt: now };
       count += 1;
     }
@@ -1036,6 +1235,9 @@ export const localStore = {
     if (!message) throw new Error('우편을 찾을 수 없습니다');
     if (message.type === 'group_invite' && message.inviteStatus === 'pending') {
       throw new Error('처리 대기 중인 초대장은 거절 후 삭제할 수 있습니다');
+    }
+    if (isStarRewardClaimable(message)) {
+      throw new Error('수령하지 않은 스타 우편은 삭제할 수 없습니다');
     }
     await writeMailbox(all.filter((m) => !(m.id === messageId && m.userId === session.userId)));
   },
@@ -1477,6 +1679,41 @@ export const localStore = {
     return { reward: quest.rewardStars, stars };
   },
 
+  async assembleGroupQuests(
+    groupId: string,
+    visits: Visit[],
+    places: Place[],
+    remoteQuests: Quest[] = [],
+  ): Promise<Quest[]> {
+    const visitedRegionCodes = new Set<string>();
+    for (const v of visits.filter((visit) => visit.groupId === groupId)) {
+      const place = places.find((p) => p.id === v.placeId);
+      if (place) visitedRegionCodes.add(place.regionCode);
+    }
+
+    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+    const completedIds = new Set(allCompletions[groupId] ?? []);
+    for (const remote of remoteQuests) {
+      if (remote.completed) completedIds.add(remote.id);
+    }
+
+    const stationQuests = buildGroupStationQuests(visitedRegionCodes, completedIds);
+    const activityQuests = buildGroupActivityQuests(groupId, visits, places, completedIds);
+    const recommendedVisits = await readGroupRecommendedPlaceVisits();
+    const visitedByRegion = new Map<string, Set<string>>();
+    for (const region of REGIONS) {
+      visitedByRegion.set(region.code, new Set(recommendedVisits[groupId]?.[region.code] ?? []));
+    }
+    const recommendedQuests = buildGroupRecommendedVisitQuests(
+      groupId,
+      places,
+      completedIds,
+      visitedByRegion,
+    );
+    const localQuests = sortGroupQuests([...stationQuests, ...activityQuests, ...recommendedQuests]);
+    return mergeRemoteGroupQuestState(localQuests, remoteQuests);
+  },
+
   async getGroupQuests(groupId: string): Promise<Quest[]> {
     const session = await this.getSession();
     const profile = await this.getProfile();
@@ -1489,18 +1726,7 @@ export const localStore = {
 
     const visits = await readJson<Visit[]>(KEYS.visits, []);
     const places = await ensurePlaces();
-    const visitedRegionCodes = new Set<string>();
-    for (const v of visits.filter((visit) => visit.groupId === groupId)) {
-      const place = places.find((p) => p.id === v.placeId);
-      if (place) visitedRegionCodes.add(place.regionCode);
-    }
-
-    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
-    const completedIds = new Set(allCompletions[groupId] ?? []);
-
-    const stationQuests = buildGroupStationQuests(visitedRegionCodes, completedIds);
-    const activityQuests = buildGroupActivityQuests(groupId, visits, places, completedIds);
-    return [...stationQuests, ...activityQuests];
+    return sanitizeGroupQuests(await this.assembleGroupQuests(groupId, visits, places));
   },
 
   async awardCompletedActivityQuests(groupId: string): Promise<void> {
@@ -1542,31 +1768,67 @@ export const localStore = {
     if (!quest) throw new Error('퀘스트를 찾을 수 없습니다');
     if (quest.completed) throw new Error('이미 완료한 퀘스트입니다');
 
+    if (quest.questKind === 'recommended_visits') {
+      if (!quest.regionCode) throw new Error('퀘스트를 찾을 수 없습니다');
+      const places = await ensurePlaces();
+      return this.verifyRecommendedPlaceVisit(groupId, quest.regionCode, lat, lng, places);
+    }
+
     const dist = haversineMeters(lat, lng, quest.targetLat, quest.targetLng);
     if (dist > quest.radiusMeters) throw new Error('퀘스트 위치에서 너무 멀리 있습니다');
 
     return this.grantQuestReward(groupId, questId, quest);
   },
 
-  async skipGroupStationQuestPurchase(
+  async verifyRecommendedPlaceVisit(
     groupId: string,
-    questId: string
-  ): Promise<{ rewardGallerySlots: number }> {
-    const session = await this.getSession();
+    regionCode: string,
+    lat: number,
+    lng: number,
+    places: Place[],
+  ): Promise<{ rewardGallerySlots: number; rewardStars?: number; placeName?: string }> {
     const profile = await this.getProfile();
-    if (!session || !profile) throw new Error('로그인이 필요합니다');
+    if (!profile) throw new Error('로그인이 필요합니다');
 
-    const group = await this.getGroup(groupId);
-    if (!group) throw new Error('그룹을 찾을 수 없습니다');
-    const memberIds = group.memberIds ?? group.members?.map((m) => m.id) ?? [];
-    if (!memberIds.includes(session.userId)) throw new Error('그룹 구성원만 참여할 수 있습니다');
+    const allVisits = await readGroupRecommendedPlaceVisits();
+    const regionVisits = allVisits[groupId]?.[regionCode] ?? [];
+    const visitedIds = new Set(regionVisits);
+    const nearby = findNearbyUnvisitedRecommendedPlace(places, regionCode, lat, lng, visitedIds);
+    if (!nearby) {
+      const alreadyVisitedNearby = findNearbyRecommendedPlace(places, regionCode, lat, lng);
+      if (alreadyVisitedNearby && visitedIds.has(alreadyVisitedNearby.id)) {
+        throw new Error('이미 인증한 추천 장소입니다. 다른 추천 장소 근처에서 시도해 주세요.');
+      }
+      throw new Error('추천 장소 근처에서 GPS 인증해 주세요');
+    }
 
-    const quests = await this.getGroupQuests(groupId);
-    const quest = quests.find((q) => q.id === questId);
-    if (!quest) throw new Error('퀘스트를 찾을 수 없습니다');
-    if (quest.completed) throw new Error('이미 완료한 퀘스트입니다');
+    allVisits[groupId] = {
+      ...(allVisits[groupId] ?? {}),
+      [regionCode]: [...regionVisits, nearby.id],
+    };
+    await writeJson(KEYS.groupRecommendedPlaceVisits, allVisits);
 
-    return this.grantGroupStationQuestReward(groupId, questId);
+    const visitCount = visitedIds.size + 1;
+    const allCompletions = await readJson<Record<string, string[]>>(KEYS.groupQuestCompletions, {});
+    const completed = allCompletions[groupId] ?? [];
+    const completedIds = new Set(completed);
+    const newlyCompleted = REGION_RECOMMENDED_VISIT_QUESTS.filter(({ target, reward: _reward }) => {
+      const questId = buildRegionRecommendedVisitQuestId(regionCode, target);
+      return visitCount >= target && !completedIds.has(questId);
+    });
+
+    let rewardStars = 0;
+    if (newlyCompleted.length > 0) {
+      allCompletions[groupId] = [
+        ...completed,
+        ...newlyCompleted.map(({ target }) => buildRegionRecommendedVisitQuestId(regionCode, target)),
+      ];
+      await writeJson(KEYS.groupQuestCompletions, allCompletions);
+      rewardStars = newlyCompleted.reduce((sum, item) => sum + item.reward, 0);
+      await writeJson(KEYS.profile, { ...profile, stars: profile.stars + rewardStars });
+    }
+
+    return { rewardGallerySlots: 0, rewardStars: rewardStars || undefined, placeName: nearby.name };
   },
 
   async grantQuestReward(
@@ -1591,13 +1853,6 @@ export const localStore = {
     }
 
     return { rewardGallerySlots: GROUP_STATION_QUEST_GALLERY_REWARD };
-  },
-
-  async grantGroupStationQuestReward(
-    groupId: string,
-    questId: string
-  ): Promise<{ rewardGallerySlots: number }> {
-    return this.grantQuestReward(groupId, questId);
   },
 
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
@@ -1684,6 +1939,17 @@ export const localStore = {
     return stars;
   },
 
+  async earnStars(amount: number, _reason: string): Promise<number> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    if (amount === 0 || isAdminProfile(profile)) return profile.stars;
+    const stars = profile.stars + amount;
+    const updated = { ...profile, stars };
+    await writeJson(KEYS.profile, updated);
+    await syncUserProfileRegistry(updated);
+    return stars;
+  },
+
   async useAiFeature(_feature: string): Promise<{ cost: number; stars: number }> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
@@ -1714,6 +1980,9 @@ export const localStore = {
     featureId: string,
     tier: FeaturePassTier,
   ): Promise<{ pass: FeaturePass; stars: number }> {
+    if (!FEATURE_PASS_TIERS.includes(tier)) {
+      throw new Error('구매할 수 없는 이용권입니다');
+    }
     const cost = FEATURE_PASS_COSTS[tier];
     const existing = await this.getFeaturePasses();
     const pass = buildFeaturePass(existing, featureId, tier);
@@ -1804,11 +2073,41 @@ export const localStore = {
       ...full,
       rouletteUsed: full.rouletteUsed + 1,
       claimedMilestones: [...full.claimedMilestones, milestone].sort((a, b) => a - b),
+      doubledMilestones: full.doubledMilestones ?? [],
     };
     await writeJson(KEYS.pedometer, state);
+    const bonusState = await readJson<StepRouletteBonusState | null>(KEYS.stepRouletteBonus, null);
+    const dayKey = full.dayKey;
+    const rewards = bonusState?.dayKey === dayKey ? { ...bonusState.rewards } : {};
+    rewards[String(milestone)] = reward;
+    await writeJson(KEYS.stepRouletteBonus, {
+      dayKey,
+      rewards,
+      doubledMilestones: bonusState?.dayKey === dayKey ? bonusState.doubledMilestones : [],
+    });
     const stars = profile.stars + reward;
     await writeJson(KEYS.profile, { ...profile, stars });
     return { reward, stars, state };
+  },
+
+  async doubleStepRouletteReward(milestone: number): Promise<{ bonus: number; stars: number; state: PedometerDayState }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const full = await this.getPedometerState();
+    const bonusState = await readJson<StepRouletteBonusState | null>(KEYS.stepRouletteBonus, null);
+    if (!bonusState || bonusState.dayKey !== full.dayKey) throw new Error('룰렛 보상 기록이 없습니다');
+    if (!full.claimedMilestones.includes(milestone)) throw new Error('아직 받지 않은 마일스톤입니다');
+    if (bonusState.doubledMilestones.includes(milestone)) throw new Error('이미 2배 보너스를 받았습니다');
+    const baseReward = bonusState.rewards[String(milestone)];
+    if (!baseReward) throw new Error('룰렛 보상을 찾을 수 없습니다');
+
+    const stars = profile.stars + baseReward;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    const doubledMilestones = [...bonusState.doubledMilestones, milestone];
+    await writeJson(KEYS.stepRouletteBonus, { ...bonusState, doubledMilestones });
+    const state: PedometerDayState = { ...full, doubledMilestones };
+    await writeJson(KEYS.pedometer, state);
+    return { bonus: baseReward, stars, state };
   },
 
   async setStepTimezone(timezone: string): Promise<UserProfile> {
@@ -1860,21 +2159,174 @@ export const localStore = {
     const dayKey = getDayKey(timezone);
     let state = await readJson<MinigameDailyState | null>(KEYS.minigameDaily, null);
     if (!state || state.dayKey !== dayKey) {
-      state = { dayKey, starsEarnedToday: 0 };
+      state = { dayKey, starsEarnedToday: 0, capBonusApplied: false };
+      await writeJson(KEYS.minigameDaily, state);
+    } else if (state.capBonusApplied === undefined) {
+      state = { ...state, capBonusApplied: false };
       await writeJson(KEYS.minigameDaily, state);
     }
     return state;
   },
 
+  async extendMinigameCapViaAd(): Promise<MinigameDailyState> {
+    const daily = await this.getMinigameDailyState();
+    if (daily.capBonusApplied) throw new Error('오늘은 이미 한도를 확장했습니다');
+    if (daily.starsEarnedToday < MINIGAME_DAILY_STAR_CAP) {
+      throw new Error('아직 오늘 획득 한도에 도달하지 않았습니다');
+    }
+    const updated = { ...daily, capBonusApplied: true };
+    await writeJson(KEYS.minigameDaily, updated);
+    return updated;
+  },
+
+  async getMinigameBetDailyState(): Promise<MinigameBetDailyState> {
+    const dayKey = getBetDayKey();
+    let state = await readJson<MinigameBetDailyState | null>(KEYS.minigameBetDaily, null);
+    if (!state || state.dayKey !== dayKey) {
+      state = { dayKey, betsPlaced: 0, extraSlotUnlocked: false };
+      await writeJson(KEYS.minigameBetDaily, state);
+    }
+    return state;
+  },
+
+  async unlockExtraBetSlotViaAd(): Promise<MinigameBetDailyState> {
+    const state = await this.getMinigameBetDailyState();
+    if (state.extraSlotUnlocked) throw new Error('이미 추가 예측 기회를 사용했습니다');
+    if (state.betsPlaced < 1) throw new Error('첫 번째 예측 후에 사용할 수 있습니다');
+    const updated = { ...state, extraSlotUnlocked: true };
+    await writeJson(KEYS.minigameBetDaily, updated);
+    return updated;
+  },
+
+  async claimDailyFreeStarsBasic(): Promise<{ stars: number; amount: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const timezone = profile.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<DailyFreeStarsState | null>(KEYS.dailyFreeStars, null);
+    const freeClaimed = state?.dayKey === dayKey && (state.freeClaimed ?? false);
+    if (freeClaimed) throw new Error('오늘은 이미 무료 스타를 받았습니다');
+    const stars = profile.stars + DAILY_FREE_STARS_BASIC;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.dailyFreeStars, {
+      dayKey,
+      freeClaimed: true,
+      adClaimed: state?.dayKey === dayKey ? (state.adClaimed ?? state.claimed ?? false) : false,
+    });
+    return { stars, amount: DAILY_FREE_STARS_BASIC };
+  },
+
+  async claimDailyFreeStars(): Promise<{ stars: number; amount: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const timezone = profile.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<DailyFreeStarsState | null>(KEYS.dailyFreeStars, null);
+    const adClaimed = state?.dayKey === dayKey && (state.adClaimed ?? state.claimed ?? false);
+    if (adClaimed) throw new Error('오늘은 이미 광고 보상을 받았습니다');
+    const stars = profile.stars + DAILY_FREE_STARS;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.dailyFreeStars, {
+      dayKey,
+      freeClaimed: state?.dayKey === dayKey ? (state.freeClaimed ?? false) : false,
+      adClaimed: true,
+    });
+    return { stars, amount: DAILY_FREE_STARS };
+  },
+
+  async getDailyFreeStarsState(): Promise<{ freeClaimed: boolean; adClaimed: boolean; dayKey: string }> {
+    const profile = await this.getProfile();
+    const timezone = profile?.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<DailyFreeStarsState | null>(KEYS.dailyFreeStars, null);
+    if (state?.dayKey !== dayKey) {
+      return { freeClaimed: false, adClaimed: false, dayKey };
+    }
+    return {
+      freeClaimed: state.freeClaimed ?? false,
+      adClaimed: state.adClaimed ?? state.claimed ?? false,
+      dayKey,
+    };
+  },
+
+  async grantQuestAdBonus(questId: string): Promise<{ bonus: number; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const timezone = profile.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<QuestAdBonusState | null>(KEYS.questAdBonus, null);
+    const questIds = state?.dayKey === dayKey ? state.questIds : [];
+    if (questIds.includes(questId)) throw new Error('이미 보너스를 받은 퀘스트입니다');
+    const stars = profile.stars + QUEST_AD_BONUS_STARS;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.questAdBonus, { dayKey, questIds: [...questIds, questId] });
+    return { bonus: QUEST_AD_BONUS_STARS, stars };
+  },
+
+  async grantVisitAdBonus(): Promise<{ bonus: number; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const timezone = profile.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<VisitReviewAdBonusState | null>(KEYS.visitReviewAdBonus, null);
+    if (state?.dayKey === dayKey && state.visitClaimed) {
+      throw new Error('오늘은 이미 방문 보너스를 받았습니다');
+    }
+    const stars = profile.stars + VISIT_AD_BONUS_STARS;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.visitReviewAdBonus, {
+      dayKey,
+      visitClaimed: true,
+      reviewClaimed: state?.dayKey === dayKey ? state.reviewClaimed : false,
+    });
+    return { bonus: VISIT_AD_BONUS_STARS, stars };
+  },
+
+  async grantReviewAdBonus(): Promise<{ bonus: number; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const timezone = profile.stepTimezone ?? DEFAULT_TIMEZONE;
+    const dayKey = getDayKey(timezone);
+    const state = await readJson<VisitReviewAdBonusState | null>(KEYS.visitReviewAdBonus, null);
+    if (state?.dayKey === dayKey && state.reviewClaimed) {
+      throw new Error('오늘은 이미 리뷰 보너스를 받았습니다');
+    }
+    const stars = profile.stars + REVIEW_AD_BONUS_STARS;
+    await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.visitReviewAdBonus, {
+      dayKey,
+      visitClaimed: state?.dayKey === dayKey ? state.visitClaimed : false,
+      reviewClaimed: true,
+    });
+    return { bonus: REVIEW_AD_BONUS_STARS, stars };
+  },
+
+  async grantEditorFeatureViaAd(featureId: string): Promise<{ pass: FeaturePass; stars: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const passes = await this.getFeaturePasses();
+    const now = new Date();
+    const expires = new Date(now.getTime() + 60 * 60 * 1000);
+    const pass: FeaturePass = {
+      featureId,
+      tier: 'day1',
+      purchasedAt: now.toISOString(),
+      expiresAt: expires.toISOString(),
+    };
+    const merged = mergeFeaturePass(passes, pass);
+    await writeJson(KEYS.featurePasses, merged);
+    return { pass, stars: profile.stars };
+  },
+
   async settleMinigameBets(): Promise<{ tickets: MinigameBetTicket[]; stars: number }> {
     const profile = await this.getProfile();
     if (!profile) return { tickets: [], stars: 0 };
-    const todayKey = getBetDayKey();
     const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
     let changed = false;
+    const now = new Date();
 
     const settled = tickets.map((ticket) => {
-      if (ticket.status !== 'pending' || ticket.resolveDate > todayKey) return ticket;
+      if (!canSettleMinigameBet(ticket, now)) return ticket;
       const question = buildDailyBetQuestions(ticket.questionId.slice(0, 10)).find((q) => q.id === ticket.questionId);
       if (!question) return ticket;
       const won = getDemoWinningChoiceId(question) === ticket.choiceId;
@@ -1913,16 +2365,30 @@ export const localStore = {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
     if (!canPlaceMinigameBet()) throw new Error('예측 가능 시간은 오전 7시부터 저녁 10시까지입니다');
-    const amount = Math.floor(stake);
-    if (amount < MINIGAME_BET_MIN_STAKE || amount > MINIGAME_BET_MAX_STAKE) {
-      throw new Error('1~50스타 사이로 걸어주세요');
+
+    const availableStars = Math.max(0, Math.floor(Number(profile.stars) || 0));
+    if (availableStars < MINIGAME_BET_MIN_STAKE) throw new Error('스타가 부족합니다');
+
+    const amount = Math.floor(Number(stake));
+    const maxStake = Math.min(MINIGAME_BET_MAX_STAKE, availableStars);
+    if (!Number.isFinite(amount) || amount < MINIGAME_BET_MIN_STAKE || amount > maxStake) {
+      throw new Error(
+        maxStake < MINIGAME_BET_MAX_STAKE
+          ? `보유 스타(${availableStars}) 안에서 1~${maxStake}스타로 걸어주세요`
+          : '1~50스타 사이로 걸어주세요',
+      );
     }
-    if (profile.stars < amount) throw new Error('스타가 부족합니다');
 
     const questions = buildDailyBetQuestions();
     const question = questions.find((q) => q.id === questionId);
     if (!question) throw new Error('오늘 참여할 수 없는 내기입니다');
     if (!question.choices.some((choice) => choice.id === choiceId)) throw new Error('선택지를 확인해 주세요');
+
+    const betDaily = await this.getMinigameBetDailyState();
+    if (betDaily.betsPlaced >= 2) throw new Error('오늘은 더 이상 내기를 할 수 없습니다');
+    if (betDaily.betsPlaced >= 1 && !betDaily.extraSlotUnlocked) {
+      throw new Error('오늘 예측 횟수를 모두 사용했습니다. 광고를 시청하면 한 번 더 예측할 수 있습니다');
+    }
 
     const tickets = await readJson<MinigameBetTicket[]>(KEYS.minigameBets, []);
     if (tickets.some((ticket) => ticket.questionId === questionId && ticket.status === 'pending')) {
@@ -1938,13 +2404,17 @@ export const localStore = {
       placedAt: new Date().toISOString(),
       resolveDate: question.resolveDate,
     };
-    const stars = profile.stars - amount;
+    const stars = availableStars - amount;
     await writeJson(KEYS.minigameBets, [ticket, ...tickets]);
     await writeJson(KEYS.profile, { ...profile, stars });
+    await writeJson(KEYS.minigameBetDaily, { ...betDaily, betsPlaced: betDaily.betsPlaced + 1 });
     return { ticket, stars };
   },
 
-  async claimMinigameBetReward(ticketId: string): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+  async claimMinigameBetReward(
+    ticketId: string,
+    options?: { withAdBonus?: boolean },
+  ): Promise<{ ticket: MinigameBetTicket; stars: number; adBonus?: number }> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
     await this.settleMinigameBets();
@@ -1956,18 +2426,22 @@ export const localStore = {
     const ticket = tickets[idx];
     if (ticket.status !== 'won') throw new Error('수령 가능한 내기가 아닙니다');
     if (ticket.claimedAt) throw new Error('이미 수령했습니다');
+    if (options?.withAdBonus && ticket.adBonusClaimed) throw new Error('이미 광고 보너스를 받았습니다');
 
     const payout = ticket.payout ?? ticket.stake * 2;
+    const adBonus = options?.withAdBonus ? Math.floor(payout * BET_CLAIM_AD_BONUS_RATE) : 0;
+    const totalPayout = payout + adBonus;
     const updatedTicket: MinigameBetTicket = {
       ...ticket,
       payout,
       claimedAt: new Date().toISOString(),
+      adBonusClaimed: options?.withAdBonus ? true : ticket.adBonusClaimed,
     };
-    const stars = profile.stars + payout;
+    const stars = profile.stars + totalPayout;
     tickets[idx] = updatedTicket;
     await writeJson(KEYS.minigameBets, tickets);
     await writeJson(KEYS.profile, { ...profile, stars });
-    return { ticket: updatedTicket, stars };
+    return { ticket: updatedTicket, stars, adBonus: adBonus > 0 ? adBonus : undefined };
   },
 
   async claimMinigameStageClear(
@@ -1980,6 +2454,7 @@ export const localStore = {
     dailyCap: number;
     clearedStage: number;
     isFinalStageReward: boolean;
+    alreadyCleared?: boolean;
   }> {
     const profile = await this.getProfile();
     if (!profile) throw new Error('로그인이 필요합니다');
@@ -1991,13 +2466,15 @@ export const localStore = {
         ? MINIGAME_SINGLE_PLAY_STAGE
         : getCurrentStage(clearedStage);
     if (stage !== expectedStage) {
+      const daily = await this.getMinigameDailyState();
       return {
         reward: 0,
         stars: profile.stars,
-        starsEarnedToday: (await this.getMinigameDailyState()).starsEarnedToday,
-        dailyCap: MINIGAME_DAILY_STAR_CAP,
+        starsEarnedToday: daily.starsEarnedToday,
+        dailyCap: getMinigameEffectiveCap(daily),
         clearedStage,
         isFinalStageReward: false,
+        alreadyCleared: false,
       };
     }
 
@@ -2008,14 +2485,16 @@ export const localStore = {
         reward: 0,
         stars: profile.stars,
         starsEarnedToday: daily.starsEarnedToday,
-        dailyCap: MINIGAME_DAILY_STAR_CAP,
+        dailyCap: getMinigameEffectiveCap(daily),
         clearedStage,
-        isFinalStageReward: false,
+        isFinalStageReward: stage === MINIGAME_MAX_STAGE,
+        alreadyCleared: true,
       };
     }
 
     const daily = await this.getMinigameDailyState();
-    const remaining = Math.max(0, MINIGAME_DAILY_STAR_CAP - daily.starsEarnedToday);
+    const effectiveCap = getMinigameEffectiveCap(daily);
+    const remaining = Math.max(0, effectiveCap - daily.starsEarnedToday);
     const isFinalStageReward = stage === MINIGAME_MAX_STAGE;
     const rolled = isFinalStageReward ? rollMinigameFinalStarReward() : 0;
     const reward = isFinalStageReward ? Math.min(rolled, remaining) : 0;
@@ -2027,17 +2506,120 @@ export const localStore = {
     const starsEarnedToday = daily.starsEarnedToday + reward;
     await writeJson(KEYS.minigameDaily, { ...daily, starsEarnedToday });
 
-    const stars = profile.stars + reward;
-    await writeJson(KEYS.profile, { ...profile, stars });
+    if (reward > 0 && isFinalStageReward) {
+      const bonus: MinigameRewardBonus = {
+        dayKey: daily.dayKey,
+        gameId,
+        stage,
+        baseReward: reward,
+        rerolled: false,
+        doubled: false,
+      };
+      await writeJson(KEYS.minigameRewardBonus, bonus);
+    }
 
     return {
       reward,
-      stars,
+      stars: profile.stars,
       starsEarnedToday,
-      dailyCap: MINIGAME_DAILY_STAR_CAP,
+      dailyCap: effectiveCap,
       clearedStage: nextClearedStage,
       isFinalStageReward,
+      alreadyCleared: false,
     };
+  },
+
+  async claimMinigameReplayReward(
+    gameId: MinigameId,
+    stage: number,
+  ): Promise<{
+    reward: number;
+    stars: number;
+    starsEarnedToday: number;
+    dailyCap: number;
+  }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+
+    const progress = await this.getMinigameProgress();
+    const clearedStage = progress[gameId].clearedStage;
+    if (stage > clearedStage) throw new Error('아직 클리어하지 않은 게임입니다');
+    if (stage !== MINIGAME_MAX_STAGE) throw new Error('보상을 받을 수 없는 스테이지입니다');
+
+    const daily = await this.getMinigameDailyState();
+    const effectiveCap = getMinigameEffectiveCap(daily);
+    const remaining = Math.max(0, effectiveCap - daily.starsEarnedToday);
+    if (remaining <= 0) throw new Error('오늘 획득 한도에 도달했습니다');
+
+    const rolled = rollMinigameFinalStarReward();
+    const reward = Math.min(rolled, remaining);
+    if (reward <= 0) throw new Error('오늘 획득 한도에 도달했습니다');
+
+    const starsEarnedToday = daily.starsEarnedToday + reward;
+    await writeJson(KEYS.minigameDaily, { ...daily, starsEarnedToday });
+
+    const bonus: MinigameRewardBonus = {
+      dayKey: daily.dayKey,
+      gameId,
+      stage,
+      baseReward: reward,
+      rerolled: false,
+      doubled: false,
+    };
+    await writeJson(KEYS.minigameRewardBonus, bonus);
+
+    return { reward, stars: profile.stars, starsEarnedToday, dailyCap: effectiveCap };
+  },
+
+  async getMinigameRewardBonus(): Promise<MinigameRewardBonus | null> {
+    return readJson<MinigameRewardBonus | null>(KEYS.minigameRewardBonus, null);
+  },
+
+  async rerollMinigameReward(gameId: MinigameId, stage: number): Promise<{ reward: number; stars: number; starsEarnedToday: number; dailyCap: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const bonus = await this.getMinigameRewardBonus();
+    if (!bonus || bonus.gameId !== gameId || bonus.stage !== stage) {
+      throw new Error('다시 뽑을 보상이 없습니다');
+    }
+    if (bonus.rerolled) throw new Error('이미 보상을 다시 뽑았습니다');
+
+    const daily = await this.getMinigameDailyState();
+    const effectiveCap = getMinigameEffectiveCap(daily);
+    const roomBefore = daily.starsEarnedToday - bonus.baseReward;
+    const remaining = Math.max(0, effectiveCap - roomBefore);
+    const rolled = rollMinigameFinalStarReward();
+    const newReward = Math.min(rolled, remaining);
+
+    const starsEarnedToday = roomBefore + newReward;
+
+    await writeJson(KEYS.minigameDaily, { ...daily, starsEarnedToday });
+    await writeJson(KEYS.minigameRewardBonus, { ...bonus, baseReward: newReward, rerolled: true });
+
+    return { reward: newReward, stars: profile.stars, starsEarnedToday, dailyCap: effectiveCap };
+  },
+
+  async doubleMinigameReward(gameId: MinigameId, stage: number): Promise<{ bonus: number; stars: number; starsEarnedToday: number; dailyCap: number }> {
+    const profile = await this.getProfile();
+    if (!profile) throw new Error('로그인이 필요합니다');
+    const bonus = await this.getMinigameRewardBonus();
+    if (!bonus || bonus.gameId !== gameId || bonus.stage !== stage) {
+      throw new Error('2배 적용할 보상이 없습니다');
+    }
+    if (bonus.doubled) throw new Error('이미 2배 보너스를 받았습니다');
+
+    const daily = await this.getMinigameDailyState();
+    const effectiveCap = getMinigameEffectiveCap(daily);
+    const remaining = Math.max(0, effectiveCap - daily.starsEarnedToday);
+    const extra = Math.min(bonus.baseReward, remaining);
+    if (extra <= 0) throw new Error('오늘 획득 한도에 도달했습니다');
+
+    const starsEarnedToday = daily.starsEarnedToday + extra;
+
+    await writeJson(KEYS.minigameDaily, { ...daily, starsEarnedToday });
+    await writeJson(KEYS.minigameRewardBonus, { ...bonus, doubled: true });
+
+    return { bonus: extra, stars: profile.stars, starsEarnedToday, dailyCap: effectiveCap };
   },
 
   async getPublicFeed(): Promise<PublicExperiencePost[]> {

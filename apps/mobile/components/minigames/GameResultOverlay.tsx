@@ -9,8 +9,6 @@ import { theme } from '@/constants/theme';
 
 interface Props {
   cleared: boolean;
-  stage: number;
-  maxStage: number;
   isFinalStage?: boolean;
   scoreLabel: string;
   scoreValue: string;
@@ -19,25 +17,33 @@ interface Props {
   starReward: number;
   showFinalStarRoll?: boolean;
   starsEarnedToday: number;
+  effectiveDailyCap?: number;
   dailyCapReached: boolean;
   loading?: boolean;
+  bonusLoading?: boolean;
+  canReroll?: boolean;
+  canDouble?: boolean;
+  alreadyCleared?: boolean;
+  canReplayReward?: boolean;
+  onRerollReward?: () => void;
+  onDoubleReward?: () => void;
+  onReplayReward?: () => void;
+  rerollAdLabel?: string;
+  doubleAdLabel?: string;
+  replayRewardAdLabel?: string;
   playAgainLabel: string;
-  nextStageLabel?: string;
   exitLabel: string;
   onPlayAgain: () => void;
   onContinueWithAd?: () => void;
   continueAdLabel?: string;
-  onNextStage?: () => void;
   onExit: () => void;
-  /** 클리어 시 다음 스테이지·나가기만 표시 (다시 하기 숨김) */
+  /** 클리어 시 나가기만 표시 (다시 하기 숨김) */
   nextOrExitOnly?: boolean;
 }
 
 export function GameResultOverlay({
   cleared,
-  stage,
-  maxStage,
-  isFinalStage = false,
+  isFinalStage = true,
   scoreLabel,
   scoreValue,
   detail,
@@ -45,41 +51,35 @@ export function GameResultOverlay({
   starReward,
   showFinalStarRoll = false,
   starsEarnedToday,
+  effectiveDailyCap,
   dailyCapReached,
   loading,
+  bonusLoading,
+  canReroll,
+  canDouble,
+  alreadyCleared,
+  canReplayReward,
+  onRerollReward,
+  onDoubleReward,
+  onReplayReward,
+  rerollAdLabel,
+  doubleAdLabel,
+  replayRewardAdLabel,
   playAgainLabel,
-  nextStageLabel,
   exitLabel,
   onPlayAgain,
   onContinueWithAd,
   continueAdLabel,
-  onNextStage,
   onExit,
   nextOrExitOnly = false,
 }: Props) {
   const { t } = useLocale();
   const isClear = cleared;
-  const canGoNext = isClear && !!onNextStage;
-  const primaryLabel = nextOrExitOnly
-    ? canGoNext
-      ? (nextStageLabel ?? t('minigames.nextStage'))
-      : isClear
-        ? exitLabel
-        : playAgainLabel
-    : isClear && onNextStage
-      ? (nextStageLabel ?? playAgainLabel)
-      : playAgainLabel;
-  const primaryAction = nextOrExitOnly
-    ? canGoNext
-      ? onNextStage!
-      : isClear
-        ? onExit
-        : onPlayAgain
-    : isClear && onNextStage
-      ? onNextStage
-      : onPlayAgain;
-  const showExitButton = nextOrExitOnly ? !isClear || canGoNext : true;
-  const starsRemaining = Math.max(0, MINIGAME_DAILY_STAR_CAP - starsEarnedToday);
+  const primaryLabel = nextOrExitOnly && isClear ? exitLabel : playAgainLabel;
+  const primaryAction = nextOrExitOnly && isClear ? onExit : onPlayAgain;
+  const showExitButton = !nextOrExitOnly || !isClear;
+  const cap = effectiveDailyCap ?? MINIGAME_DAILY_STAR_CAP;
+  const starsRemaining = Math.max(0, cap - starsEarnedToday);
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent>
@@ -102,13 +102,9 @@ export function GameResultOverlay({
               color={isClear ? theme.colors.success : theme.colors.primary}
             />
             <Text style={[styles.badgeText, isClear ? styles.badgeTextClear : styles.badgeTextFail]}>
-              {isClear ? t('minigames.stageClear', { stage }) : t('minigames.stageFail', { stage })}
+              {isClear ? t('minigames.gameClear') : t('minigames.gameFail')}
             </Text>
           </View>
-
-          <Text style={styles.stageMeta}>
-            {t('minigames.stageLabel', { current: stage, max: maxStage })}
-          </Text>
 
           <View style={styles.scoreBox}>
             <Text style={styles.scoreLabel}>{scoreLabel}</Text>
@@ -136,12 +132,29 @@ export function GameResultOverlay({
               <>
                 {isFinalStage && showFinalStarRoll && starReward > 0 ? (
                   <MinigameStarRoll amount={starReward} />
+                ) : isFinalStage && dailyCapReached && alreadyCleared ? (
+                  <Text style={styles.capReached}>{t('minigames.dailyCapReached')}</Text>
+                ) : isFinalStage && alreadyCleared && starReward === 0 && !loading ? (
+                  <>
+                    <Text style={styles.stageClearHint}>{t('minigames.gameAlreadyCleared')}</Text>
+                    {canReplayReward && onReplayReward ? (
+                      <View style={styles.bonusActions}>
+                        <PremiumButton
+                          title={replayRewardAdLabel ?? t('minigames.watchAdReplayReward')}
+                          onPress={onReplayReward}
+                          loading={bonusLoading}
+                          disabled={bonusLoading}
+                          fullWidth
+                          size="sm"
+                          variant="outline"
+                        />
+                      </View>
+                    ) : null}
+                  </>
                 ) : isFinalStage && dailyCapReached ? (
                   <Text style={styles.capReached}>{t('minigames.dailyCapReached')}</Text>
                 ) : isFinalStage && starReward === 0 && !loading ? (
-                  <Text style={styles.stageClearHint}>{t('minigames.finalStageAlreadyCleared')}</Text>
-                ) : !isFinalStage ? (
-                  <Text style={styles.stageClearHint}>{t('minigames.stageClearNoStar')}</Text>
+                  <Text style={styles.stageClearHint}>{t('minigames.gameAlreadyCleared')}</Text>
                 ) : null}
 
                 {isFinalStage ? (
@@ -152,7 +165,7 @@ export function GameResultOverlay({
                         <Text style={styles.starStatLabel}>{t('minigames.dailyStarsEarnedLabel')}</Text>
                         <Text style={styles.starStatValue}>
                           {starsEarnedToday}
-                          <Text style={styles.starStatCap}> / {MINIGAME_DAILY_STAR_CAP}</Text>
+                          <Text style={styles.starStatCap}> / {cap}</Text>
                         </Text>
                       </View>
                       <View style={styles.starDivider} />
@@ -160,15 +173,42 @@ export function GameResultOverlay({
                         <Text style={styles.starStatLabel}>{t('minigames.dailyStarsRemainingLabel')}</Text>
                         <Text style={[styles.starStatValue, styles.starStatValueAccent]}>
                           {starsRemaining}
-                          <Text style={styles.starStatCap}> / {MINIGAME_DAILY_STAR_CAP}</Text>
+                          <Text style={styles.starStatCap}> / {cap}</Text>
                         </Text>
                       </View>
                     </View>
                   </View>
                 ) : null}
+
+                {isFinalStage && starReward > 0 && (canReroll || canDouble) ? (
+                  <View style={styles.bonusActions}>
+                    {canReroll && onRerollReward ? (
+                      <PremiumButton
+                        title={rerollAdLabel ?? t('minigames.watchAdReroll')}
+                        onPress={onRerollReward}
+                        loading={bonusLoading}
+                        disabled={bonusLoading}
+                        fullWidth
+                        size="sm"
+                        variant="outline"
+                      />
+                    ) : null}
+                    {canDouble && onDoubleReward ? (
+                      <PremiumButton
+                        title={doubleAdLabel ?? t('minigames.watchAdDouble')}
+                        onPress={onDoubleReward}
+                        loading={bonusLoading}
+                        disabled={bonusLoading}
+                        fullWidth
+                        size="sm"
+                        variant="outline"
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </>
             ) : (
-              <Text style={styles.retryHint}>{t('minigames.retryStage')}</Text>
+              <Text style={styles.retryHint}>{t('minigames.retryGame')}</Text>
             )}
           </View>
         </ScrollView>
@@ -184,7 +224,7 @@ export function GameResultOverlay({
             />
           ) : null}
           <PremiumButton
-            title={!cleared && onContinueWithAd ? `${playAgainLabel} (Stage 1)` : primaryLabel}
+            title={!cleared && onContinueWithAd ? playAgainLabel : primaryLabel}
             onPress={!cleared && onContinueWithAd ? onPlayAgain : primaryAction}
             fullWidth
             size="sm"
@@ -275,14 +315,6 @@ const styles = StyleSheet.create({
   },
   badgeTextFail: {
     color: theme.colors.primaryDark,
-  },
-  stageMeta: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   scoreBox: {
     alignItems: 'center',
@@ -441,6 +473,11 @@ const styles = StyleSheet.create({
   },
   actionPrimary: {
     width: '100%',
+  },
+  bonusActions: {
+    width: '100%',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
   },
   actionSecondary: {
     width: '100%',

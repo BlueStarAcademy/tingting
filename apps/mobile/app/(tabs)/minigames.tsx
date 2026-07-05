@@ -1,27 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { ScreenBackground } from '@/components/ScreenBackground';
 import { StarIcon } from '@/components/StarAmount';
 import { AppModal } from '@/components/AppModal';
-import { PremiumButton } from '@/components/PremiumButton';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useMinigameListProgress } from '@/hooks/useMinigameProgress';
+import { useAdFree } from '@/hooks/useAdFree';
+import { getMinigameEffectiveCap } from '@/lib/minigames/progress';
 import { api } from '@/lib/api';
 import {
   buildDailyBetQuestions,
   calculateMinigameBetPayout,
   canPlaceMinigameBet,
+  canUnlockMinigameBetExtraSlot,
+  formatMinigameBetResolveAt,
+  getBetCardTitle,
+  getDemoWinningChoiceId,
+  getMinigameBetRemainingSlots,
+  hasMinigameBetResultReady,
+  isMinigameBetAwaitingResult,
   MINIGAME_BET_MAX_STAKE,
   MINIGAME_BET_MIN_STAKE,
+  type MinigameBetDailyState,
   type MinigameBetPool,
 } from '@/lib/minigame-bets';
 import type { MinigameBetChoice, MinigameBetQuestion, MinigameBetTicket } from '@/lib/minigame-bets';
 import type { MinigameId } from '@/lib/minigames/stages';
-import { MINIGAME_DAILY_STAR_CAP } from '@tingting/shared';
+import { MINIGAME_CAP_AD_EXTENSION, MINIGAME_DAILY_STAR_CAP } from '@tingting/shared';
 import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
 import { theme } from '@/constants/theme';
 
@@ -40,8 +49,16 @@ function buildTicketQuestion(questionId: string): MinigameBetQuestion | undefine
   return buildDailyBetQuestions(questionId.slice(0, 10)).find((question) => question.id === questionId);
 }
 
-function clampBetStake(value: number): number {
-  return Math.min(MINIGAME_BET_MAX_STAKE, Math.max(MINIGAME_BET_MIN_STAKE, Math.floor(value)));
+function clampBetStake(value: number, maxStars?: number): number {
+  const available = maxStars == null ? undefined : Math.max(0, Math.floor(maxStars));
+  let stake = Math.floor(value);
+  if (!Number.isFinite(stake)) stake = MINIGAME_BET_MIN_STAKE;
+  stake = Math.max(MINIGAME_BET_MIN_STAKE, Math.min(MINIGAME_BET_MAX_STAKE, stake));
+  if (available != null) {
+    if (available < MINIGAME_BET_MIN_STAKE) return 0;
+    stake = Math.min(stake, available);
+  }
+  return stake;
 }
 
 function projectPoolWithStake(pool: MinigameBetPool, choiceId: string, stake: number): MinigameBetPool {
@@ -64,45 +81,62 @@ function getChoicePercent(pool: MinigameBetPool | undefined, choiceId: string): 
   return Math.round(((pool.byChoice[choiceId] ?? 0) / pool.totalStars) * 100);
 }
 
-function getCompactBetTitle(question: MinigameBetQuestion, locale: string): string {
-  const title = locale === 'en' ? question.titleEn : question.titleKo;
-  const divider = locale === 'en' ? ' vs ' : ' vs ';
-  return title
-    .replace(/^야구 대결\s*·\s*/, '')
-    .replace(/^Baseball matchup\s*·\s*/i, '')
-    .replace(/상승팀/g, '상승')
-    .replace(/하락팀/g, '하락')
-    .replace(/홀수팀/g, '홀수')
-    .replace(/짝수팀/g, '짝수')
-    .replace(/\bUp Team\b/g, 'Up')
-    .replace(/\bDown Team\b/g, 'Down')
-    .replace(/\bOdd Team\b/g, 'Odd')
-    .replace(/\bEven Team\b/g, 'Even')
-    .replace(/\s+vs\s+/i, divider)
-    .trim();
-}
-
 function getQuestionTickets(tickets: MinigameBetTicket[], questionId: string): MinigameBetTicket[] {
   return tickets
     .filter((ticket) => ticket.questionId === questionId)
     .sort((a, b) => b.placedAt.localeCompare(a.placedAt));
 }
 
+function formatResolveDateTime(resolveDate: string, locale: string): string {
+  return formatMinigameBetResolveAt(resolveDate, locale === 'en' ? 'en' : 'ko');
+}
+
+function getBetActionLabel(
+  ticket: MinigameBetTicket | undefined,
+  now: Date,
+  t: (key: string) => string,
+): string {
+  if (!ticket) return t('minigames.betPredict');
+  if (isMinigameBetAwaitingResult(ticket, now)) return t('minigames.betViewPick');
+  return t('minigames.betViewResult');
+}
+
 export default function MinigamesScreen() {
   const { t, locale } = useLocale();
-  const { refresh } = useAuth();
+  const { refresh, profile } = useAuth();
+  const { watchAd } = useAdFree();
   const router = useRouter();
   const contentWidth = useContentWidth();
-  const { daily, loading } = useMinigameListProgress();
+  const { daily, loading, refresh: refreshDaily } = useMinigameListProgress();
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+      void refreshDaily({ silent: true });
+    }, [refresh, refreshDaily]),
+  );
+
   const [tab, setTab] = useState<MinigameTab>('games');
   const [betLoading, setBetLoading] = useState(false);
+  const [betSubmitting, setBetSubmitting] = useState(false);
+  const [betAdUnlocking, setBetAdUnlocking] = useState(false);
+  const [betDaily, setBetDaily] = useState<MinigameBetDailyState | null>(null);
+  const [betFeedback, setBetFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [questions, setQuestions] = useState<MinigameBetQuestion[]>([]);
   const [tickets, setTickets] = useState<MinigameBetTicket[]>([]);
   const [pools, setPools] = useState<Record<string, MinigameBetPool>>({});
   const [selectedChoices, setSelectedChoices] = useState<Record<string, string>>({});
   const [stakes, setStakes] = useState<Record<string, string>>({});
   const [infoQuestion, setInfoQuestion] = useState<MinigameBetQuestion | null>(null);
-  const predictionOpen = canPlaceMinigameBet();
+  const [now, setNow] = useState(() => new Date());
+  const predictionOpen = canPlaceMinigameBet(now);
+  const availableStars = Math.max(0, Math.floor(Number(profile?.stars) || 0));
+  const maxBetStake = Math.min(MINIGAME_BET_MAX_STAKE, availableStars);
+  const canAffordBet = availableStars >= MINIGAME_BET_MIN_STAKE;
+  const betSlots = betDaily ? getMinigameBetRemainingSlots(betDaily) : null;
+  const showBetExtraAd = Boolean(
+    predictionOpen && betDaily && canUnlockMinigameBetExtraSlot(betDaily),
+  );
 
   const ticketsByQuestion = useMemo(() => {
     const map: Record<string, MinigameBetTicket> = {};
@@ -116,9 +150,11 @@ export default function MinigamesScreen() {
     if (!silent) setBetLoading(true);
     try {
       const state = await api.getMinigameBetState();
+      const nextBetDaily = await api.getMinigameBetDailyState();
       setQuestions(state.questions);
       setTickets(state.tickets);
       setPools(state.pools);
+      setBetDaily(nextBetDaily);
       await refresh();
     } catch (e: unknown) {
       if (!silent) Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
@@ -134,30 +170,88 @@ export default function MinigamesScreen() {
   useEffect(() => {
     if (tab !== 'bets') return;
     const timer = setInterval(() => {
+      setNow(new Date());
       void loadBets(true);
     }, 5000);
     return () => clearInterval(timer);
   }, [tab]);
 
+  useEffect(() => {
+    if (!infoQuestion) return;
+    setStakes((prev) => ({
+      ...prev,
+      [infoQuestion.id]: String(
+        clampBetStake(Number(prev[infoQuestion.id] ?? String(MINIGAME_BET_MIN_STAKE)), availableStars),
+      ),
+    }));
+  }, [infoQuestion?.id, availableStars]);
+
   const placeBet = async (question: MinigameBetQuestion) => {
+    if (!predictionOpen) {
+      const message = t('minigames.betClosed');
+      setBetFeedback({ type: 'error', message });
+      Alert.alert(t('common.alert'), message);
+      return;
+    }
     const choiceId = selectedChoices[question.id] ?? question.choices[0]?.id;
-    const stake = clampBetStake(Number(stakes[question.id] ?? String(MINIGAME_BET_MIN_STAKE)));
-    if (!choiceId) return;
+    const stake = clampBetStake(Number(stakes[question.id] ?? String(MINIGAME_BET_MIN_STAKE)), availableStars);
+    if (!choiceId) {
+      const message = t('minigames.betPickChoice');
+      setBetFeedback({ type: 'error', message });
+      Alert.alert(t('common.alert'), message);
+      return;
+    }
+    if (stake < MINIGAME_BET_MIN_STAKE) {
+      const message = t('shop.insufficient');
+      setBetFeedback({ type: 'error', message });
+      Alert.alert(t('common.error'), message);
+      return;
+    }
+    if (betSubmitting) return;
+    setBetSubmitting(true);
+    setBetFeedback(null);
     try {
       await api.placeMinigameBet(question.id, choiceId, stake);
       setStakes((prev) => ({ ...prev, [question.id]: '1' }));
-      setInfoQuestion(null);
       await loadBets();
-      Alert.alert(t('common.alert'), t('minigames.betPlaced'));
+      const message = t('minigames.betPlaced');
+      setBetFeedback({ type: 'success', message });
+      Alert.alert(t('common.alert'), message);
+      setInfoQuestion(null);
     } catch (e: unknown) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
+      const message = e instanceof Error ? e.message : t('shop.insufficient');
+      if (message.includes('광고를 시청')) {
+        Alert.alert(t('common.alert'), message, [
+          { text: t('header.cancel'), style: 'cancel' },
+          {
+            text: t('ads.watch'),
+            onPress: async () => {
+              const watched = await watchAd('bet_extra');
+              if (!watched) return;
+              try {
+                await api.unlockExtraBetSlotViaAd();
+                await loadBets();
+                await placeBet(question);
+              } catch (err: unknown) {
+                Alert.alert(t('common.error'), err instanceof Error ? err.message : t('group.failed'));
+              }
+            },
+          },
+        ]);
+      } else {
+        setBetFeedback({ type: 'error', message });
+        Alert.alert(t('common.error'), message);
+      }
+    } finally {
+      setBetSubmitting(false);
     }
   };
 
   const adjustBetStake = (questionId: string, delta: number) => {
     setStakes((prev) => {
-      const current = clampBetStake(Number(prev[questionId] ?? String(MINIGAME_BET_MIN_STAKE)));
-      return { ...prev, [questionId]: String(clampBetStake(current + delta)) };
+      const current = clampBetStake(Number(prev[questionId] ?? String(MINIGAME_BET_MIN_STAKE)), availableStars);
+      const next = clampBetStake(current + delta, availableStars);
+      return { ...prev, [questionId]: String(next) };
     });
   };
 
@@ -172,15 +266,61 @@ export default function MinigamesScreen() {
     return locale === 'en' ? choice.labelEn : choice.labelKo;
   };
 
-  const claimBetReward = async (ticket: MinigameBetTicket) => {
+  const claimBetReward = async (ticket: MinigameBetTicket, withAdBonus = false) => {
     try {
-      const result = await api.claimMinigameBetReward(ticket.id);
+      const result = await api.claimMinigameBetReward(ticket.id, { withAdBonus });
       await loadBets();
-      Alert.alert(t('common.alert'), t('minigames.betClaimed', { amount: result.ticket.payout ?? ticket.payout ?? 0 }));
+      const payout = result.ticket.payout ?? ticket.payout ?? 0;
+      const bonus = result.adBonus ?? 0;
+      Alert.alert(
+        t('common.alert'),
+        bonus > 0
+          ? t('minigames.betClaimedWithBonus', { amount: payout + bonus, bonus })
+          : t('minigames.betClaimed', { amount: payout }),
+      );
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
     }
   };
+
+  const claimBetRewardWithAd = async (ticket: MinigameBetTicket) => {
+    const watched = await watchAd('bet_claim_bonus');
+    if (!watched) return;
+    await claimBetReward(ticket, true);
+  };
+
+  const unlockExtraBetViaAd = async () => {
+    if (!betDaily || betAdUnlocking) return;
+    setBetAdUnlocking(true);
+    try {
+      const watched = await watchAd('bet_extra');
+      if (!watched) return;
+      await api.unlockExtraBetSlotViaAd();
+      await loadBets();
+      Alert.alert(t('common.alert'), t('minigames.betExtraUnlocked'));
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setBetAdUnlocking(false);
+    }
+  };
+
+  const extendDailyCap = async () => {
+    const watched = await watchAd('minigame_cap_extend');
+    if (!watched) return;
+    try {
+      await api.extendMinigameCapViaAd();
+      await refreshDaily({ silent: true });
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
+    }
+  };
+
+  const effectiveCap = daily ? getMinigameEffectiveCap(daily) : MINIGAME_DAILY_STAR_CAP;
+  const showCapExtend =
+    daily &&
+    !daily.capBonusApplied &&
+    daily.starsEarnedToday >= MINIGAME_DAILY_STAR_CAP;
 
   const showBetLoading = betLoading && questions.length === 0;
 
@@ -192,8 +332,16 @@ export default function MinigamesScreen() {
           <View style={styles.dailyBanner}>
             <StarIcon />
             <Text style={styles.dailyText}>
-              {t('minigames.dailyStars', { earned: daily.starsEarnedToday, cap: MINIGAME_DAILY_STAR_CAP })}
+              {t('minigames.dailyStars', { earned: daily.starsEarnedToday, cap: effectiveCap })}
             </Text>
+            {showCapExtend ? (
+              <Pressable style={styles.capExtendBtn} onPress={extendDailyCap}>
+                <Ionicons name="play-circle" size={14} color={theme.colors.primary} />
+                <Text style={styles.capExtendText}>
+                  {t('minigames.capExtend', { amount: MINIGAME_CAP_AD_EXTENSION })}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -212,9 +360,38 @@ export default function MinigamesScreen() {
       </View>
       {tab === 'bets' ? (
         <View style={[styles.betCommonNotice, !predictionOpen && styles.betCommonNoticeClosed]}>
-          <Text style={[styles.betCommonNoticeText, !predictionOpen && styles.betCommonNoticeTextClosed]}>
-            {predictionOpen ? t('minigames.betPredictWindow') : t('minigames.betClosed')}
+          <Text
+            style={[
+              styles.betCommonNoticeText,
+              showBetExtraAd && styles.betCommonNoticeTextWithAction,
+              !predictionOpen && styles.betCommonNoticeTextClosed,
+            ]}
+          >
+            {predictionOpen
+              ? betSlots
+                ? t('minigames.betDailyLimit', {
+                    remaining: betSlots.remaining,
+                    max: betSlots.max,
+                  })
+                : t('minigames.betPredictWindow')
+              : t('minigames.betClosed')}
           </Text>
+          {showBetExtraAd ? (
+            <Pressable
+              style={[styles.betExtraAdBtn, betAdUnlocking && styles.betExtraAdBtnDisabled]}
+              disabled={betAdUnlocking}
+              onPress={() => void unlockExtraBetViaAd()}
+            >
+              {betAdUnlocking ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <>
+                  <Ionicons name="play-circle" size={14} color={theme.colors.primary} />
+                  <Text style={styles.betExtraAdText}>{t('minigames.betWatchAd')}</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
       <ScrollView
@@ -248,7 +425,7 @@ export default function MinigamesScreen() {
             {showBetLoading ? <Text style={styles.desc}>{t('common.loading')}</Text> : null}
             {questions.map((question) => {
               const ticket = ticketsByQuestion[question.id];
-              const title = getCompactBetTitle(question, locale);
+              const title = getBetCardTitle(question, locale === 'en' ? 'en' : 'ko');
               const pool = pools[question.id];
               const choices = question.choices.slice(0, 2);
               const leftChoice = choices[0];
@@ -271,18 +448,22 @@ export default function MinigamesScreen() {
                     projectPoolWithStake(pool, rightChoice.id, MINIGAME_BET_MIN_STAKE),
                   )
                 : null;
+              const resolveDateTime = formatResolveDateTime(question.resolveDate, locale);
               return (
                 <View key={question.id} style={styles.betMatchCard}>
                   <View style={styles.betMatchHeader}>
-                    <Text style={styles.betQuestionTitle} numberOfLines={1}>{title}</Text>
+                    <Text style={styles.betQuestionTitle} numberOfLines={2}>{title}</Text>
                     {ticket ? (
                       <View style={[styles.betStatusPill, ticket.status === 'won' && styles.betStatusWon, ticket.status === 'lost' && styles.betStatusLost]}>
                         <Text style={[styles.betStatusPillText, ticket.status === 'won' && styles.betStatusWonText, ticket.status === 'lost' && styles.betStatusLostText]}>
-                          {t(`minigames.betStatusShort.${ticket.status}`)}
+                          {isMinigameBetAwaitingResult(ticket, now)
+                            ? t('minigames.betStatusShort.pending')
+                            : t(`minigames.betStatusShort.${ticket.status}`)}
                         </Text>
                       </View>
                     ) : null}
                   </View>
+                  <Text style={styles.betResolveText}>{t('minigames.betResolveAt', { datetime: resolveDateTime })}</Text>
                   {leftChoice && rightChoice ? (
                     <View style={styles.tugGraphCard}>
                       <View style={styles.tugGraphLabels}>
@@ -326,11 +507,12 @@ export default function MinigamesScreen() {
                           ...prev,
                           [question.id]: prev[question.id] ?? question.choices[0]?.id ?? '',
                         }));
+                        setBetFeedback(null);
                         setInfoQuestion(question);
                       }}
                     >
                       <Ionicons name="stats-chart" size={15} color={theme.colors.primaryDark} />
-                      <Text style={styles.betActionButtonText}>{t('minigames.betPredict')}</Text>
+                      <Text style={styles.betActionButtonText}>{getBetActionLabel(ticket, now, t)}</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -342,9 +524,8 @@ export default function MinigamesScreen() {
       <AppModal
         visible={Boolean(infoQuestion)}
         onRequestClose={() => setInfoQuestion(null)}
-        variant="center"
-        animationType="fade"
-        sheetStyle={styles.betPredictSheet}
+        variant="bottomSheet"
+        animationType="slide"
       >
         {infoQuestion ? (() => {
           const pool = pools[infoQuestion.id];
@@ -352,12 +533,17 @@ export default function MinigamesScreen() {
           const latestTicket = questionTickets[0];
           const claimable = latestTicket?.status === 'won' && !latestTicket.claimedAt;
           const selectedChoiceId = selectedChoices[infoQuestion.id] ?? infoQuestion.choices[0]?.id;
-          const stake = clampBetStake(Number(stakes[infoQuestion.id] ?? String(MINIGAME_BET_MIN_STAKE)));
+          const stake = clampBetStake(Number(stakes[infoQuestion.id] ?? String(MINIGAME_BET_MIN_STAKE)), availableStars);
+          const canSubmitBet = predictionOpen && canAffordBet && stake >= MINIGAME_BET_MIN_STAKE;
           const projectedPool = pool && selectedChoiceId ? projectPoolWithStake(pool, selectedChoiceId, stake) : null;
           const estimate = projectedPool && selectedChoiceId
             ? calculateMinigameBetPayout(stake, selectedChoiceId, projectedPool)
             : null;
           const alreadyPlaced = Boolean(ticketsByQuestion[infoQuestion.id]);
+          const resolveDateTime = formatResolveDateTime(infoQuestion.resolveDate, locale);
+          const winningChoiceId = getDemoWinningChoiceId(infoQuestion);
+          const winningChoice = infoQuestion.choices.find((choice) => choice.id === winningChoiceId);
+          const showResult = latestTicket?.status === 'won' || latestTicket?.status === 'lost';
           const modalChoices = infoQuestion.choices.slice(0, 2);
           const leftChoice = modalChoices[0];
           const rightChoice = modalChoices[1];
@@ -382,7 +568,7 @@ export default function MinigamesScreen() {
           return (
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{getCompactBetTitle(infoQuestion, locale)}</Text>
+                <Text style={styles.modalTitle}>{getBetCardTitle(infoQuestion, locale === 'en' ? 'en' : 'ko')}</Text>
                 <Pressable onPress={() => setInfoQuestion(null)} style={styles.modalClose}>
                   <Ionicons name="close" size={18} color={theme.colors.textMuted} />
                 </Pressable>
@@ -390,11 +576,20 @@ export default function MinigamesScreen() {
               <ScrollView
                 style={styles.modalScrollView}
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
                 contentContainerStyle={styles.modalScroll}
               >
                 <Text style={styles.modalDesc}>
                   {locale === 'en' ? infoQuestion.descriptionEn : infoQuestion.descriptionKo}
                 </Text>
+                <View style={styles.betResolveBanner}>
+                  <Ionicons name="time-outline" size={16} color={theme.colors.primaryDark} />
+                  <View style={styles.betResolveBannerBody}>
+                    <Text style={styles.betResolveBannerTitle}>{t('minigames.betResolveAt', { datetime: resolveDateTime })}</Text>
+                    <Text style={styles.betResolveBannerHint}>{t('minigames.betResolveNotice')}</Text>
+                  </View>
+                </View>
                 {leftChoice && rightChoice ? (
                   <View style={styles.modalTugCard}>
                     <View style={styles.tugGraphLabels}>
@@ -453,16 +648,26 @@ export default function MinigamesScreen() {
                         <StarIcon size={14} />
                         <Text style={styles.stakeValueText}>{stake}</Text>
                       </View>
+                      <Text style={styles.stakeAvailableText}>
+                        {t('minigames.betAvailableStars', { amount: availableStars, max: maxBetStake })}
+                      </Text>
                       <View style={styles.stakeStepperRow}>
-                        {[-10, -5, -1, 1, 5, 10].map((delta) => (
+                        {[-10, -5, -1, 1, 5, 10].map((delta) => {
+                          const nextStake = clampBetStake(stake + delta, availableStars);
+                          const disabled = !canAffordBet || (delta > 0 && nextStake <= stake) || (delta < 0 && nextStake >= stake);
+                          return (
                           <Pressable
                             key={delta}
-                            style={styles.stakeStepButton}
+                            style={[styles.stakeStepButton, disabled && styles.stakeStepButtonDisabled]}
+                            disabled={disabled}
                             onPress={() => adjustBetStake(infoQuestion.id, delta)}
                           >
-                            <Text selectable={false} style={styles.stakeStepText}>{delta > 0 ? `+${delta}` : delta}</Text>
+                            <Text selectable={false} style={[styles.stakeStepText, disabled && styles.stakeStepTextDisabled]}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </Text>
                           </Pressable>
-                        ))}
+                          );
+                        })}
                       </View>
                     </View>
                     {estimate ? (
@@ -482,28 +687,77 @@ export default function MinigamesScreen() {
                       </View>
                     ) : null}
                     {!predictionOpen ? <Text style={styles.betClosedText}>{t('minigames.betClosed')}</Text> : null}
+                    {!canAffordBet && predictionOpen ? (
+                      <Text style={styles.betClosedText}>{t('shop.insufficient')}</Text>
+                    ) : null}
+                    {betFeedback ? (
+                      <Text
+                        style={[
+                          styles.betFeedbackText,
+                          betFeedback.type === 'success' ? styles.betFeedbackSuccess : styles.betFeedbackError,
+                        ]}
+                      >
+                        {betFeedback.message}
+                      </Text>
+                    ) : null}
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.betSubmitPrimary,
+                        pressed && canSubmitBet && !betSubmitting && styles.betSubmitPrimaryPressed,
+                        (!canSubmitBet || betSubmitting) && styles.betSubmitPrimaryDisabled,
+                      ]}
+                      disabled={!canSubmitBet || betSubmitting}
+                      onPress={() => void placeBet(infoQuestion)}
+                    >
+                      {betSubmitting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.betSubmitPrimaryText}>{t('minigames.betSubmit')}</Text>
+                      )}
+                    </Pressable>
                   </>
                 ) : null}
                 {latestTicket ? (
                   <View style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>{locale === 'en' ? 'My pick' : '내 선택'}</Text>
+                    {showResult && winningChoice ? (
+                      <View style={styles.betResultWinnerBox}>
+                        <Text style={styles.betResultWinnerLabel}>{t('minigames.betResultWinner')}</Text>
+                        <Text style={styles.betResultWinnerValue}>{getChoiceLabel(winningChoice, locale)}</Text>
+                      </View>
+                    ) : null}
                     <View style={styles.historyTicketRow}>
                       <View style={styles.historyTicketMain}>
                         <Text style={styles.historyTicketTitle}>
                           {getTicketChoiceLabel(latestTicket)} · {latestTicket.stake}
                         </Text>
                         <Text style={styles.historyTicketMeta}>
-                          {t(`minigames.betStatus.${latestTicket.status}`, {
-                            stake: latestTicket.stake,
-                            payout: latestTicket.payout ?? 0,
-                            fee: latestTicket.fee ?? 0,
-                          })}
+                          {latestTicket.status === 'pending' && hasMinigameBetResultReady(latestTicket, now)
+                            ? t('minigames.betSettling')
+                            : isMinigameBetAwaitingResult(latestTicket, now)
+                              ? t('minigames.betAwaitingResult', {
+                                  stake: latestTicket.stake,
+                                  datetime: resolveDateTime,
+                                })
+                              : t(`minigames.betStatus.${latestTicket.status}`, {
+                                  stake: latestTicket.stake,
+                                  payout: latestTicket.payout ?? 0,
+                                  fee: latestTicket.fee ?? 0,
+                                  datetime: resolveDateTime,
+                                })}
                         </Text>
                       </View>
                       {claimable ? (
-                        <Pressable style={styles.claimBtn} onPress={() => claimBetReward(latestTicket)}>
-                          <Text style={styles.claimBtnText}>{t('minigames.betClaim')}</Text>
-                        </Pressable>
+                        <View style={styles.claimBtnGroup}>
+                          <Pressable style={styles.claimBtn} onPress={() => claimBetReward(latestTicket)}>
+                            <Text style={styles.claimBtnText}>{t('minigames.betClaim')}</Text>
+                          </Pressable>
+                          {!latestTicket.adBonusClaimed ? (
+                            <Pressable style={styles.claimBonusBtn} onPress={() => claimBetRewardWithAd(latestTicket)}>
+                              <Text style={styles.claimBonusBtnText}>{t('minigames.betClaimAdBonus')}</Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
                       ) : latestTicket.claimedAt ? (
                         <Text style={styles.claimedText}>{t('minigames.betClaimedShort')}</Text>
                       ) : null}
@@ -511,15 +765,6 @@ export default function MinigamesScreen() {
                   </View>
                 ) : null}
               </ScrollView>
-              {!latestTicket ? (
-                <View style={styles.modalActionFooter}>
-                  <PremiumButton
-                    title={t('minigames.betSubmit')}
-                    onPress={() => placeBet(infoQuestion)}
-                    disabled={!predictionOpen}
-                  />
-                </View>
-              ) : null}
             </View>
           );
         })() : null}
@@ -545,6 +790,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.borderGold,
+    flexWrap: 'wrap',
+  },
+  capExtendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(91,141,239,0.12)',
+  },
+  capExtendText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '800',
   },
   dailyText: {
     color: theme.colors.star,
@@ -583,7 +844,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.starGlow,
     paddingVertical: 9,
     paddingHorizontal: theme.spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
   },
   betCommonNoticeClosed: {
     backgroundColor: 'rgba(217,112,112,0.1)',
@@ -595,8 +859,30 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  betCommonNoticeTextWithAction: {
+    flex: 1,
+    textAlign: 'left',
+  },
   betCommonNoticeTextClosed: {
     color: theme.colors.error,
+  },
+  betExtraAdBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: theme.radius.full,
+    backgroundColor: 'rgba(91,141,239,0.12)',
+    flexShrink: 0,
+  },
+  betExtraAdBtnDisabled: {
+    opacity: 0.6,
+  },
+  betExtraAdText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '800',
   },
   scroll: { flex: 1 },
   scrollContent: {
@@ -691,6 +977,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     position: 'relative',
+  },
+  betResolveText: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 16,
   },
   betMatchBody: {
     flexDirection: 'row',
@@ -1095,6 +1388,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
+  claimBtnGroup: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  claimBonusBtn: {
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  claimBonusBtnText: {
+    color: theme.colors.primary,
+    fontSize: 10,
+    fontWeight: '800',
+  },
   claimBtnText: {
     color: '#fff',
     fontSize: 11,
@@ -1250,11 +1559,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     gap: theme.spacing.sm,
     maxHeight: '100%',
-    minHeight: '92%',
-  },
-  betPredictSheet: {
-    maxHeight: '96%',
-    minHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1302,22 +1606,96 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
   },
   modalScrollView: {
+    flexGrow: 0,
     flexShrink: 1,
-    minHeight: 0,
+    maxHeight: 520,
   },
   modalScroll: {
     gap: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs,
+    paddingBottom: theme.spacing.md,
   },
-  modalActionFooter: {
-    paddingTop: theme.spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+  betSubmitPrimary: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: theme.spacing.lg,
+    minHeight: 48,
+  },
+  betSubmitPrimaryPressed: {
+    opacity: 0.92,
+  },
+  betSubmitPrimaryDisabled: {
+    opacity: 0.7,
+  },
+  betSubmitPrimaryText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  betFeedbackText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  betFeedbackSuccess: {
+    color: theme.colors.success,
+  },
+  betFeedbackError: {
+    color: theme.colors.error,
   },
   modalDesc: {
     color: theme.colors.textMuted,
     fontSize: 13,
     lineHeight: 19,
+  },
+  betResolveBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: theme.colors.tint.soft,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.tint.border,
+    padding: theme.spacing.sm,
+  },
+  betResolveBannerBody: {
+    flex: 1,
+    gap: 4,
+  },
+  betResolveBannerTitle: {
+    color: theme.colors.primaryDark,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  betResolveBannerHint: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  betResultWinnerBox: {
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.successSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.success,
+  },
+  betResultWinnerLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  betResultWinnerValue: {
+    color: theme.colors.success,
+    fontSize: 18,
+    fontWeight: '900',
   },
   modalSection: {
     gap: theme.spacing.sm,
@@ -1454,6 +1832,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
   },
+  stakeAvailableText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   stakeStepperRow: {
     flexDirection: 'row',
     gap: 5,
@@ -1475,6 +1859,11 @@ const styles = StyleSheet.create({
     // @ts-ignore web
     cursor: 'pointer',
   },
+  stakeStepButtonDisabled: {
+    opacity: 0.35,
+    // @ts-ignore web
+    cursor: 'default',
+  },
   stakeStepText: {
     color: theme.colors.primaryDark,
     fontSize: 12,
@@ -1483,5 +1872,8 @@ const styles = StyleSheet.create({
     userSelect: 'none',
     // @ts-ignore web
     caretColor: 'transparent',
+  },
+  stakeStepTextDisabled: {
+    color: theme.colors.textSubtle,
   },
 });

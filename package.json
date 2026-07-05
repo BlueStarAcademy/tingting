@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "mobile": "npm run start --workspace=mobile",
+    "mobile": "npm run build:shared && npm run start --workspace=mobile",
     "typecheck": "npm run typecheck --workspace=mobile",
     "build:shared": "npm run build --workspace=@tingting/shared",
     "build:api": "npm run build:shared && npm run build --workspace=@tingting/api",

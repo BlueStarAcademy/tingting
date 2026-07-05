@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
 import { isAdFreePurchased, setAdFreePurchased } from '@/lib/ad-store';
+import { showRewardedAd, watchAdForReward, type AdPlacement } from '@/lib/rewarded-ad';
+
+export type { AdPlacement };
 
 export function useAdFree() {
   const [adFree, setAdFree] = useState(false);
@@ -18,28 +20,12 @@ export function useAdFree() {
     setAdFree(true);
   }, []);
 
-  return { adFree, loading, purchase };
+  const watchAd = useCallback(
+    (placement: AdPlacement) => watchAdForReward(placement, adFree),
+    [adFree],
+  );
+
+  return { adFree, loading, purchase, watchAd };
 }
 
-/**
- * Simulated rewarded ad. In production, replace with real ad SDK call.
- * Returns true if the user watched the ad successfully.
- */
-export function showRewardedAd(): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      '광고 시청',
-      '광고를 시청하면 이어서 도전할 수 있습니다.',
-      [
-        { text: '취소', style: 'cancel', onPress: () => resolve(false) },
-        {
-          text: '광고 보기',
-          onPress: () => {
-            setTimeout(() => resolve(true), 1500);
-          },
-        },
-      ],
-      { cancelable: false },
-    );
-  });
-}
+export { showRewardedAd, watchAdForReward };

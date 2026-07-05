@@ -14,6 +14,7 @@ import type {
   RankingEntry,
   PublicExperiencePost,
   ShopItem,
+  ShopSubscriptionPlanId,
   UserProfile,
   Visit,
   FeaturePass,
@@ -275,6 +276,30 @@ export const api = {
     return localStore.markMailboxMessageRead(messageId);
   },
 
+  async claimMailboxStarReward(messageId: string): Promise<{ reward: number; stars: number }> {
+    const result = await localStore.claimMailboxStarReward(messageId);
+    if (result.reward > 0) {
+      const stars = await this.earnStars(
+        result.reward,
+        `subscription_mail:${messageId}`,
+      );
+      return { reward: result.reward, stars };
+    }
+    return result;
+  },
+
+  async getSubscriptionState() {
+    return localStore.getSubscriptionState();
+  },
+
+  async purchaseSubscription(planId: ShopSubscriptionPlanId) {
+    return localStore.purchaseSubscription(planId);
+  },
+
+  async syncSubscriptionStarMails() {
+    return localStore.syncSubscriptionStarMails();
+  },
+
   async markAllMailboxRead(): Promise<number> {
     if (isHttpApiConfigured()) return httpApi.markAllMailboxRead();
     return localStore.markAllMailboxRead();
@@ -447,8 +472,19 @@ export const api = {
   },
 
   async getGroupQuests(groupId: string): Promise<Quest[]> {
-    if (isHttpApiConfigured()) return httpApi.getGroupQuests(groupId);
-    return localStore.getGroupQuests(groupId);
+    const [visits, places] = await Promise.all([
+      this.getGroupVisits(groupId),
+      this.getPlaces(),
+    ]);
+    let remoteQuests: Quest[] = [];
+    if (isHttpApiConfigured()) {
+      try {
+        remoteQuests = await httpApi.getGroupQuests(groupId);
+      } catch {
+        remoteQuests = [];
+      }
+    }
+    return localStore.assembleGroupQuests(groupId, visits, places, remoteQuests);
   },
 
   async completeGroupQuest(
@@ -459,14 +495,6 @@ export const api = {
   ): Promise<{ rewardGallerySlots: number; rewardStars?: number }> {
     if (isHttpApiConfigured()) return httpApi.completeGroupQuest(groupId, questId, lat, lng);
     return localStore.completeGroupQuest(groupId, questId, lat, lng);
-  },
-
-  async skipGroupStationQuestPurchase(
-    groupId: string,
-    questId: string
-  ): Promise<{ rewardGallerySlots: number }> {
-    if (isHttpApiConfigured()) return httpApi.skipGroupStationQuestPurchase(groupId, questId);
-    return localStore.skipGroupStationQuestPurchase(groupId, questId);
   },
 
   async getMinigameBetState(): Promise<MinigameBetState> {
@@ -481,8 +509,59 @@ export const api = {
     return localStore.placeMinigameBet(questionId, choiceId, stake);
   },
 
-  async claimMinigameBetReward(ticketId: string): Promise<{ ticket: MinigameBetTicket; stars: number }> {
-    return localStore.claimMinigameBetReward(ticketId);
+  async claimMinigameBetReward(
+    ticketId: string,
+    options?: { withAdBonus?: boolean },
+  ): Promise<{ ticket: MinigameBetTicket; stars: number; adBonus?: number }> {
+    return localStore.claimMinigameBetReward(ticketId, options);
+  },
+
+  async getMinigameBetDailyState() {
+    return localStore.getMinigameBetDailyState();
+  },
+
+  async unlockExtraBetSlotViaAd() {
+    return localStore.unlockExtraBetSlotViaAd();
+  },
+
+  async extendMinigameCapViaAd() {
+    return localStore.extendMinigameCapViaAd();
+  },
+
+  async claimDailyFreeStars() {
+    return localStore.claimDailyFreeStars();
+  },
+
+  async claimDailyFreeStarsBasic() {
+    return localStore.claimDailyFreeStarsBasic();
+  },
+
+  async getDailyFreeStarsState() {
+    return localStore.getDailyFreeStarsState();
+  },
+
+  async grantQuestAdBonus(questId: string) {
+    return localStore.grantQuestAdBonus(questId);
+  },
+
+  async grantVisitAdBonus() {
+    return localStore.grantVisitAdBonus();
+  },
+
+  async grantReviewAdBonus() {
+    return localStore.grantReviewAdBonus();
+  },
+
+  async grantEditorFeatureViaAd(featureId: string) {
+    return localStore.grantEditorFeatureViaAd(featureId);
+  },
+
+  async getMinigameRewardBonus() {
+    return localStore.getMinigameRewardBonus();
+  },
+
+  async doubleStepRouletteReward(milestone: number) {
+    return localStore.doubleStepRouletteReward(milestone);
   },
 
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
@@ -516,6 +595,11 @@ export const api = {
     const { data, error } = await sb.rpc('spend_stars', { p_amount: amount, p_reason: reason });
     if (error) throw error;
     return data.stars;
+  },
+
+  async earnStars(amount: number, reason: string): Promise<number> {
+    if (isHttpApiConfigured()) return httpApi.earnStars(amount, reason);
+    return localStore.earnStars(amount, reason);
   },
 
   async useAiFeature(feature: string): Promise<{ cost: number; stars: number }> {
@@ -614,7 +698,42 @@ export const api = {
   },
 
   async claimMinigameStageClear(gameId: MinigameId, stage: number) {
-    return localStore.claimMinigameStageClear(gameId, stage);
+    const result = await localStore.claimMinigameStageClear(gameId, stage);
+    if (result.reward > 0) {
+      const stars = await this.earnStars(result.reward, `minigame_clear:${gameId}:${stage}`);
+      return { ...result, stars };
+    }
+    return result;
+  },
+
+  async claimMinigameReplayReward(gameId: MinigameId, stage: number) {
+    const result = await localStore.claimMinigameReplayReward(gameId, stage);
+    if (result.reward > 0) {
+      const stars = await this.earnStars(result.reward, `minigame_replay:${gameId}:${stage}`);
+      return { ...result, stars };
+    }
+    return result;
+  },
+
+  async rerollMinigameReward(gameId: MinigameId, stage: number) {
+    const bonus = await localStore.getMinigameRewardBonus();
+    const previousReward = bonus?.gameId === gameId && bonus.stage === stage ? bonus.baseReward : 0;
+    const result = await localStore.rerollMinigameReward(gameId, stage);
+    const delta = result.reward - previousReward;
+    if (delta !== 0) {
+      const stars = await this.earnStars(delta, `minigame_reroll:${gameId}:${stage}`);
+      return { ...result, stars };
+    }
+    return result;
+  },
+
+  async doubleMinigameReward(gameId: MinigameId, stage: number) {
+    const result = await localStore.doubleMinigameReward(gameId, stage);
+    if (result.bonus > 0) {
+      const stars = await this.earnStars(result.bonus, `minigame_double:${gameId}:${stage}`);
+      return { ...result, stars };
+    }
+    return result;
   },
 
   async setStepTimezone(timezone: string) {

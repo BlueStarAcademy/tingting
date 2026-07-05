@@ -4,10 +4,10 @@ import { MinigameResultPanel } from '@/components/minigames/MinigameResultPanel'
 import { GameStatsBar } from '@/components/minigames/GameStatsBar';
 import { HowToPlayModal } from '@/components/minigames/HowToPlayModal';
 import { MinigameHelpButton } from '@/components/minigames/MinigameHelpButton';
+import { TimeProgressBar } from '@/components/minigames/TimeProgressBar';
 import { useLocale } from '@/hooks/useLocale';
 import { useMinigameProgress } from '@/hooks/useMinigameProgress';
 import { getMemoryStageConfig, MEMORY_PAIR_EMOJIS } from '@/lib/minigames/stages';
-import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { theme } from '@/constants/theme';
 
 interface Card {
@@ -15,8 +15,6 @@ interface Card {
   pairId: number;
   emoji: string;
 }
-
-const MEMORY_TIME_SECONDS = 60;
 
 function buildDeck(pairCount: number): Card[] {
   const emojis = MEMORY_PAIR_EMOJIS.slice(0, pairCount);
@@ -43,13 +41,17 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
   const [matched, setMatched] = useState<Set<number>>(new Set());
   const [moves, setMoves] = useState(0);
   const [finalMoves, setFinalMoves] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(MEMORY_TIME_SECONDS);
+  const [finalAllMatched, setFinalAllMatched] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(stageConfig.timeSeconds);
   const [lock, setLock] = useState(false);
   const [finished, setFinished] = useState(false);
+  const matchedRef = useRef(matched);
+  matchedRef.current = matched;
 
   const matchedCount = matched.size;
   const totalPairs = stageConfig.pairCount;
   const gridCols = stageConfig.columns;
+  const turnsRemaining = Math.max(0, stageConfig.maxMoves - moves);
 
   useEffect(() => {
     if (loading || initialStageSynced.current) return;
@@ -65,7 +67,8 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
       setMatched(new Set());
       setMoves(0);
       setFinalMoves(0);
-      setTimeLeft(MEMORY_TIME_SECONDS);
+      setFinalAllMatched(false);
+      setTimeLeft(config.timeSeconds);
       setLock(false);
       setFinished(false);
     },
@@ -81,9 +84,9 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
     if (loading || finished || !gameStarted) return;
     if (timeLeft <= 0) {
       setFinalMoves(moves);
+      setFinalAllMatched(matchedRef.current.size >= totalPairs);
       setFinished(true);
       setLock(false);
-      setFlipped([]);
       return;
     }
 
@@ -92,7 +95,28 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [finished, gameStarted, loading, moves, timeLeft]);
+  }, [finished, gameStarted, loading, moves, timeLeft, totalPairs]);
+
+  const finishGame = useCallback(
+    (turnCount: number, won: boolean, preserveBoard = false) => {
+      setFinalMoves(turnCount);
+      setFinalAllMatched(won);
+      setFinished(true);
+      setLock(false);
+      if (!preserveBoard) {
+        setFlipped([]);
+      }
+    },
+    [],
+  );
+
+  const continueAfterAd = useCallback(() => {
+    setMoves(0);
+    setFinalMoves(0);
+    setFinalAllMatched(false);
+    setFinished(false);
+    setLock(false);
+  }, []);
 
   const handleFlip = (card: Card) => {
     if (!gameStarted || lock || finished) return;
@@ -117,10 +141,17 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
       setMatched(nextMatched);
       setFlipped([]);
       setLock(false);
-      if (nextMatched.size >= totalPairs) {
-        setFinalMoves(nextMoves);
-        setFinished(true);
+      const clearedBoard = nextMatched.size >= totalPairs;
+      if (clearedBoard) {
+        finishGame(nextMoves, true, true);
+      } else if (nextMoves >= stageConfig.maxMoves) {
+        finishGame(nextMoves, false, true);
       }
+      return;
+    }
+
+    if (nextMoves >= stageConfig.maxMoves) {
+      finishGame(nextMoves, false, true);
       return;
     }
 
@@ -130,17 +161,10 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
     }, 700);
   };
 
-  const handleNextStage = useCallback(async () => {
-    await refresh();
-    setFinished(false);
-    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
-  }, [refresh]);
-
   const rows = useMemo(() => Math.ceil(deck.length / gridCols), [deck.length, gridCols]);
   const cardSize = gridCols >= 5 ? 64 : 72;
-  const canAdvance = activeStage < MINIGAME_MAX_STAGE;
   const resultMoves = finished ? finalMoves : moves;
-  const allMatched = matchedCount >= totalPairs;
+  const resultAllMatched = finished ? finalAllMatched : matchedCount >= totalPairs;
   const handleHelpClose = () => {
     if (!gameStarted) setGameStarted(true);
     setShowHelp(false);
@@ -153,9 +177,9 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
       <View style={styles.headerRow}>
         <GameStatsBar
           stats={[
-            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-            { label: t('minigames.moves'), value: moves },
-            { label: t('minigames.time'), value: `${timeLeft}s` },
+            { label: t('minigames.memoryTurns'), value: `${moves}/${stageConfig.maxMoves}` },
+            { label: t('minigames.memoryPairs'), value: `${matchedCount}/${totalPairs}` },
+            { label: t('minigames.memoryTurnsLeft'), value: turnsRemaining },
           ]}
         />
       </View>
@@ -166,6 +190,7 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
           onPress={() => setShowHelp(true)}
         />
       </View>
+      <TimeProgressBar timeLeft={timeLeft} totalTime={stageConfig.timeSeconds} />
       <View style={[styles.grid, { minHeight: rows * (cardSize + 8) }]}>
         {deck.map((card) => {
           const isOpen = flipped.includes(card.id) || matched.has(card.pairId);
@@ -194,18 +219,21 @@ export function MemoryCardGame({ initialStage }: { initialStage?: number } = {})
         gameId="memory"
         stage={activeStage}
         finished={finished}
-        scoreLabel={t('minigames.finalScore')}
-        scoreValue={String(resultMoves)}
-        detail={allMatched ? t('minigames.memoryResult', { moves: resultMoves }) : t('minigames.retryStage')}
-        stageResult={{ moves: resultMoves, allMatched }}
+        scoreLabel={t('minigames.memoryTurns')}
+        scoreValue={`${resultMoves}/${stageConfig.maxMoves}`}
+        detail={
+          resultAllMatched
+            ? t('minigames.memoryResult', { moves: resultMoves })
+            : t('minigames.memoryFail', { moves: resultMoves, max: stageConfig.maxMoves })
+        }
+        stageResult={{ moves: resultMoves, allMatched: resultAllMatched }}
         onRestart={(stage) => {
           const target = stage ?? 1;
           if (target !== activeStage) setActiveStage(target);
           else restart(target);
         }}
+        onContinueStage={continueAfterAd}
         onProgressUpdated={refresh}
-        onNextStage={canAdvance ? handleNextStage : undefined}
-        nextStageLabel={t('minigames.nextStage')}
       />
       <HowToPlayModal
         visible={showHelp}
@@ -229,7 +257,7 @@ const styles = StyleSheet.create({
   helpRow: {
     alignItems: 'flex-end',
     marginTop: -theme.spacing.xs,
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   grid: {
     flexDirection: 'row',

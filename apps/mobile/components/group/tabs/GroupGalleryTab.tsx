@@ -11,6 +11,7 @@ import {
   Switch,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -23,13 +24,14 @@ import {
   type Quest,
   type Visit,
 } from '@tingting/shared';
-import { pickPhoto } from '@/lib/pick-photo';
+import { pickGalleryPhotos, pickCameraPhoto, pickPhoto } from '@/lib/pick-photo';
 import { savePhotoToGallery } from '@/lib/save-photo';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
+import { PhotoEditorPanel } from '@/components/PhotoEditorPanel';
 import { StarAmount } from '@/components/StarAmount';
 import { theme } from '@/constants/theme';
 
@@ -59,14 +61,17 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
   const [reviewPublic, setReviewPublic] = useState(true);
   const [savingReview, setSavingReview] = useState(false);
   const [sharedUploading, setSharedUploading] = useState(false);
+  const [editorQueue, setEditorQueue] = useState<string[]>([]);
+  const [editorIndex, setEditorIndex] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
 
-  const stationQuestCompleted = quests.some(
+  const regionQuestCompleted = quests.some(
     (quest) =>
       quest.id === buildGroupStationQuestId(regionCode) &&
       quest.regionCode === regionCode &&
       quest.completed,
   );
-  const unlocked = (stationQuestCompleted ? FREE_GALLERY_SLOTS : 0) + (group.unlockedGallerySlots ?? 0);
+  const unlocked = (regionQuestCompleted ? FREE_GALLERY_SLOTS : 0) + (group.unlockedGallerySlots ?? 0);
   const batchCost = getGallerySlotUnlockCost();
   const members = useMemo(() => {
     if (group.members && group.members.length > 0) return group.members;
@@ -114,7 +119,19 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
     : null;
   const selectedPhotoIndex = selectedVisit ? activePhotos.findIndex((visit) => visit.id === selectedVisit.id) : -1;
   const selectedPhotoPosition = selectedPhotoIndex >= 0 ? selectedPhotoIndex + 1 : 0;
-  const visibleSlotCount = Math.max(unlocked, activePhotos.length);
+  const slotCount = unlocked;
+  const remainingSharedSlots = Math.max(0, unlocked - sharedPhotos.length);
+
+  const canStartSharedUpload = canUploadShared && remainingSharedSlots > 0 && !sharedUploading;
+  const canStartPersonalUpload = personalPhotos.length < unlocked;
+
+  const handleViewerPress = () => {
+    if (subTab === 'shared') {
+      if (canStartSharedUpload) startSharedUpload();
+      return;
+    }
+    if (canStartPersonalUpload) void uploadPersonalPhoto();
+  };
 
   const confirmUnlockSlots = () => {
     Alert.alert(
@@ -137,40 +154,108 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
     );
   };
 
-  const uploadSharedPhoto = async () => {
+  const openSharedEditor = (uris: string[]) => {
+    if (uris.length === 0) return;
+    setEditorQueue(uris);
+    setEditorIndex(0);
+    setEditorOpen(true);
+  };
+
+  const closeSharedEditor = () => {
+    if (sharedUploading) return;
+    setEditorOpen(false);
+    setEditorQueue([]);
+    setEditorIndex(0);
+  };
+
+  const confirmCloseSharedEditor = () => {
+    if (sharedUploading) return;
+    Alert.alert(t('group.gallerySharedUpload'), t('group.galleryUploadCancelConfirm'), [
+      { text: t('header.cancel'), style: 'cancel' },
+      { text: t('group.galleryUploadAbort'), style: 'destructive', onPress: closeSharedEditor },
+    ]);
+  };
+
+  const startSharedUpload = () => {
     if (!canUploadShared) {
       Alert.alert(t('common.alert'), t('group.galleryUploadPermissionDenied'));
       return;
     }
+    const regionPlaces = places.filter((p) => p.regionCode === regionCode);
+    if (regionPlaces.length === 0) {
+      Alert.alert(t('common.alert'), t('group.noPlacesInRegion'));
+      return;
+    }
+    if (remainingSharedSlots <= 0) {
+      Alert.alert(t('common.alert'), t('group.galleryFull'));
+      return;
+    }
+
+    Alert.alert(
+      t('group.gallerySharedUpload'),
+      t('group.galleryUploadPickLimit', { count: remainingSharedSlots }),
+      [
+        {
+          text: t('visits.fromLibrary'),
+          onPress: async () => {
+            setSharedUploading(true);
+            try {
+              const uris = await pickGalleryPhotos(remainingSharedSlots, {
+                permissionTitle: t('visits.permissionTitle'),
+                permissionMessage: t('visits.permissionMessage'),
+              });
+              openSharedEditor(uris);
+            } finally {
+              setSharedUploading(false);
+            }
+          },
+        },
+        {
+          text: t('visits.fromCamera'),
+          onPress: async () => {
+            setSharedUploading(true);
+            try {
+              const photoUri = await pickCameraPhoto({
+                permissionTitle: t('visits.cameraPermissionTitle'),
+                permissionMessage: t('visits.cameraPermissionMessage'),
+              });
+              if (photoUri) openSharedEditor([photoUri]);
+            } finally {
+              setSharedUploading(false);
+            }
+          },
+        },
+        { text: t('header.cancel'), style: 'cancel' },
+      ],
+    );
+  };
+
+  const uploadEditedSharedPhoto = async (uri: string) => {
+    const regionPlaces = places.filter((p) => p.regionCode === regionCode);
+    if (regionPlaces.length === 0) {
+      Alert.alert(t('common.error'), t('group.noPlacesInRegion'));
+      return;
+    }
+
     setSharedUploading(true);
     try {
-      const regionPlaces = places.filter((p) => p.regionCode === regionCode);
-      if (regionPlaces.length === 0) {
-        Alert.alert(t('common.alert'), t('group.noPlacesInRegion'));
-        return;
-      }
-      if (sharedPhotos.length >= unlocked) {
-        Alert.alert(t('common.alert'), t('group.galleryFull'));
-        return;
-      }
-      const photoUri = await pickPhoto({
-        upload: t('group.gallerySharedUpload'),
-        fromLibrary: t('visits.fromLibrary'),
-        fromCamera: t('visits.fromCamera'),
-        cancel: t('header.cancel'),
-        libraryPermissionTitle: t('visits.permissionTitle'),
-        libraryPermissionMessage: t('visits.permissionMessage'),
-        cameraPermissionTitle: t('visits.cameraPermissionTitle'),
-        cameraPermissionMessage: t('visits.cameraPermissionMessage'),
-      });
-      if (!photoUri) return;
       await api.createVisit({
         placeId: regionPlaces[0].id,
-        photoUri,
+        photoUri: uri,
         groupId: group.id,
         isSharedGallery: true,
       });
+
+      const uploadedCount = editorIndex + 1;
+      const next = editorIndex + 1;
+      if (next < editorQueue.length) {
+        setEditorIndex(next);
+        return;
+      }
+
+      closeSharedEditor();
       onUpdated();
+      Alert.alert(t('common.alert'), t('group.galleryUploadDone', { count: uploadedCount }));
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('group.failed'));
     } finally {
@@ -451,6 +536,11 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
                         {selectedPhotoPosition}/{activePhotos.length}
                       </Text>
                     </View>
+                    {canStartSharedUpload ? (
+                      <Pressable style={styles.uploadBtn} onPress={startSharedUpload}>
+                        <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+                      </Pressable>
+                    ) : null}
                     <Pressable style={styles.downloadBtn} onPress={() => downloadPhoto(selectedVisit)}>
                       <Ionicons name="download-outline" size={18} color="#fff" />
                     </Pressable>
@@ -472,7 +562,14 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
             ) : null}
           </Pressable>
         ) : (
-          <View style={styles.viewerEmpty}>
+          <Pressable
+            style={[
+              styles.viewerEmpty,
+              (subTab === 'shared' ? canStartSharedUpload : canStartPersonalUpload) && styles.viewerEmptyActionable,
+            ]}
+            onPress={handleViewerPress}
+            disabled={subTab === 'shared' ? !canStartSharedUpload : !canStartPersonalUpload}
+          >
             <Ionicons
               name={subTab === 'shared' ? 'images-outline' : 'journal-outline'}
               size={48}
@@ -482,9 +579,22 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
               {subTab === 'shared' ? t('group.gallerySharedEmpty') : t('group.galleryPersonalEmpty')}
             </Text>
             <Text style={styles.viewerEmptyHint}>
-              {subTab === 'shared' ? t('group.gallerySharedDesc') : t('group.galleryPersonalDesc')}
+              {subTab === 'shared'
+                ? canStartSharedUpload
+                  ? t('group.galleryViewerTapUpload')
+                  : canUploadShared
+                    ? t('group.galleryFull')
+                    : t('group.galleryUploadPermissionDenied')
+                : canStartPersonalUpload
+                  ? t('group.galleryViewerTapReview')
+                  : t('group.galleryFull')}
             </Text>
-          </View>
+            {subTab === 'shared' && canStartSharedUpload ? (
+              <Text style={styles.viewerSlotHint}>
+                {t('group.galleryUploadPickLimit', { count: remainingSharedSlots })}
+              </Text>
+            ) : null}
+          </Pressable>
         )}
       </View>
 
@@ -495,30 +605,11 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
         style={styles.strip}
         contentContainerStyle={styles.stripContent}
       >
-        {Array.from({ length: visibleSlotCount }, (_, slotIndex) => {
+        {Array.from({ length: slotCount }, (_, slotIndex) => {
           const visit = activePhotos[slotIndex];
-          const sharedUploadDisabled = subTab === 'shared' && (!canUploadShared || sharedUploading);
           if (!visit) {
             return (
-              <Pressable
-                key={`empty-${slotIndex}`}
-                style={[styles.thumb, styles.thumbAdd, sharedUploadDisabled && styles.thumbDisabled]}
-                onPress={sharedUploadDisabled ? undefined : subTab === 'shared' ? uploadSharedPhoto : uploadPersonalPhoto}
-                disabled={sharedUploadDisabled}
-              >
-                <Ionicons
-                  name={sharedUploadDisabled ? 'lock-closed-outline' : 'add'}
-                  size={24}
-                  color={sharedUploadDisabled ? theme.colors.textMuted : theme.colors.primaryLight}
-                />
-                <Text style={styles.thumbAddLabel}>
-                  {sharedUploadDisabled
-                    ? t('group.galleryUploadPermissionShort')
-                    : subTab === 'shared'
-                      ? t('group.gallerySharedUpload')
-                      : t('group.reviewWriteTitle')}
-                </Text>
-              </Pressable>
+              <View key={`empty-${slotIndex}`} style={[styles.thumb, styles.thumbEmpty]} />
             );
           }
           const uri = visit.editedPhotoUri ?? visit.photoUri;
@@ -603,6 +694,39 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
           <PremiumButton title={t('header.cancel')} onPress={closeReviewModal} variant="outline" />
         </View>
       </AppModal>
+
+      <AppModal
+        visible={editorOpen}
+        variant="fullscreen"
+        animationType="slide"
+        onRequestClose={confirmCloseSharedEditor}
+      >
+        <SafeAreaView style={styles.editorScreen} edges={['top', 'bottom']}>
+          <View style={styles.editorHeader}>
+            <Pressable onPress={confirmCloseSharedEditor} hitSlop={8} disabled={sharedUploading}>
+              <Ionicons name="close" size={22} color={theme.colors.textMuted} />
+            </Pressable>
+            <Text style={styles.editorTitle}>
+              {editorQueue.length > 1
+                ? t('group.galleryUploadProgress', {
+                    current: editorIndex + 1,
+                    total: editorQueue.length,
+                  })
+                : t('group.gallerySharedUpload')}
+            </Text>
+            <View style={styles.editorHeaderSide} />
+          </View>
+          {editorQueue[editorIndex] ? (
+            <PhotoEditorPanel
+              key={`${editorIndex}-${editorQueue[editorIndex]}`}
+              sourceUri={editorQueue[editorIndex]}
+              showPickAnother={false}
+              saveLabel={t('group.galleryUploadToGallery')}
+              onSave={uploadEditedSharedPhoto}
+            />
+          ) : null}
+        </SafeAreaView>
+      </AppModal>
     </View>
   );
 }
@@ -677,6 +801,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  uploadBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 56,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   photoCountBadge: {
     position: 'absolute',
     top: 12,
@@ -715,8 +850,33 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
   },
+  viewerEmptyActionable: {
+    backgroundColor: theme.colors.tint.soft,
+  },
   viewerEmptyText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '600' },
   viewerEmptyHint: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  viewerSlotHint: {
+    color: theme.colors.primaryDark,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  editorScreen: { flex: 1, backgroundColor: theme.colors.background, gap: theme.spacing.sm },
+  editorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.sm,
+  },
+  editorHeaderSide: { width: 22 },
+  editorTitle: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   strip: { flexGrow: 0 },
   stripContent: { gap: THUMB_GAP, paddingHorizontal: 2, paddingVertical: 4 },
   thumb: {
@@ -732,25 +892,11 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryLight,
   },
   thumbImage: { width: '100%', height: '100%' },
-  thumbAdd: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  thumbEmpty: {
+    borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: theme.colors.primaryLight,
-    backgroundColor: theme.colors.tint.soft,
-    gap: 2,
-  },
-  thumbDisabled: {
-    opacity: 0.55,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceLight,
-  },
-  thumbAddLabel: {
-    color: theme.colors.primaryLight,
-    fontSize: 8,
-    fontWeight: '700',
-    textAlign: 'center',
-    paddingHorizontal: 2,
   },
   thumbUnlock: {
     alignItems: 'center',

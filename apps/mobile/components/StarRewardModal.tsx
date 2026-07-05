@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,12 +16,39 @@ interface Props {
   title?: string;
   subtitle?: string;
   onClose: () => void;
+  adBonusAmount?: number;
+  adBonusLabel?: string;
+  onAdBonus?: () => Promise<void>;
+  adBonusUsed?: boolean;
 }
 
-export function StarRewardModal({ visible, amount, totalStars, title, subtitle, onClose }: Props) {
+export function StarRewardModal({
+  visible,
+  amount,
+  totalStars,
+  title,
+  subtitle,
+  onClose,
+  adBonusAmount,
+  adBonusLabel,
+  onAdBonus,
+  adBonusUsed = false,
+}: Props) {
   const { t } = useLocale();
+  const [loading, setLoading] = useState(false);
   const heading = title ?? t('reward.title');
   const message = subtitle ?? t('reward.message', { amount });
+  const showAdBonus = !!onAdBonus && !!adBonusAmount && !adBonusUsed;
+
+  const handleAdBonus = async () => {
+    if (!onAdBonus) return;
+    setLoading(true);
+    try {
+      await onAdBonus();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AppModal visible={visible} animationType="fade" onRequestClose={onClose} variant="center">
@@ -65,7 +93,20 @@ export function StarRewardModal({ visible, amount, totalStars, title, subtitle, 
             <Text style={styles.total}>{t('reward.starTotal', { total: totalStars.toLocaleString() })}</Text>
           ) : null}
 
-          <PremiumButton title={t('common.continue')} onPress={onClose} />
+          {showAdBonus ? (
+            <PremiumButton
+              title={adBonusLabel ?? t('ads.watchForBonus', { amount: adBonusAmount })}
+              onPress={handleAdBonus}
+              loading={loading}
+              fullWidth
+            />
+          ) : null}
+          <PremiumButton
+            title={showAdBonus ? t('common.continue') : t('common.continue')}
+            onPress={onClose}
+            variant={showAdBonus ? 'outline' : undefined}
+            fullWidth
+          />
         </LinearGradient>
       </View>
     </AppModal>

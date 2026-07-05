@@ -9,7 +9,7 @@ type Props = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: ScrollViewProps['contentContainerStyle'];
-} & Pick<ScrollViewProps, 'refreshControl' | 'showsVerticalScrollIndicator' | 'keyboardShouldPersistTaps' | 'nestedScrollEnabled'>;
+} & Pick<ScrollViewProps, 'refreshControl' | 'showsVerticalScrollIndicator' | 'keyboardShouldPersistTaps' | 'nestedScrollEnabled' | 'scrollEnabled'>;
 
 export function TabPage({ children, style, contentContainerStyle, ...scrollProps }: Props) {
   const contentWidth = useContentWidth();

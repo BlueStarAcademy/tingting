@@ -268,22 +268,12 @@ export function SlimeBattleGame({ initialStage }: { initialStage?: number } = {}
     [aiCaptures, board, busy, finishCheck, finished, koPoint, playerCaptures, runAiTurn, turn],
   );
 
-  const handleNextStage = useCallback(async () => {
-    await refresh();
-    setFinished(false);
-    setWon(false);
-    bootedStageRef.current = null;
-    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
-  }, [refresh]);
-
   const handleRestart = useCallback((stage?: number) => {
     const targetStage = stage ?? 1;
     restart(targetStage);
     bootedStageRef.current = targetStage;
     if (targetStage !== activeStage) setActiveStage(targetStage);
   }, [activeStage, restart]);
-
-  const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;
 
   if (loading && !hasLoadedOnce.current) return null;
 
@@ -292,11 +282,8 @@ export function SlimeBattleGame({ initialStage }: { initialStage?: number } = {}
       <View style={styles.headerRow}>
         <GameStatsBar
           stats={[
-            { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-            {
-              label: t('minigames.slimePlayerScore'),
-              value: `${playerCaptures}/${stageConfig.playerTarget}`,
-            },
+            { label: t('minigames.score'), value: playerCaptures },
+            { label: t('minigames.targetScoreShort'), value: stageConfig.playerTarget },
             { label: t('minigames.slimeAiScore'), value: `${aiCaptures}/${SLIME_AI_WIN_TARGET}` },
           ]}
         />
@@ -385,8 +372,6 @@ export function SlimeBattleGame({ initialStage }: { initialStage?: number } = {}
         stageResult={{ won, playerCaptures }}
         onRestart={handleRestart}
         onProgressUpdated={refresh}
-        onNextStage={canAdvance ? handleNextStage : undefined}
-        nextStageLabel={t('minigames.nextStage')}
       />
       <HowToPlayModal
         visible={showHelp}

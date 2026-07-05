@@ -17,7 +17,6 @@ import {
   type GuessEntry,
   type GuessHint,
 } from '@/lib/minigames/guess-logic';
-import { MINIGAME_MAX_STAGE } from '@tingting/shared';
 import { MAIN_TAB_BAR_HEIGHT } from '@/constants/layout';
 import { theme } from '@/constants/theme';
 
@@ -52,7 +51,6 @@ export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
   const [finished, setFinished] = useState(false);
 
   const attemptsUsed = history.length;
-  const attemptsLeft = Math.max(0, stageConfig.maxAttempts - attemptsUsed);
   const narrowedRange = useMemo(() => {
     return history.reduce(
       (range, entry) => {
@@ -135,12 +133,6 @@ export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
     setInput((prev) => prev.slice(0, -1));
   }, []);
 
-  const handleNextStage = useCallback(async () => {
-    await refresh();
-    setFinished(false);
-    setActiveStage((stage) => Math.min(stage + 1, MINIGAME_MAX_STAGE));
-  }, [refresh]);
-
   const handleRestart = useCallback((stage?: number) => {
     const targetStage = stage ?? 1;
     bootedStageRef.current = null;
@@ -148,8 +140,6 @@ export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
     bootedStageRef.current = targetStage;
     if (targetStage !== activeStage) setActiveStage(targetStage);
   }, [activeStage, restart]);
-
-  const canAdvance = activeStage < MINIGAME_MAX_STAGE && won;
 
   if (loading && !hasLoadedOnce.current) return null;
 
@@ -159,9 +149,8 @@ export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
         <View style={styles.headerRow}>
           <GameStatsBar
             stats={[
-              { label: t('minigames.stage'), value: `${activeStage}/${MINIGAME_MAX_STAGE}` },
-              { label: t('minigames.attempts'), value: `${attemptsUsed}/${stageConfig.maxAttempts}` },
-              { label: t('minigames.remaining'), value: attemptsLeft },
+              { label: t('minigames.guessCurrentTurn'), value: attemptsUsed },
+              { label: t('minigames.guessTurnLimit'), value: stageConfig.maxAttempts },
             ]}
           />
         </View>
@@ -229,8 +218,6 @@ export function UpDownGame({ initialStage }: { initialStage?: number } = {}) {
         stageResult={{ won, attemptsUsed }}
         onRestart={handleRestart}
         onProgressUpdated={refresh}
-        onNextStage={canAdvance ? handleNextStage : undefined}
-        nextStageLabel={t('minigames.nextStage')}
         nextOrExitOnly
       />
 

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, useMemo, type ReactNode, type RefObject } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,11 @@ import {
   Pressable,
   ActivityIndicator,
   PanResponder,
+  Platform,
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { captureRef } from 'react-native-view-shot';
 import { useFocusEffect } from 'expo-router';
 import {
   getEditorFeaturesByCategory,
@@ -31,6 +31,7 @@ import { FeaturePassModal } from '@/components/FeaturePassModal';
 import { api } from '@/lib/api';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdFree } from '@/hooks/useAdFree';
 import { tabPill } from '@/lib/ui';
 import {
   DEFAULT_ADJUSTMENTS,
@@ -41,7 +42,9 @@ import {
   normalizePhotoUri,
   type PhotoAdjustmentValues,
 } from '@/lib/photo-effects';
-import { savePhotoToGallery } from '@/lib/save-photo';
+import { capturePreviewUri, waitForPaintFrames } from '@/lib/capture-preview';
+import { savePhotoWithFilename } from '@/lib/save-photo';
+import { PhotoSaveSheet } from '@/components/PhotoSaveSheet';
 import { theme } from '@/constants/theme';
 
 interface Props {
@@ -51,6 +54,10 @@ interface Props {
   onSave?: (uri: string) => Promise<void>;
   saveLabel?: string;
   showPickAnother?: boolean;
+  /** 사진 탭 등: 저장 시 기기 갤러리에 바로 저장 */
+  saveToDevice?: boolean;
+  /** 스티커 드래그 중 상위 ScrollView 잠금용 */
+  onScrollLockChange?: (locked: boolean) => void;
 }
 
 type EditorTab = 'filter' | 'ai' | 'adjust' | 'sticker' | 'frame' | 'effect' | 'watermark';
@@ -80,21 +87,33 @@ const ADJUSTMENT_KEYS: AdjustmentKey[] = [
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+const STICKER_SCALE_MIN = 0.5;
+const STICKER_SCALE_MAX = 2.4;
+
 function DraggableSticker({
   sticker,
   emoji,
+  isSelected,
   onSelect,
   onUpdate,
+  onDragStart,
+  onDragEnd,
   previewSize,
 }: {
   sticker: StickerInstance;
   emoji: string;
+  isSelected: boolean;
   onSelect: () => void;
   onUpdate: (id: string, patch: Partial<StickerInstance>) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   previewSize: { width: number; height: number };
 }) {
   const posRef = useRef({ x: sticker.x, y: sticker.y });
   posRef.current = { x: sticker.x, y: sticker.y };
+
+  const scaleRef = useRef(sticker.scale);
+  scaleRef.current = sticker.scale;
 
   const sizeRef = useRef(previewSize);
   sizeRef.current = previewSize;
@@ -105,15 +124,34 @@ function DraggableSticker({
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
+  const onDragStartRef = useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
+
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
+
   const idRef = useRef(sticker.id);
   const dragStartRef = useRef({ x: 0, y: 0 });
+  const scaleStartRef = useRef(sticker.scale);
+  const draggingRef = useRef(false);
+  const resizingRef = useRef(false);
 
-  const panResponder = useRef(
+  const endGesture = () => {
+    draggingRef.current = false;
+    resizingRef.current = false;
+    onDragEndRef.current();
+  };
+
+  const shouldDrag = (dx: number, dy: number) => draggingRef.current || Math.abs(dx) > 2 || Math.abs(dy) > 2;
+
+  const movePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => shouldDrag(gesture.dx, gesture.dy),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
+        draggingRef.current = true;
+        onDragStartRef.current();
         onSelectRef.current();
         dragStartRef.current = { x: posRef.current.x, y: posRef.current.y };
       },
@@ -125,14 +163,39 @@ function DraggableSticker({
           y: clamp(start.y + gesture.dy, -32, Math.max(size.height - 20, 0)),
         });
       },
+      onPanResponderRelease: endGesture,
+      onPanResponderTerminate: endGesture,
+    }),
+  ).current;
+
+  const resizePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        resizingRef.current = true;
+        onDragStartRef.current();
+        onSelectRef.current();
+        scaleStartRef.current = scaleRef.current;
+      },
+      onPanResponderMove: (_, gesture) => {
+        const delta = (gesture.dx + gesture.dy) / 2;
+        onUpdateRef.current(idRef.current, {
+          scale: clamp(scaleStartRef.current + delta / 90, STICKER_SCALE_MIN, STICKER_SCALE_MAX),
+        });
+      },
+      onPanResponderRelease: endGesture,
+      onPanResponderTerminate: endGesture,
     }),
   ).current;
 
   return (
     <View
-      {...panResponder.panHandlers}
       style={[
-        styles.stickerOverlay,
+        styles.stickerContainer,
         {
           left: sticker.x,
           top: sticker.y,
@@ -140,7 +203,22 @@ function DraggableSticker({
         },
       ]}
     >
-      <Text style={styles.stickerOverlayText}>{emoji}</Text>
+      {isSelected ? <View style={styles.stickerSelection} pointerEvents="none" /> : null}
+      <View
+        {...movePanResponder.panHandlers}
+        style={[styles.stickerBody, Platform.OS === 'web' ? styles.stickerOverlayWeb : null]}
+      >
+        <Text style={styles.stickerOverlayText}>{emoji}</Text>
+      </View>
+      {isSelected ? (
+        <View
+          {...resizePanResponder.panHandlers}
+          style={[styles.stickerResizeHandle, Platform.OS === 'web' ? styles.stickerOverlayWeb : null]}
+          accessibilityLabel="Resize sticker"
+        >
+          <Ionicons name="resize-outline" size={12} color={theme.colors.primaryDark} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -169,17 +247,24 @@ export function PhotoEditorPanel({
   onSave,
   saveLabel,
   showPickAnother = true,
+  saveToDevice = false,
+  onScrollLockChange,
 }: Props) {
   const { t, locale } = useLocale();
   const { refresh } = useAuth();
+  const { watchAd } = useAdFree();
   const lang = locale === 'ko' ? 'ko' : 'en';
   const previewRef = useRef<View>(null);
 
   const [workingUri, setWorkingUri] = useState(sourceUri ?? '');
   const [passes, setPasses] = useState<FeaturePass[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [passLoading, setPassLoading] = useState(false);
   const [passModalFeature, setPassModalFeature] = useState<EditorFeature | null>(null);
   const [passModalOpen, setPassModalOpen] = useState(false);
+  const [adUnlockLoading, setAdUnlockLoading] = useState(false);
+  const [saveSheetOpen, setSaveSheetOpen] = useState(false);
+  const [pendingSaveUri, setPendingSaveUri] = useState<string | null>(null);
 
   const [activeFilterId, setActiveFilterId] = useState<string | null>(null);
   const [activeFrameId, setActiveFrameId] = useState<string | null>(null);
@@ -191,6 +276,16 @@ export function PhotoEditorPanel({
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 300 });
   const [watermark, setWatermark] = useState(true);
   const [activeTab, setActiveTab] = useState<EditorTab>('filter');
+  const [stickerDragging, setStickerDragging] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  const setStickerDragActive = useCallback(
+    (active: boolean) => {
+      setStickerDragging(active);
+      onScrollLockChange?.(active);
+    },
+    [onScrollLockChange],
+  );
 
   const reloadPasses = useCallback(() => {
     api.getFeaturePasses().then(setPasses);
@@ -238,6 +333,22 @@ export function PhotoEditorPanel({
     ...(framePreset.overlays ?? []),
   ];
 
+  const hasActiveEdits = useMemo(() => {
+    if (activeStickers.length > 0) return true;
+    if (activeFilterId || activeFrameId || activeEffects.length > 0) return true;
+    if (showWatermark) return true;
+    if (allOverlays.length > 0) return true;
+    return ADJUSTMENT_KEYS.some((key) => adjustments[key] !== DEFAULT_ADJUSTMENTS[key]);
+  }, [
+    activeStickers.length,
+    activeFilterId,
+    activeFrameId,
+    activeEffects.length,
+    showWatermark,
+    allOverlays.length,
+    adjustments,
+  ]);
+
   const updateUri = (uri: string) => {
     setWorkingUri(uri);
     onSourceChange?.(uri);
@@ -254,7 +365,7 @@ export function PhotoEditorPanel({
 
   const purchasePass = async (tier: FeaturePassTier) => {
     if (!passModalFeature) return;
-    setLoading(true);
+    setPassLoading(true);
     try {
       await api.purchaseFeaturePass(passModalFeature.id, tier);
       await refresh();
@@ -264,15 +375,49 @@ export function PhotoEditorPanel({
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
     } finally {
-      setLoading(false);
+      setPassLoading(false);
+    }
+  };
+
+  const unlockViaAd = async () => {
+    if (!passModalFeature) return;
+    setAdUnlockLoading(true);
+    try {
+      const watched = await watchAd('editor_unlock_1h');
+      if (!watched) return;
+      await api.grantEditorFeatureViaAd(passModalFeature.id);
+      await refresh();
+      reloadPasses();
+      setPassModalOpen(false);
+      Alert.alert(t('photos.passPurchased'), t('photos.passAdUnlockedMessage'));
+    } catch (e: unknown) {
+      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('shop.insufficient'));
+    } finally {
+      setAdUnlockLoading(false);
     }
   };
 
   const flattenPreview = async (): Promise<string> => {
-    if (!previewRef.current) return workingUri;
+    setIsCapturing(true);
     setSelectedStickerId(null);
-    const uri = await captureRef(previewRef, { format: 'jpg', quality: 0.92 });
-    return uri;
+    await waitForPaintFrames(3);
+    try {
+      return await capturePreviewUri(previewRef, workingUri, {
+        mustCapture: hasActiveEdits,
+        width: previewSize.width,
+        height: previewSize.height,
+      });
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const prepareSaveUri = async (uri: string): Promise<string> => {
+    try {
+      return await normalizePhotoUri(uri);
+    } catch {
+      return uri;
+    }
   };
 
   const applyFlattened = async () => {
@@ -280,7 +425,7 @@ export function PhotoEditorPanel({
       onPickAnother?.();
       return;
     }
-    setLoading(true);
+    setSaving(true);
     try {
       const uri = await flattenPreview();
       updateUri(uri);
@@ -293,7 +438,7 @@ export function PhotoEditorPanel({
     } catch {
       Alert.alert(t('common.error'), t('photos.applyFailed'));
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -343,14 +488,14 @@ export function PhotoEditorPanel({
         onPickAnother?.();
         return;
       }
-      setLoading(true);
+      setSaving(true);
       try {
         const uri = await applyPhotoAdjust(workingUri, feature.effectKey);
         updateUri(uri);
       } catch {
         Alert.alert(t('common.error'), t('photos.applyFailed'));
       } finally {
-        setLoading(false);
+        setSaving(false);
       }
     });
   };
@@ -388,31 +533,52 @@ export function PhotoEditorPanel({
 
   const resetAdjustments = () => setAdjustments(DEFAULT_ADJUSTMENTS);
 
+  const saveLabels = () => ({
+    permissionTitle: t('photos.savePermissionTitle'),
+    permissionMessage: t('photos.savePermissionMessage'),
+    savedTitle: t('photos.savedTitle'),
+    savedMessage: t('photos.savedMessage'),
+    savedMessageNamed: (name: string) => t('photos.savedMessageNamed', { name }),
+    failed: t('photos.saveFailed'),
+    webUnsupported: t('photos.webUnsupported'),
+  });
+
+  const closeSaveSheet = () => {
+    if (saving) return;
+    setSaveSheetOpen(false);
+    setPendingSaveUri(null);
+  };
+
+  const confirmSaveToDevice = async (filename: string) => {
+    if (!pendingSaveUri) return;
+    setSaving(true);
+    try {
+      const saved = await savePhotoWithFilename(pendingSaveUri, filename, saveLabels());
+      if (saved) closeSaveSheet();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!workingUri) {
       onPickAnother?.();
       return;
     }
-    setLoading(true);
+    setSaving(true);
     try {
-      let uri = await flattenPreview();
-      uri = await normalizePhotoUri(uri);
+      const captured = await flattenPreview();
+      const uri = await prepareSaveUri(captured);
       if (onSave) {
         await onSave(uri);
-      } else {
-        await savePhotoToGallery(uri, {
-          permissionTitle: t('photos.savePermissionTitle'),
-          permissionMessage: t('photos.savePermissionMessage'),
-          savedTitle: t('photos.savedTitle'),
-          savedMessage: t('photos.savedMessage'),
-          failed: t('photos.saveFailed'),
-          webUnsupported: t('photos.webUnsupported'),
-        });
+      } else if (saveToDevice) {
+        setPendingSaveUri(uri);
+        setSaveSheetOpen(true);
       }
     } catch {
       Alert.alert(t('common.error'), t('photos.saveFailed'));
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -508,9 +674,15 @@ export function PhotoEditorPanel({
           </Pressable>
         </View>
         <Text style={styles.controlLabel}>{t('photos.stickerScale')}</Text>
-        {renderValueSlider(selectedSticker.scale, (value) =>
-          updateSticker(selectedSticker.id, { scale: clamp(value, 0.5, 2.4) }),
-        0.5, 2.4)}
+        {renderValueSlider(
+          selectedSticker.scale,
+          (value) =>
+            updateSticker(selectedSticker.id, {
+              scale: clamp(value, STICKER_SCALE_MIN, STICKER_SCALE_MAX),
+            }),
+          STICKER_SCALE_MIN,
+          STICKER_SCALE_MAX,
+        )}
         <Text style={styles.controlLabel}>{t('photos.stickerRotate')}</Text>
         {renderValueSlider(selectedSticker.rotation, (value) =>
           updateSticker(selectedSticker.id, { rotation: clamp(value, -45, 45) }),
@@ -607,13 +779,32 @@ export function PhotoEditorPanel({
         </ScrollView>
         {activeTab === 'adjust' ? renderAdjustControls() : null}
         {activeTab === 'sticker' ? renderStickerControls() : null}
+        {selectedSticker && activeTab !== 'sticker' ? (
+          <View style={styles.stickerQuickControls}>
+            <Text style={styles.controlLabel}>{t('photos.stickerScale')}</Text>
+            {renderValueSlider(
+              selectedSticker.scale,
+              (value) =>
+                updateSticker(selectedSticker.id, {
+                  scale: clamp(value, STICKER_SCALE_MIN, STICKER_SCALE_MAX),
+                }),
+              STICKER_SCALE_MIN,
+              STICKER_SCALE_MAX,
+            )}
+          </View>
+        ) : null}
       </>
     );
   };
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!stickerDragging}
+        keyboardShouldPersistTaps="handled"
+      >
         <View
           ref={previewRef}
           collapsable={false}
@@ -670,8 +861,11 @@ export function PhotoEditorPanel({
                   key={sticker.id}
                   sticker={sticker}
                   emoji={feature.emoji}
+                  isSelected={!isCapturing && sticker.id === selectedStickerId}
                   onSelect={() => setSelectedStickerId(sticker.id)}
                   onUpdate={updateSticker}
+                  onDragStart={() => setStickerDragActive(true)}
+                  onDragEnd={() => setStickerDragActive(false)}
                   previewSize={previewSize}
                 />
               );
@@ -680,7 +874,7 @@ export function PhotoEditorPanel({
           </View>
         </View>
 
-        {loading ? <ActivityIndicator color={theme.colors.primaryLight} style={styles.loader} /> : null}
+        {saving ? <ActivityIndicator color={theme.colors.primaryLight} style={styles.loader} /> : null}
 
         <ScrollView
           horizontal
@@ -707,7 +901,7 @@ export function PhotoEditorPanel({
           <PremiumButton
             title={t('photos.applyEdits')}
             onPress={applyFlattened}
-            loading={loading}
+            loading={saving}
             disabled={!hasPhoto}
             variant="outline"
             fullWidth={false}
@@ -716,7 +910,7 @@ export function PhotoEditorPanel({
           <PremiumButton
             title={saveLabel ?? t('photos.saveToGallery')}
             onPress={handleSave}
-            loading={loading}
+            loading={saving}
             disabled={!hasPhoto}
             fullWidth={false}
             style={styles.actionButton}
@@ -736,7 +930,16 @@ export function PhotoEditorPanel({
         feature={passModalFeature}
         onClose={() => setPassModalOpen(false)}
         onPurchase={purchasePass}
-        loading={loading}
+        onWatchAd={unlockViaAd}
+        adUnlockLoading={adUnlockLoading}
+        loading={passLoading}
+      />
+
+      <PhotoSaveSheet
+        visible={saveSheetOpen}
+        loading={saving}
+        onClose={closeSaveSheet}
+        onSave={confirmSaveToDevice}
       />
     </>
   );
@@ -777,7 +980,41 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   previewEmptyButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  stickerOverlay: { position: 'absolute', minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  stickerContainer: {
+    position: 'absolute',
+    minWidth: 52,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stickerBody: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stickerSelection: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 2,
+    borderColor: theme.colors.primaryLight,
+    borderRadius: theme.radius.sm,
+    borderStyle: 'dashed',
+  },
+  stickerResizeHandle: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primaryLight,
+    zIndex: 2,
+  },
+  stickerOverlayWeb: { touchAction: 'none', cursor: 'grab', userSelect: 'none' } as const,
   stickerOverlayText: { fontSize: 40, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 3, textShadowOffset: { width: 0, height: 2 } },
   watermark: {
     position: 'absolute',
@@ -817,6 +1054,15 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { color: theme.colors.text, fontWeight: '600' },
   controlLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
+  stickerQuickControls: {
+    gap: theme.spacing.xs,
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+  },
   helper: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },
   deleteButton: {
     paddingHorizontal: theme.spacing.sm,

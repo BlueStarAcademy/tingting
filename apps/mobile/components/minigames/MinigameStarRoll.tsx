@@ -19,8 +19,8 @@ export function MinigameStarRoll({ amount }: Props) {
 
   useEffect(() => {
     let tick = 0;
-    const totalTicks = 24;
-    let delay = 60;
+    const totalTicks = 12;
+    let delay = 40;
 
     const runTick = () => {
       tick += 1;
@@ -29,21 +29,21 @@ export function MinigameStarRoll({ amount }: Props) {
         setDisplay(amount);
         setRolling(false);
         Animated.parallel([
-          Animated.spring(scale, { toValue: 1, friction: 4, useNativeDriver: true }),
-          Animated.timing(glow, { toValue: 1, duration: 320, useNativeDriver: true }),
+          Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 1, duration: 220, useNativeDriver: true }),
         ]).start();
         return;
       }
 
-      if (tick >= totalTicks - 4) {
+      if (tick >= totalTicks - 3) {
         setDisplay(amount);
-        delay = 140;
+        delay = 70;
       } else {
         setDisplay(
           MINIGAME_FINAL_STAR_MIN +
             Math.floor(Math.random() * (MINIGAME_FINAL_STAR_MAX - MINIGAME_FINAL_STAR_MIN + 1)),
         );
-        delay = tick < 14 ? 65 : 95;
+        delay = tick < 7 ? 42 : 58;
       }
 
       timer = setTimeout(runTick, delay);

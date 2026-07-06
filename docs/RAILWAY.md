@@ -48,6 +48,9 @@
 |----------|-----|
 | `DATABASE_URL` | Postgres 서비스 → **Add Reference** → `DATABASE_URL` |
 | `JWT_SECRET` | 32자 이상 랜덤 문자열 (예: `openssl rand -hex 32`) |
+| `SUPABASE_URL` | Supabase 프로젝트 URL (예: `https://xxx.supabase.co`) |
+| `SUPABASE_JWT_SECRET` | Supabase Dashboard → Settings → API → JWT Secret |
+| `SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API → anon public key |
 | `NODE_ENV` | `production` |
 | `CORS_ORIGIN` | *(4단계 Web URL 생성 후 입력)* |
 
@@ -78,7 +81,11 @@
 | Variable | 값 |
 |----------|-----|
 | `EXPO_PUBLIC_API_URL` | 3단계 API Public URL (끝 `/` 없이) |
+| `EXPO_PUBLIC_SITE_URL` | Web Public URL (예: `https://tingting-web-production-xxxx.up.railway.app`) |
+| `EXPO_PUBLIC_APK_DOWNLOAD_URL` | EAS 빌드 APK 직접 URL (서버가 `/tingting.apk`로 프록시) |
 | `PORT` | Railway가 자동 설정 (수동 입력 불필요) |
+
+> **APK 다운로드:** `EXPO_PUBLIC_SITE_URL`이 설정되면 QR·다운로드 링크는 `https://<사이트>/tingting.apk`로 통일됩니다. 실제 파일은 `EXPO_PUBLIC_APK_DOWNLOAD_URL`에서 가져옵니다.
 
 > **중요:** `EXPO_PUBLIC_API_URL`은 **빌드 타임** 변수입니다. API URL 변경 시 Web 서비스 **Redeploy** 필요.
 

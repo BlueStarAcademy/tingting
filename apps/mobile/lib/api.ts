@@ -34,6 +34,9 @@ export const api = {
       const sb = getSupabase()!;
       const { data } = await sb.auth.getSession();
       if (data.session) {
+        if (isHttpApiConfigured()) {
+          await httpApi.ensureApiAuth();
+        }
         return { userId: data.session.user.id, email: data.session.user.email ?? '', isDemo: false };
       }
     }
@@ -46,6 +49,9 @@ export const api = {
       const sb = getSupabase()!;
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      if (isHttpApiConfigured()) {
+        await httpApi.syncSupabaseAuth();
+      }
       return { userId: data.user!.id, email: data.user!.email ?? '', isDemo: false };
     }
     if (isHttpApiConfigured()) return httpApi.signIn(email, password);
@@ -64,6 +70,9 @@ export const api = {
         },
       });
       if (error) throw error;
+      if (isHttpApiConfigured() && data.session) {
+        await httpApi.syncSupabaseAuth();
+      }
       return { userId: data.user?.id ?? '', email: data.user?.email ?? email, isDemo: false };
     }
     if (isHttpApiConfigured()) return httpApi.signUp(email, password, displayName);

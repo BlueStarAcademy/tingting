@@ -10,8 +10,17 @@ function trimUrl(value: string | undefined): string {
   return (value ?? '').replace(/\/$/, '');
 }
 
+export function resolvePublicApkDownloadUrl(siteUrl: string, apkDirect: string): string {
+  const site = trimUrl(siteUrl);
+  const direct = trimUrl(apkDirect);
+  return site ? `${site}/tingting.apk` : direct;
+}
+
 const buildConfig: PublicConfig = {
-  apkDownloadUrl: trimUrl(process.env.EXPO_PUBLIC_APK_DOWNLOAD_URL),
+  apkDownloadUrl: resolvePublicApkDownloadUrl(
+    trimUrl(process.env.EXPO_PUBLIC_SITE_URL),
+    trimUrl(process.env.EXPO_PUBLIC_APK_DOWNLOAD_URL),
+  ),
   siteUrl: trimUrl(process.env.EXPO_PUBLIC_SITE_URL),
 };
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, Alert, ScrollView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { LocalePreference } from '@/lib/i18n/translations';
@@ -14,6 +14,13 @@ import { PhoneInviteSettingsModal } from '@/components/settings/PhoneInviteSetti
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import {
+  applyAppUpdate,
+  checkForAppUpdate,
+  getAppVersionLabel,
+  isAppUpdateEnabled,
+  openLatestApkDownload,
+} from '@/lib/updates';
 import { theme } from '@/constants/theme';
 
 type SettingsTab = 'display' | 'account';
@@ -91,6 +98,50 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleAppUpdate = async () => {
+    if (Platform.OS === 'web') return;
+
+    if (!isAppUpdateEnabled()) {
+      Alert.alert(t('settings.appUpdate'), t('settings.updateDisabled'), [
+        {
+          text: t('settings.downloadLatestApk'),
+          onPress: () => {
+            void openLatestApkDownload();
+          },
+        },
+        { text: t('header.cancel'), style: 'cancel' },
+      ]);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { status, message } = await checkForAppUpdate();
+      if (status === 'available') {
+        Alert.alert(t('settings.updateApplied'), t('settings.updateAppliedMessage'));
+        await applyAppUpdate();
+        return;
+      }
+      if (status === 'upToDate') {
+        Alert.alert(t('settings.updateUpToDate'), t('settings.updateUpToDateMessage'), [
+          {
+            text: t('settings.downloadLatestApk'),
+            onPress: () => {
+              void openLatestApkDownload();
+            },
+          },
+          { text: t('common.continue'), style: 'default' },
+        ]);
+        return;
+      }
+      Alert.alert(t('settings.updateFailed'), message ?? t('group.failed'));
+    } catch (e: unknown) {
+      Alert.alert(t('settings.updateFailed'), e instanceof Error ? e.message : t('group.failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const confirmDelete = () => {
     Alert.alert(t('settings.deleteTitle'), t('settings.deleteMessage'), [
       { text: t('header.cancel'), style: 'cancel' },
@@ -128,6 +179,13 @@ export default function SettingsScreen() {
             value={currentLanguageLabel}
             onPress={() => setLangOpen(true)}
           />
+          {Platform.OS !== 'web' ? (
+            <SettingsMenuRow
+              label={t('settings.appUpdate')}
+              value={t('settings.appVersion', { version: getAppVersionLabel() })}
+              onPress={handleAppUpdate}
+            />
+          ) : null}
         </View>
       ) : (
         <ScrollView style={styles.account} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

@@ -62,7 +62,8 @@ import type { Place } from '@tingting/shared';
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const JWT_SECRET = process.env.JWT_SECRET ?? 'tingting-dev-secret-change-me';
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
-const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_URL = (process.env.SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
 
@@ -111,6 +112,7 @@ app.get('/health', (_req, res) => res.json({
   config: {
     supabaseJwtSecret: SUPABASE_JWT_SECRET ? `set (${SUPABASE_JWT_SECRET.length} chars)` : 'NOT SET',
     supabaseUrl: SUPABASE_URL || 'NOT SET',
+    supabaseAnonKey: SUPABASE_ANON_KEY ? `set (${SUPABASE_ANON_KEY.length} chars)` : 'NOT SET',
     supabaseJwks: supabaseJwks ? 'configured' : 'NOT configured',
     jwtSecret: JWT_SECRET === 'tingting-dev-secret-change-me' ? 'DEFAULT (not production)' : `set (${JWT_SECRET.length} chars)`,
     corsOrigin: CORS_ORIGIN,
@@ -165,6 +167,18 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
     attempts.push(`JWKS: ${e instanceof Error ? e.message : e}`);
   }
   try {
+    const remotePayload = await verifySupabaseTokenViaApi(token);
+    if (remotePayload) {
+      const user = await ensureUserProfile(remotePayload);
+      req.user = { ...remotePayload, userId: user.id, email: user.email };
+      next();
+      return;
+    }
+    attempts.push('Supabase API: returned null');
+  } catch (e) {
+    attempts.push(`Supabase API: ${e instanceof Error ? e.message : e}`);
+  }
+  try {
     // Try local JWT secret
     req.user = jwt.verify(token, JWT_SECRET) as AuthPayload;
     next();
@@ -190,6 +204,15 @@ function signToken(userId: string, email: string) {
   return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: '30d' });
 }
 
+function extractSupabaseEmail(payload: jwt.JwtPayload): string | undefined {
+  const direct = payload.email;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim().toLowerCase();
+  const metadata = payload.user_metadata as Record<string, unknown> | undefined;
+  const fromMetadata = metadata?.email;
+  if (typeof fromMetadata === 'string' && fromMetadata.trim()) return fromMetadata.trim().toLowerCase();
+  return undefined;
+}
+
 function verifySupabaseAccessToken(token: string): AuthPayload | null {
   if (!SUPABASE_JWT_SECRET) return null;
   const payload = jwt.verify(token, SUPABASE_JWT_SECRET, { algorithms: ['HS256'] }) as jwt.JwtPayload & {
@@ -197,12 +220,15 @@ function verifySupabaseAccessToken(token: string): AuthPayload | null {
     email_verified?: boolean;
     email_confirmed_at?: string;
     role?: string;
+    user_metadata?: Record<string, unknown>;
   };
-  if (!payload.sub || !payload.email) return null;
+  if (!payload.sub) return null;
   if (payload.role && payload.role !== 'authenticated') return null;
+  const email = extractSupabaseEmail(payload);
+  if (!email) return null;
   return {
     userId: payload.sub,
-    email: payload.email.toLowerCase(),
+    email,
     emailVerified: Boolean(payload.email_verified || payload.email_confirmed_at || payload.role === 'authenticated'),
     isSupabaseAuth: true,
   };
@@ -213,16 +239,40 @@ async function verifySupabaseAccessTokenJwks(token: string): Promise<AuthPayload
   const { payload } = await jwtVerify(token, supabaseJwks, {
     issuer: SUPABASE_URL ? `${SUPABASE_URL}/auth/v1` : undefined,
   });
-  const email = payload.email as string | undefined;
   const role = payload.role as string | undefined;
-  if (!payload.sub || !email) return null;
+  if (!payload.sub) return null;
   if (role && role !== 'authenticated') return null;
+  const email = extractSupabaseEmail(payload as jwt.JwtPayload);
+  if (!email) return null;
   return {
     userId: payload.sub,
-    email: email.toLowerCase(),
+    email,
     emailVerified: Boolean(
       payload.email_verified || payload.email_confirmed_at || role === 'authenticated'
     ),
+    isSupabaseAuth: true,
+  };
+}
+
+async function verifySupabaseTokenViaApi(accessToken: string): Promise<AuthPayload | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  });
+  if (!response.ok) return null;
+  const user = (await response.json()) as {
+    id?: string;
+    email?: string;
+    email_confirmed_at?: string | null;
+  };
+  if (!user.id || !user.email) return null;
+  return {
+    userId: user.id,
+    email: user.email.toLowerCase(),
+    emailVerified: Boolean(user.email_confirmed_at),
     isSupabaseAuth: true,
   };
 }
@@ -453,6 +503,32 @@ app.post('/auth/login', async (req, res) => {
     res.json({ token, session: { userId: user.id, email: user.email, isDemo: user.is_demo }, profile: mapUser(user) });
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : 'Login failed' });
+  }
+});
+
+app.post('/auth/supabase', async (req, res) => {
+  try {
+    const header = req.headers.authorization;
+    const bodyToken = (req.body as { accessToken?: string } | undefined)?.accessToken;
+    const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : bodyToken;
+    if (!accessToken) {
+      res.status(401).json({ error: 'Supabase access token required' });
+      return;
+    }
+    const payload = await verifySupabaseTokenViaApi(accessToken);
+    if (!payload) {
+      res.status(401).json({ error: 'Invalid Supabase token' });
+      return;
+    }
+    const user = await ensureUserProfile(payload);
+    const token = signToken(user.id, user.email);
+    res.json({
+      token,
+      session: { userId: user.id, email: user.email, isDemo: Boolean(user.is_demo) },
+      profile: mapUser(user),
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Supabase auth sync failed' });
   }
 });
 

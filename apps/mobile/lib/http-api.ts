@@ -31,11 +31,13 @@ export function isHttpApiConfigured(): boolean {
 }
 
 async function getToken(): Promise<string | null> {
+  const stored = await AsyncStorage.getItem(TOKEN_KEY);
+  if (stored) return stored;
   if (isSupabaseConfigured) {
     const { data } = await getSupabase()!.auth.getSession();
     if (data.session?.access_token) return data.session.access_token;
   }
-  return AsyncStorage.getItem(TOKEN_KEY);
+  return null;
 }
 
 async function setToken(token: string | null): Promise<void> {
@@ -49,7 +51,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
@@ -66,6 +68,15 @@ export const httpApi = {
       const { profile } = await request<{ profile: UserProfile }>('/auth/me');
       return { userId: profile.id, email: profile.email, isDemo: false };
     } catch {
+      if (isSupabaseConfigured && (await this.syncSupabaseAuth())) {
+        try {
+          const { profile } = await request<{ profile: UserProfile }>('/auth/me');
+          return { userId: profile.id, email: profile.email, isDemo: false };
+        } catch {
+          await setToken(null);
+          return null;
+        }
+      }
       await setToken(null);
       return null;
     }
@@ -108,12 +119,46 @@ export const httpApi = {
     await setToken(null);
   },
 
+  async syncSupabaseAuth(): Promise<AuthSession | null> {
+    if (!isSupabaseConfigured) return null;
+    const { data } = await getSupabase()!.auth.getSession();
+    const accessToken = data.session?.access_token;
+    if (!accessToken) return null;
+    const result = await request<{ token: string; session: AuthSession }>('/auth/supabase', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    await setToken(result.token);
+    return result.session;
+  },
+
+  async ensureApiAuth(): Promise<boolean> {
+    if (await AsyncStorage.getItem(TOKEN_KEY)) {
+      try {
+        await request<{ profile: UserProfile }>('/auth/me');
+        return true;
+      } catch {
+        await setToken(null);
+      }
+    }
+    if (!isSupabaseConfigured) return false;
+    return Boolean(await this.syncSupabaseAuth());
+  },
+
   async getProfile(): Promise<UserProfile | null> {
     try {
       const { profile } = await request<{ profile: UserProfile }>('/auth/me');
       return profile;
     } catch {
-      return null;
+      if (!isSupabaseConfigured) return null;
+      await setToken(null);
+      if (!(await this.syncSupabaseAuth())) return null;
+      try {
+        const { profile } = await request<{ profile: UserProfile }>('/auth/me');
+        return profile;
+      } catch {
+        return null;
+      }
     }
   },
 
@@ -168,7 +213,14 @@ export const httpApi = {
   },
 
   async getHomeDashboard(): Promise<HomeDashboard> {
-    return request<HomeDashboard>('/dashboard');
+    try {
+      return await request<HomeDashboard>('/dashboard');
+    } catch (error) {
+      if (!isSupabaseConfigured) throw error;
+      await setToken(null);
+      if (!(await this.syncSupabaseAuth())) throw error;
+      return request<HomeDashboard>('/dashboard');
+    }
   },
 
   async getGroups(): Promise<Group[]> {

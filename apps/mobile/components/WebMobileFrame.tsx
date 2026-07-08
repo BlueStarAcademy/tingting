@@ -36,7 +36,8 @@ const styles = StyleSheet.create({
     minHeight: 0,
     alignItems: 'center',
     backgroundColor: '#EEF1F5',
-    overflow: 'hidden',
+    // Do not clip the fixed MainTabBar / overlays on web.
+    overflow: 'visible',
   },
   rootStandalone: {
     backgroundColor: theme.colors.background,
@@ -48,7 +49,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     minWidth: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     backgroundColor: theme.colors.background,
   },
 });

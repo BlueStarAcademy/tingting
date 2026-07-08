@@ -289,12 +289,17 @@ async function verifySupabaseAccessTokenJwks(token: string): Promise<AuthPayload
 
 async function verifySupabaseTokenViaApi(accessToken: string): Promise<AuthPayload | null> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      apikey: SUPABASE_ANON_KEY,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+    });
+  } catch {
+    return null;
+  }
   if (!response.ok) return null;
   const user = (await response.json()) as {
     id?: string;
@@ -308,6 +313,23 @@ async function verifySupabaseTokenViaApi(accessToken: string): Promise<AuthPaylo
     emailVerified: Boolean(user.email_confirmed_at),
     isSupabaseAuth: true,
   };
+}
+
+/** Resolve a Supabase access token via local HS256, JWKS, then Auth API. */
+async function resolveSupabaseAuthPayload(accessToken: string): Promise<AuthPayload | null> {
+  try {
+    const hs256 = verifySupabaseAccessToken(accessToken);
+    if (hs256) return hs256;
+  } catch {
+    /* try next strategy */
+  }
+  try {
+    const jwks = await verifySupabaseAccessTokenJwks(accessToken);
+    if (jwks) return jwks;
+  } catch {
+    /* try next strategy */
+  }
+  return verifySupabaseTokenViaApi(accessToken);
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -548,7 +570,7 @@ app.post('/auth/supabase', async (req, res) => {
       res.status(401).json({ error: 'Supabase access token required' });
       return;
     }
-    const payload = await verifySupabaseTokenViaApi(accessToken);
+    const payload = await resolveSupabaseAuthPayload(accessToken);
     if (!payload) {
       res.status(401).json({ error: 'Invalid Supabase token' });
       return;

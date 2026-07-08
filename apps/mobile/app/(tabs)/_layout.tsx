@@ -22,6 +22,7 @@ export default function TabsLayout() {
       <AppHeader />
       <View style={styles.tabs}>
         <Tabs
+          tabBar={() => null}
           screenOptions={{
             headerShown: false,
             tabBarStyle: { display: 'none', height: 0 },

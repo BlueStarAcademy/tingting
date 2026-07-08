@@ -7,7 +7,7 @@
     "lat": 37.5796,
     "lng": 126.977,
     "category": "heritage",
-    "imageUrl": "https://images.unsplash.com/photo-1583417319070-4a1d3d9f5a6e?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-seo-2",
@@ -17,7 +17,7 @@
     "lat": 37.5512,
     "lng": 126.9882,
     "category": "landmark",
-    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-bus-1",
@@ -27,7 +27,7 @@
     "lat": 35.1587,
     "lng": 129.1604,
     "category": "beach",
-    "imageUrl": "https://images.unsplash.com/photo-1596436889106-58a3ee4c6b54?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1505142468610-359e7d316be0?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-bus-2",
@@ -147,7 +147,7 @@
     "lat": 35.8154,
     "lng": 127.153,
     "category": "culture",
-    "imageUrl": "https://images.unsplash.com/photo-1580894900169-8672efdd62da?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-sjb-1",
@@ -157,7 +157,7 @@
     "lat": 34.8868,
     "lng": 127.5278,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-ngb-1",
@@ -187,7 +187,7 @@
     "lat": 33.4584,
     "lng": 126.9425,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1590523277543-a94d2e4ddb54?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-jej-2",
@@ -277,7 +277,7 @@
     "name": "용두산공원",
     "description": "부산항과 도심을 한눈에 보는 전망",
     "category": "landmark",
-    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-dae-food",
@@ -317,7 +317,7 @@
     "name": "83타워",
     "description": "대구 시내 전망 타워",
     "category": "landmark",
-    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-icn-food",
@@ -437,7 +437,7 @@
     "name": "한밭수목원",
     "description": "국내 최대 도심 수목원",
     "category": "landmark",
-    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-uls-food",
@@ -717,7 +717,7 @@
     "name": "경기전",
     "description": "조선 왕실 사당",
     "category": "landmark",
-    "imageUrl": "https://images.unsplash.com/photo-1534274867514-d5b3310cb327?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1555881400-74d7acaacd8b?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-sjb-food",
@@ -1057,7 +1057,7 @@
     "lat": 36.3708,
     "lng": 127.4809,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-uls-taehwagang-garden",
@@ -1137,7 +1137,7 @@
     "lat": 37.5395,
     "lng": 127.3118,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-ggd-gwangmyeong-cave",
@@ -1187,7 +1187,7 @@
     "lat": 36.9972,
     "lng": 128.3433,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-ncb-cheongnamdae",
@@ -1297,7 +1297,7 @@
     "lat": 34.7156,
     "lng": 127.0801,
     "category": "nature",
-    "imageUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a8fe05?auto=format&fit=crop&w=600&h=400&q=80"
+    "imageUrl": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=600&h=400&q=80"
   },
   {
     "id": "p-ngb-bulguksa",

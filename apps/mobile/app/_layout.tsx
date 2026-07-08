@@ -25,14 +25,17 @@ export default function RootLayout() {
                 <UpdateChecker />
                 <OnboardingNicknameGate />
                 <StatusBar style="dark" />
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1 }} pointerEvents="box-none">
                   <Stack
                     screenOptions={{
                       headerShown: false,
                       contentStyle: { backgroundColor: theme.colors.background, flex: 1 },
                     }}
                   />
-                  <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 30 }}>
+                  <View
+                    pointerEvents="box-none"
+                    style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 100 }}
+                  >
                     <MainTabBar />
                   </View>
                   <GroupChatOverlayHost />

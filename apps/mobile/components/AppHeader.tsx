@@ -108,7 +108,7 @@ export function AppHeader({ title, showBack, showActions = true, onEditTitle }: 
               <StarChip
                 compact
                 stars={profile.stars}
-                onPress={() => router.push('/(tabs)/shop' as Href)}
+                onPress={() => router.push('/shop' as Href)}
               />
             ) : null}
             {profile && isAdminProfile(profile) ? (

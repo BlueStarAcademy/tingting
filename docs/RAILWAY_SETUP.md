@@ -163,11 +163,7 @@ railway add -d postgres
 
 ---
 
-## 다음 단계 (APK)
+## 다음 단계 (PWA / Web)
 
-Railway Web URL 확인 후 `apps/mobile/eas.json`에 API URL 넣고:
-
-```powershell
-cd c:\project\TingTing\apps\mobile
-eas build --platform android --profile preview
-```
+Railway Web URL을 연 뒤 브라우저에서 「체험하기」로 PWA 전체화면 실행을 확인하세요.
+iPhone은 Safari → 공유 → 홈 화면에 추가 후 아이콘으로 실행하면 앱처럼 전체화면으로 뜹니다.

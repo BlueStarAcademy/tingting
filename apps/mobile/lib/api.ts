@@ -21,12 +21,28 @@ import type {
   FeaturePassTier,
 } from '@tingting/shared';
 import { getAuthRedirectUrl, getSupabase, isSupabaseConfigured } from './supabase';
-import { httpApi, isHttpApiConfigured } from './http-api';
+import { httpApi, hasApiToken, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
 import type { MinigameId } from '@/lib/minigames/stages';
 import type { MinigameBetState, MinigameBetTicket } from '@/lib/minigame-bets';
+import { DEMO_EMAIL } from '@tingting/shared';
 
 export { isSupabaseConfigured, isHttpApiConfigured };
+
+/** HTTP API 모드에서 localStore 게임 상태가 세션/프로필을 읽을 수 있게 동기화 */
+async function syncLocalAuthCache(profile?: UserProfile | null): Promise<void> {
+  if (!isHttpApiConfigured()) return;
+  const resolved = profile ?? (await httpApi.getProfile());
+  if (!resolved) return;
+  const session =
+    (await httpApi.getSession()) ??
+    ({
+      userId: resolved.id,
+      email: resolved.email,
+      isDemo: resolved.email === DEMO_EMAIL,
+    } satisfies AuthSession);
+  await localStore.cacheAuthState(session, resolved);
+}
 
 export const api = {
   async getSession(): Promise<AuthSession | null> {
@@ -40,7 +56,13 @@ export const api = {
         return { userId: data.session.user.id, email: data.session.user.email ?? '', isDemo: false };
       }
     }
-    if (isHttpApiConfigured()) return httpApi.getSession();
+    if (isHttpApiConfigured()) {
+      const session = await httpApi.getSession();
+      if (session) return session;
+      const cached = await localStore.getSession();
+      if (cached && (await hasApiToken())) return cached;
+      return null;
+    }
     return localStore.getSession();
   },
 
@@ -54,7 +76,11 @@ export const api = {
       }
       return { userId: data.user!.id, email: data.user!.email ?? '', isDemo: false };
     }
-    if (isHttpApiConfigured()) return httpApi.signIn(email, password);
+    if (isHttpApiConfigured()) {
+      const session = await httpApi.signIn(email, password);
+      await syncLocalAuthCache(await httpApi.getProfile());
+      return session;
+    }
     return localStore.signIn(email, password);
   },
 
@@ -75,7 +101,11 @@ export const api = {
       }
       return { userId: data.user?.id ?? '', email: data.user?.email ?? email, isDemo: false };
     }
-    if (isHttpApiConfigured()) return httpApi.signUp(email, password, displayName);
+    if (isHttpApiConfigured()) {
+      const session = await httpApi.signUp(email, password, displayName);
+      await syncLocalAuthCache(await httpApi.getProfile());
+      return session;
+    }
     return localStore.signUp(email, password, displayName);
   },
 
@@ -104,7 +134,11 @@ export const api = {
   },
 
   async signInDemo(): Promise<AuthSession> {
-    if (isHttpApiConfigured()) return httpApi.signInDemo();
+    if (isHttpApiConfigured()) {
+      const session = await httpApi.signInDemo();
+      await syncLocalAuthCache(await httpApi.getProfile());
+      return session;
+    }
     return localStore.signInDemo();
   },
 
@@ -112,7 +146,9 @@ export const api = {
     if (!isHttpApiConfigured()) {
       throw new Error('Kakao login requires EXPO_PUBLIC_API_URL');
     }
-    return httpApi.signInWithKakao(accessToken);
+    const session = await httpApi.signInWithKakao(accessToken);
+    await syncLocalAuthCache(await httpApi.getProfile());
+    return session;
   },
 
   async signOut(): Promise<void> {
@@ -122,7 +158,18 @@ export const api = {
   },
 
   async getProfile(): Promise<UserProfile | null> {
-    if (isHttpApiConfigured()) return httpApi.getProfile();
+    if (isHttpApiConfigured()) {
+      const profile = await httpApi.getProfile();
+      if (profile) {
+        await syncLocalAuthCache(profile);
+        return profile;
+      }
+      if (await hasApiToken()) {
+        const cached = await localStore.getProfile();
+        if (cached) return cached;
+      }
+      return null;
+    }
     if (!isSupabaseConfigured) return localStore.getProfile();
     const sb = getSupabase()!;
     const session = await this.getSession();
@@ -286,6 +333,7 @@ export const api = {
   },
 
   async claimMailboxStarReward(messageId: string): Promise<{ reward: number; stars: number }> {
+    await syncLocalAuthCache();
     const result = await localStore.claimMailboxStarReward(messageId);
     if (result.reward > 0) {
       const stars = await this.earnStars(
@@ -515,6 +563,7 @@ export const api = {
     choiceId: string,
     stake: number,
   ): Promise<{ ticket: MinigameBetTicket; stars: number }> {
+    await syncLocalAuthCache();
     return localStore.placeMinigameBet(questionId, choiceId, stake);
   },
 
@@ -522,7 +571,15 @@ export const api = {
     ticketId: string,
     options?: { withAdBonus?: boolean },
   ): Promise<{ ticket: MinigameBetTicket; stars: number; adBonus?: number }> {
-    return localStore.claimMinigameBetReward(ticketId, options);
+    await syncLocalAuthCache();
+    const result = await localStore.claimMinigameBetReward(ticketId, options);
+    const payout = result.ticket.payout ?? result.ticket.stake * 2;
+    const total = payout + (result.adBonus ?? 0);
+    if (total > 0) {
+      const stars = await this.earnStars(total, `minigame_bet:${ticketId}`);
+      return { ...result, stars };
+    }
+    return result;
   },
 
   async getMinigameBetDailyState() {
@@ -534,31 +591,48 @@ export const api = {
   },
 
   async extendMinigameCapViaAd() {
+    await syncLocalAuthCache();
     return localStore.extendMinigameCapViaAd();
   },
 
   async claimDailyFreeStars() {
-    return localStore.claimDailyFreeStars();
+    await syncLocalAuthCache();
+    const result = await localStore.claimDailyFreeStars();
+    const stars = await this.earnStars(result.amount, 'daily_free_ad');
+    return { stars, amount: result.amount };
   },
 
   async claimDailyFreeStarsBasic() {
-    return localStore.claimDailyFreeStarsBasic();
+    await syncLocalAuthCache();
+    const result = await localStore.claimDailyFreeStarsBasic();
+    const stars = await this.earnStars(result.amount, 'daily_free_basic');
+    return { stars, amount: result.amount };
   },
 
   async getDailyFreeStarsState() {
+    await syncLocalAuthCache();
     return localStore.getDailyFreeStarsState();
   },
 
   async grantQuestAdBonus(questId: string) {
-    return localStore.grantQuestAdBonus(questId);
+    await syncLocalAuthCache();
+    const result = await localStore.grantQuestAdBonus(questId);
+    const stars = await this.earnStars(result.bonus, `quest_ad_bonus:${questId}`);
+    return { ...result, stars };
   },
 
   async grantVisitAdBonus() {
-    return localStore.grantVisitAdBonus();
+    await syncLocalAuthCache();
+    const result = await localStore.grantVisitAdBonus();
+    const stars = await this.earnStars(result.bonus, 'visit_ad_bonus');
+    return { ...result, stars };
   },
 
   async grantReviewAdBonus() {
-    return localStore.grantReviewAdBonus();
+    await syncLocalAuthCache();
+    const result = await localStore.grantReviewAdBonus();
+    const stars = await this.earnStars(result.bonus, 'review_ad_bonus');
+    return { ...result, stars };
   },
 
   async grantEditorFeatureViaAd(featureId: string) {
@@ -570,7 +644,13 @@ export const api = {
   },
 
   async doubleStepRouletteReward(milestone: number) {
-    return localStore.doubleStepRouletteReward(milestone);
+    await syncLocalAuthCache();
+    const result = await localStore.doubleStepRouletteReward(milestone);
+    if (result.bonus > 0) {
+      const stars = await this.earnStars(result.bonus, `steps_roulette_double:${milestone}`);
+      return { ...result, stars };
+    }
+    return result;
   },
 
   async getGroupSchedules(groupId: string): Promise<GroupSchedule[]> {
@@ -607,7 +687,22 @@ export const api = {
   },
 
   async earnStars(amount: number, reason: string): Promise<number> {
-    if (isHttpApiConfigured()) return httpApi.earnStars(amount, reason);
+    if (isHttpApiConfigured()) {
+      if (!(await hasApiToken())) {
+        throw new Error('로그인이 필요합니다');
+      }
+      const stars = await httpApi.earnStars(amount, reason);
+      const profile = await httpApi.getProfile();
+      if (profile) {
+        await syncLocalAuthCache(profile);
+      } else {
+        const cached = await localStore.getProfile();
+        if (cached) {
+          await syncLocalAuthCache({ ...cached, stars });
+        }
+      }
+      return stars;
+    }
     return localStore.earnStars(amount, reason);
   },
 
@@ -687,15 +782,23 @@ export const api = {
   },
 
   async getPedometerState() {
+    await syncLocalAuthCache();
     return localStore.getPedometerState();
   },
 
   async syncPedometerSteps(rawSteps: number) {
+    await syncLocalAuthCache();
     return localStore.syncPedometerSteps(rawSteps);
   },
 
   async spinStepRoulette(milestone: number) {
-    return localStore.spinStepRoulette(milestone);
+    await syncLocalAuthCache();
+    const result = await localStore.spinStepRoulette(milestone);
+    if (result.reward > 0) {
+      const stars = await this.earnStars(result.reward, `steps_roulette:${milestone}`);
+      return { ...result, stars };
+    }
+    return result;
   },
 
   async getMinigameProgress() {
@@ -707,6 +810,7 @@ export const api = {
   },
 
   async claimMinigameStageClear(gameId: MinigameId, stage: number) {
+    await syncLocalAuthCache();
     const result = await localStore.claimMinigameStageClear(gameId, stage);
     if (result.reward > 0) {
       const stars = await this.earnStars(result.reward, `minigame_clear:${gameId}:${stage}`);
@@ -716,6 +820,7 @@ export const api = {
   },
 
   async claimMinigameReplayReward(gameId: MinigameId, stage: number) {
+    await syncLocalAuthCache();
     const result = await localStore.claimMinigameReplayReward(gameId, stage);
     if (result.reward > 0) {
       const stars = await this.earnStars(result.reward, `minigame_replay:${gameId}:${stage}`);
@@ -725,6 +830,7 @@ export const api = {
   },
 
   async rerollMinigameReward(gameId: MinigameId, stage: number) {
+    await syncLocalAuthCache();
     const bonus = await localStore.getMinigameRewardBonus();
     const previousReward = bonus?.gameId === gameId && bonus.stage === stage ? bonus.baseReward : 0;
     const result = await localStore.rerollMinigameReward(gameId, stage);
@@ -737,6 +843,7 @@ export const api = {
   },
 
   async doubleMinigameReward(gameId: MinigameId, stage: number) {
+    await syncLocalAuthCache();
     const result = await localStore.doubleMinigameReward(gameId, stage);
     if (result.bonus > 0) {
       const stars = await this.earnStars(result.bonus, `minigame_double:${gameId}:${stage}`);

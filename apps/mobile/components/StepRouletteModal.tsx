@@ -5,6 +5,7 @@ import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { StarAmount } from '@/components/StarAmount';
 import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { useAdFree } from '@/hooks/useAdFree';
 import { theme } from '@/constants/theme';
@@ -114,6 +115,7 @@ export function StepRouletteModal({
   onContinueAfterWin,
 }: Props) {
   const { t } = useLocale();
+  const { refresh } = useAuth();
   const { watchAd } = useAdFree();
   const spinAnim = useRef(new Animated.Value(0)).current;
   const rotationRef = useRef(0);
@@ -180,6 +182,7 @@ export function StepRouletteModal({
       const result = await api.doubleStepRouletteReward(milestone);
       setDisplayReward((reward ?? 0) + result.bonus);
       setDoubleUsed(true);
+      await refresh();
     } catch (e: unknown) {
       Alert.alert(t('common.error'), e instanceof Error ? e.message : t('steps.failed'));
     } finally {

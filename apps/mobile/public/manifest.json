@@ -1,0 +1,36 @@
+{
+  "id": "/",
+  "name": "TingTing",
+  "short_name": "TingTing",
+  "description": "한국 여행 기록 앱 — 지도, GPS 퀘스트, 사진, 미니게임",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
+  "orientation": "portrait",
+  "theme_color": "#312E81",
+  "background_color": "#EEF2F8",
+  "categories": ["travel", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

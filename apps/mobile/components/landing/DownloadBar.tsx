@@ -1,8 +1,8 @@
-import { View, Text, Pressable, Image, Linking, Platform, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Image, Platform, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
-import { openDownloadUrl, usePublicConfig } from '@/lib/app-config';
+import { launchAppExperience, requestWebFullscreen } from '@/lib/pwa';
 import { theme } from '@/constants/theme';
 
 const appIcon = require('@/assets/icon.png');
@@ -12,15 +12,12 @@ export const DOWNLOAD_BAR_HEIGHT = 72;
 export function DownloadBar() {
   const { t } = useLocale();
   const router = useRouter();
-  const { apkDownloadUrl, loaded } = usePublicConfig();
-  const hasApk = apkDownloadUrl.length > 0;
 
-  const openAndroid = () => {
-    if (Platform.OS !== 'web') {
-      Linking.openURL(apkDownloadUrl);
-      return;
-    }
-    openDownloadUrl(apkDownloadUrl);
+  const onTry = () => {
+    void launchAppExperience((path) => {
+      requestWebFullscreen();
+      router.push(path as '/app');
+    });
   };
 
   return (
@@ -29,22 +26,13 @@ export function DownloadBar() {
         <View style={styles.brand}>
           <Image source={appIcon} style={styles.brandIcon} />
           <Text style={styles.logo}>{t('appName')}</Text>
-          {hasApk ? <Text style={styles.badge}>{t('landing.downloadBadge')}</Text> : null}
+          <Text style={styles.badge}>{t('landing.pwaBadge')}</Text>
         </View>
 
         <View style={styles.actions}>
-          {hasApk ? (
-            <Pressable style={styles.downloadBtn} onPress={openAndroid}>
-              <Ionicons name="logo-android" size={20} color={theme.colors.onPrimary} />
-              <Text style={styles.downloadText}>{t('landing.downloadAndroid')}</Text>
-            </Pressable>
-          ) : loaded ? (
-            <Text style={styles.comingSoon}>{t('landing.apkComingSoon')}</Text>
-          ) : null}
-
-          <Pressable style={styles.webBtn} onPress={() => router.push('/app')}>
-            <Ionicons name="globe-outline" size={18} color={theme.colors.primary} />
-            <Text style={styles.webText}>{t('landing.tryWeb')}</Text>
+          <Pressable style={styles.tryBtn} onPress={onTry}>
+            <Ionicons name="play" size={18} color={theme.colors.onPrimary} />
+            <Text style={styles.tryText}>{t('landing.tryWeb')}</Text>
           </Pressable>
         </View>
       </View>
@@ -110,38 +98,18 @@ const styles = StyleSheet.create({
     gap: 12,
     flexWrap: 'wrap',
   },
-  downloadBtn: {
+  tryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: theme.colors.primary,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
   },
-  downloadText: {
+  tryText: {
     color: theme.colors.onPrimary,
     fontWeight: '700',
     fontSize: 14,
-  },
-  webBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.borderStrong,
-    backgroundColor: theme.colors.surface,
-  },
-  webText: {
-    color: theme.colors.primary,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  comingSoon: {
-    fontSize: 13,
-    color: theme.colors.textMuted,
   },
 });

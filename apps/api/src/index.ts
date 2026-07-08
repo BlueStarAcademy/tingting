@@ -67,6 +67,33 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? process.env.EXPO_PUBL
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
 
+function resolveCorsOrigin(
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean | string) => void,
+): void {
+  if (!origin) {
+    callback(null, true);
+    return;
+  }
+  if (CORS_ORIGIN === '*') {
+    callback(null, origin);
+    return;
+  }
+  const allowed = CORS_ORIGIN.split(',').map((value) => value.trim()).filter(Boolean);
+  if (allowed.includes(origin)) {
+    callback(null, origin);
+    return;
+  }
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+  ) {
+    callback(null, origin);
+    return;
+  }
+  callback(null, false);
+}
+
 const supabaseJwks = SUPABASE_URL
   ? createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
   : null;
@@ -77,7 +104,13 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const pool = new Pool({ connectionString: DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined });
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl:
+    process.env.NODE_ENV === 'production' || process.env.PGSSLMODE === 'require'
+      ? { rejectUnauthorized: false }
+      : undefined,
+});
 
 interface AuthPayload {
   userId: string;
@@ -103,7 +136,7 @@ type RecommendedVisitQuest = Quest & {
 };
 
 const app = express();
-app.use(cors({ origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(','), credentials: true }));
+app.use(cors({ origin: resolveCorsOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => res.json({

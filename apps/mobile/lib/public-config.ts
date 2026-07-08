@@ -2,26 +2,17 @@ import { Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 
 export type PublicConfig = {
-  apkDownloadUrl: string;
   siteUrl: string;
+  apiUrl: string;
 };
 
 function trimUrl(value: string | undefined): string {
   return (value ?? '').replace(/\/$/, '');
 }
 
-export function resolvePublicApkDownloadUrl(siteUrl: string, apkDirect: string): string {
-  const site = trimUrl(siteUrl);
-  const direct = trimUrl(apkDirect);
-  return site ? `${site}/tingting.apk` : direct;
-}
-
 const buildConfig: PublicConfig = {
-  apkDownloadUrl: resolvePublicApkDownloadUrl(
-    trimUrl(process.env.EXPO_PUBLIC_SITE_URL),
-    trimUrl(process.env.EXPO_PUBLIC_APK_DOWNLOAD_URL),
-  ),
   siteUrl: trimUrl(process.env.EXPO_PUBLIC_SITE_URL),
+  apiUrl: trimUrl(process.env.EXPO_PUBLIC_API_URL),
 };
 
 let cached: PublicConfig | null = null;
@@ -29,10 +20,8 @@ let inflight: Promise<PublicConfig> | null = null;
 
 function mergeRuntimeConfig(data: Record<string, unknown>): PublicConfig {
   return {
-    apkDownloadUrl: trimUrl(
-      String(data.apkDownloadUrl ?? data.EXPO_PUBLIC_APK_DOWNLOAD_URL ?? buildConfig.apkDownloadUrl),
-    ),
     siteUrl: trimUrl(String(data.siteUrl ?? data.EXPO_PUBLIC_SITE_URL ?? buildConfig.siteUrl)),
+    apiUrl: trimUrl(String(data.apiUrl ?? data.EXPO_PUBLIC_API_URL ?? buildConfig.apiUrl)),
   };
 }
 

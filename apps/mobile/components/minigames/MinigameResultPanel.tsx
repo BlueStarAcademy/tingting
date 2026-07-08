@@ -106,6 +106,13 @@ export function MinigameResultPanel({
         }
         onProgressUpdated?.();
       })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        Alert.alert(
+          t('common.error'),
+          error instanceof Error ? error.message : t('group.failed'),
+        );
+      })
       .finally(() => {
         if (!cancelled) setClaimLoading(false);
       });

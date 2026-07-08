@@ -1,13 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Image, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DownloadBar, DOWNLOAD_BAR_HEIGHT } from '@/components/landing/DownloadBar';
-import { AndroidDownloadCard } from '@/components/landing/AndroidDownloadCard';
 import { PremiumButton } from '@/components/PremiumButton';
 import { GradientBackground } from '@/components/GradientBackground';
 import { useLocale } from '@/hooks/useLocale';
-import { usePublicConfig } from '@/lib/app-config';
+import { isIosWeb, isStandaloneDisplay, launchAppExperience, requestWebFullscreen } from '@/lib/pwa';
 import { theme } from '@/constants/theme';
 
 const appIcon = require('@/assets/icon.png');
@@ -24,8 +23,7 @@ const FEATURES = [
 export function LandingPage() {
   const { t } = useLocale();
   const router = useRouter();
-  const { apkDownloadUrl } = usePublicConfig();
-  const hasApk = Boolean(apkDownloadUrl);
+  const [showIosHint, setShowIosHint] = useState(false);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -35,6 +33,16 @@ export function LandingPage() {
       document.body.style.overflow = prev;
     };
   }, []);
+
+  const onTry = async () => {
+    const result = await launchAppExperience((path) => {
+      requestWebFullscreen();
+      router.push(path as '/app');
+    });
+    if (result === 'ios-hint') {
+      setShowIosHint(true);
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -51,21 +59,32 @@ export function LandingPage() {
             <Text style={styles.heroTitle}>{t('appName')}</Text>
             <Text style={styles.heroSub}>{t('auth.tagline')}</Text>
             <Text style={styles.heroDesc}>{t('landing.heroDesc')}</Text>
-            {hasApk ? (
-              <View style={styles.downloadBlock}>
-                <Text style={styles.downloadTitle}>{t('landing.downloadTitle')}</Text>
-                <Text style={styles.downloadDesc}>{t('landing.downloadSectionDesc')}</Text>
-                <AndroidDownloadCard downloadUrl={apkDownloadUrl} />
-              </View>
-            ) : null}
+
+            <View style={styles.pwaBlock}>
+              <Text style={styles.pwaTitle}>{t('landing.pwaTitle')}</Text>
+              <Text style={styles.pwaDesc}>{t('landing.pwaDesc')}</Text>
+            </View>
+
             <View style={styles.heroCtas}>
               <PremiumButton
                 title={t('landing.tryWeb')}
-                onPress={() => router.push('/app')}
-                variant={hasApk ? 'outline' : 'primary'}
+                onPress={() => void onTry()}
+                variant="primary"
                 style={styles.ctaBtn}
               />
             </View>
+
+            {(showIosHint || (Platform.OS === 'web' && isIosWeb() && !isStandaloneDisplay())) && (
+              <View style={styles.iosHint}>
+                <View style={styles.iosHintHeader}>
+                  <Ionicons name="phone-portrait-outline" size={18} color={theme.colors.teal} />
+                  <Text style={styles.iosHintTitle}>{t('landing.iosInstallTitle')}</Text>
+                </View>
+                <Text style={styles.iosHintStep}>{t('landing.iosInstallStep1')}</Text>
+                <Text style={styles.iosHintStep}>{t('landing.iosInstallStep2')}</Text>
+                <Text style={styles.iosHintStep}>{t('landing.iosInstallStep3')}</Text>
+              </View>
+            )}
           </View>
         </GradientBackground>
 
@@ -165,25 +184,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
   },
-  downloadBlock: {
+  pwaBlock: {
     marginTop: 28,
     width: '100%',
     maxWidth: 320,
     alignItems: 'center',
     gap: 8,
   },
-  downloadTitle: {
+  pwaTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: theme.colors.text,
     textAlign: 'center',
   },
-  downloadDesc: {
+  pwaDesc: {
     fontSize: 14,
     lineHeight: 22,
     color: theme.colors.textMuted,
     textAlign: 'center',
-    marginBottom: 8,
   },
   heroCtas: {
     marginTop: 20,
@@ -194,6 +212,31 @@ const styles = StyleSheet.create({
   ctaBtn: {
     maxWidth: 320,
     width: '100%',
+  },
+  iosHint: {
+    marginTop: 20,
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: theme.colors.tealSoft,
+    borderRadius: 16,
+    padding: 16,
+    gap: 6,
+  },
+  iosHintHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  iosHintTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.teal,
+  },
+  iosHintStep: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: theme.colors.textMuted,
   },
   section: {
     paddingHorizontal: 24,

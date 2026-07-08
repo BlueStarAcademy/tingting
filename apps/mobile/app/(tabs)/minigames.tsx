@@ -270,6 +270,7 @@ export default function MinigamesScreen() {
     try {
       const result = await api.claimMinigameBetReward(ticket.id, { withAdBonus });
       await loadBets();
+      await refresh();
       const payout = result.ticket.payout ?? ticket.payout ?? 0;
       const bonus = result.adBonus ?? 0;
       Alert.alert(

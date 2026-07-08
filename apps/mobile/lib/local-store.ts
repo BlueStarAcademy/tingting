@@ -636,6 +636,19 @@ export const localStore = {
     return readJson<AuthSession | null>(KEYS.session, null);
   },
 
+  /** HTTP API 모드에서 로컬 게임 상태(만보기·상점 일일 등)가 동작하도록 세션/프로필 캐시 */
+  async cacheAuthState(session: AuthSession, profile: UserProfile): Promise<void> {
+    const existing = await readJson<UserProfile | null>(KEYS.profile, null);
+    await writeJson(KEYS.session, session);
+    await writeJson(KEYS.profile, {
+      ...existing,
+      ...profile,
+      stars: profile.stars,
+      stepTimezone: existing?.stepTimezone ?? profile.stepTimezone,
+      stepTimezoneLockedUntil: existing?.stepTimezoneLockedUntil ?? profile.stepTimezoneLockedUntil,
+    });
+  },
+
   async signIn(email: string, password: string): Promise<AuthSession> {
     const normalizedEmail = normalizeAdminLoginEmail(email);
     if (normalizedEmail === ADMIN_EMAIL) {
@@ -2085,9 +2098,7 @@ export const localStore = {
       rewards,
       doubledMilestones: bonusState?.dayKey === dayKey ? bonusState.doubledMilestones : [],
     });
-    const stars = profile.stars + reward;
-    await writeJson(KEYS.profile, { ...profile, stars });
-    return { reward, stars, state };
+    return { reward, stars: profile.stars, state };
   },
 
   async doubleStepRouletteReward(milestone: number): Promise<{ bonus: number; stars: number; state: PedometerDayState }> {
@@ -2101,13 +2112,11 @@ export const localStore = {
     const baseReward = bonusState.rewards[String(milestone)];
     if (!baseReward) throw new Error('룰렛 보상을 찾을 수 없습니다');
 
-    const stars = profile.stars + baseReward;
-    await writeJson(KEYS.profile, { ...profile, stars });
     const doubledMilestones = [...bonusState.doubledMilestones, milestone];
     await writeJson(KEYS.stepRouletteBonus, { ...bonusState, doubledMilestones });
     const state: PedometerDayState = { ...full, doubledMilestones };
     await writeJson(KEYS.pedometer, state);
-    return { bonus: baseReward, stars, state };
+    return { bonus: baseReward, stars: profile.stars, state };
   },
 
   async setStepTimezone(timezone: string): Promise<UserProfile> {
@@ -2206,14 +2215,12 @@ export const localStore = {
     const state = await readJson<DailyFreeStarsState | null>(KEYS.dailyFreeStars, null);
     const freeClaimed = state?.dayKey === dayKey && (state.freeClaimed ?? false);
     if (freeClaimed) throw new Error('오늘은 이미 무료 스타를 받았습니다');
-    const stars = profile.stars + DAILY_FREE_STARS_BASIC;
-    await writeJson(KEYS.profile, { ...profile, stars });
     await writeJson(KEYS.dailyFreeStars, {
       dayKey,
       freeClaimed: true,
       adClaimed: state?.dayKey === dayKey ? (state.adClaimed ?? state.claimed ?? false) : false,
     });
-    return { stars, amount: DAILY_FREE_STARS_BASIC };
+    return { stars: profile.stars, amount: DAILY_FREE_STARS_BASIC };
   },
 
   async claimDailyFreeStars(): Promise<{ stars: number; amount: number }> {
@@ -2224,14 +2231,12 @@ export const localStore = {
     const state = await readJson<DailyFreeStarsState | null>(KEYS.dailyFreeStars, null);
     const adClaimed = state?.dayKey === dayKey && (state.adClaimed ?? state.claimed ?? false);
     if (adClaimed) throw new Error('오늘은 이미 광고 보상을 받았습니다');
-    const stars = profile.stars + DAILY_FREE_STARS;
-    await writeJson(KEYS.profile, { ...profile, stars });
     await writeJson(KEYS.dailyFreeStars, {
       dayKey,
       freeClaimed: state?.dayKey === dayKey ? (state.freeClaimed ?? false) : false,
       adClaimed: true,
     });
-    return { stars, amount: DAILY_FREE_STARS };
+    return { stars: profile.stars, amount: DAILY_FREE_STARS };
   },
 
   async getDailyFreeStarsState(): Promise<{ freeClaimed: boolean; adClaimed: boolean; dayKey: string }> {
@@ -2257,10 +2262,8 @@ export const localStore = {
     const state = await readJson<QuestAdBonusState | null>(KEYS.questAdBonus, null);
     const questIds = state?.dayKey === dayKey ? state.questIds : [];
     if (questIds.includes(questId)) throw new Error('이미 보너스를 받은 퀘스트입니다');
-    const stars = profile.stars + QUEST_AD_BONUS_STARS;
-    await writeJson(KEYS.profile, { ...profile, stars });
     await writeJson(KEYS.questAdBonus, { dayKey, questIds: [...questIds, questId] });
-    return { bonus: QUEST_AD_BONUS_STARS, stars };
+    return { bonus: QUEST_AD_BONUS_STARS, stars: profile.stars };
   },
 
   async grantVisitAdBonus(): Promise<{ bonus: number; stars: number }> {
@@ -2272,14 +2275,12 @@ export const localStore = {
     if (state?.dayKey === dayKey && state.visitClaimed) {
       throw new Error('오늘은 이미 방문 보너스를 받았습니다');
     }
-    const stars = profile.stars + VISIT_AD_BONUS_STARS;
-    await writeJson(KEYS.profile, { ...profile, stars });
     await writeJson(KEYS.visitReviewAdBonus, {
       dayKey,
       visitClaimed: true,
       reviewClaimed: state?.dayKey === dayKey ? state.reviewClaimed : false,
     });
-    return { bonus: VISIT_AD_BONUS_STARS, stars };
+    return { bonus: VISIT_AD_BONUS_STARS, stars: profile.stars };
   },
 
   async grantReviewAdBonus(): Promise<{ bonus: number; stars: number }> {
@@ -2291,14 +2292,12 @@ export const localStore = {
     if (state?.dayKey === dayKey && state.reviewClaimed) {
       throw new Error('오늘은 이미 리뷰 보너스를 받았습니다');
     }
-    const stars = profile.stars + REVIEW_AD_BONUS_STARS;
-    await writeJson(KEYS.profile, { ...profile, stars });
     await writeJson(KEYS.visitReviewAdBonus, {
       dayKey,
       visitClaimed: state?.dayKey === dayKey ? state.visitClaimed : false,
       reviewClaimed: true,
     });
-    return { bonus: REVIEW_AD_BONUS_STARS, stars };
+    return { bonus: REVIEW_AD_BONUS_STARS, stars: profile.stars };
   },
 
   async grantEditorFeatureViaAd(featureId: string): Promise<{ pass: FeaturePass; stars: number }> {
@@ -2437,11 +2436,9 @@ export const localStore = {
       claimedAt: new Date().toISOString(),
       adBonusClaimed: options?.withAdBonus ? true : ticket.adBonusClaimed,
     };
-    const stars = profile.stars + totalPayout;
     tickets[idx] = updatedTicket;
     await writeJson(KEYS.minigameBets, tickets);
-    await writeJson(KEYS.profile, { ...profile, stars });
-    return { ticket: updatedTicket, stars, adBonus: adBonus > 0 ? adBonus : undefined };
+    return { ticket: updatedTicket, stars: profile.stars, adBonus: adBonus > 0 ? adBonus : undefined };
   },
 
   async claimMinigameStageClear(

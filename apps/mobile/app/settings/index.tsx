@@ -19,7 +19,6 @@ import {
   checkForAppUpdate,
   getAppVersionLabel,
   isAppUpdateEnabled,
-  openLatestApkDownload,
 } from '@/lib/updates';
 import { theme } from '@/constants/theme';
 
@@ -102,15 +101,7 @@ export default function SettingsScreen() {
     if (Platform.OS === 'web') return;
 
     if (!isAppUpdateEnabled()) {
-      Alert.alert(t('settings.appUpdate'), t('settings.updateDisabled'), [
-        {
-          text: t('settings.downloadLatestApk'),
-          onPress: () => {
-            void openLatestApkDownload();
-          },
-        },
-        { text: t('header.cancel'), style: 'cancel' },
-      ]);
+      Alert.alert(t('settings.appUpdate'), t('settings.updateDisabled'));
       return;
     }
 
@@ -123,15 +114,7 @@ export default function SettingsScreen() {
         return;
       }
       if (status === 'upToDate') {
-        Alert.alert(t('settings.updateUpToDate'), t('settings.updateUpToDateMessage'), [
-          {
-            text: t('settings.downloadLatestApk'),
-            onPress: () => {
-              void openLatestApkDownload();
-            },
-          },
-          { text: t('common.continue'), style: 'default' },
-        ]);
+        Alert.alert(t('settings.updateUpToDate'), t('settings.updateUpToDateMessage'));
         return;
       }
       Alert.alert(t('settings.updateFailed'), message ?? t('group.failed'));

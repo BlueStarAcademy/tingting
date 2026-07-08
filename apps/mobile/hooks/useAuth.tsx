@@ -28,7 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const s = await api.getSession();
     setSession(s);
     if (s) {
-      setProfile(await api.getProfile());
+      const p = await api.getProfile();
+      if (p) setProfile(p);
     } else {
       setProfile(null);
     }

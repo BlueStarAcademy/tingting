@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pickRecommendedPlaces } from '@tingting/shared';
+import { pickRecommendedPlaces, DEMO_EMAIL } from '@tingting/shared';
 import type {
   AdminUserSummary,
   AuthSession,
@@ -30,8 +30,16 @@ export function isHttpApiConfigured(): boolean {
   return Boolean(API_URL);
 }
 
+export async function hasApiToken(): Promise<boolean> {
+  return Boolean(await getApiToken());
+}
+
+async function getApiToken(): Promise<string | null> {
+  return AsyncStorage.getItem(TOKEN_KEY);
+}
+
 async function getToken(): Promise<string | null> {
-  const stored = await AsyncStorage.getItem(TOKEN_KEY);
+  const stored = await getApiToken();
   if (stored) return stored;
   if (isSupabaseConfigured) {
     const { data } = await getSupabase()!.auth.getSession();
@@ -45,6 +53,11 @@ async function setToken(token: string | null): Promise<void> {
   else await AsyncStorage.removeItem(TOKEN_KEY);
 }
 
+function isInvalidTokenError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid token/i.test(message);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
   const headers: Record<string, string> = {
@@ -56,7 +69,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const message = (data as { error?: string }).error ?? `HTTP ${res.status}`;
+    const err = new Error(message) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return data as T;
 }
 
@@ -66,18 +84,29 @@ export const httpApi = {
     if (!token) return null;
     try {
       const { profile } = await request<{ profile: UserProfile }>('/auth/me');
-      return { userId: profile.id, email: profile.email, isDemo: false };
-    } catch {
-      if (isSupabaseConfigured && (await this.syncSupabaseAuth())) {
+      return {
+        userId: profile.id,
+        email: profile.email,
+        isDemo: profile.email === DEMO_EMAIL,
+      };
+    } catch (e) {
+      if (isSupabaseConfigured) {
         try {
-          const { profile } = await request<{ profile: UserProfile }>('/auth/me');
-          return { userId: profile.id, email: profile.email, isDemo: false };
+          if (await this.syncSupabaseAuth()) {
+            const { profile } = await request<{ profile: UserProfile }>('/auth/me');
+            return {
+              userId: profile.id,
+              email: profile.email,
+              isDemo: profile.email === DEMO_EMAIL,
+            };
+          }
         } catch {
-          await setToken(null);
-          return null;
+          /* keep API token when Supabase sync is unavailable */
         }
       }
-      await setToken(null);
+      if (isInvalidTokenError(e)) {
+        await setToken(null);
+      }
       return null;
     }
   },
@@ -133,12 +162,14 @@ export const httpApi = {
   },
 
   async ensureApiAuth(): Promise<boolean> {
-    if (await AsyncStorage.getItem(TOKEN_KEY)) {
+    if (await getApiToken()) {
       try {
         await request<{ profile: UserProfile }>('/auth/me');
         return true;
-      } catch {
-        await setToken(null);
+      } catch (e) {
+        if (isInvalidTokenError(e)) {
+          await setToken(null);
+        }
       }
     }
     if (!isSupabaseConfigured) return false;
@@ -146,19 +177,26 @@ export const httpApi = {
   },
 
   async getProfile(): Promise<UserProfile | null> {
+    const token = await getToken();
+    if (!token) return null;
     try {
       const { profile } = await request<{ profile: UserProfile }>('/auth/me');
       return profile;
-    } catch {
-      if (!isSupabaseConfigured) return null;
-      await setToken(null);
-      if (!(await this.syncSupabaseAuth())) return null;
-      try {
-        const { profile } = await request<{ profile: UserProfile }>('/auth/me');
-        return profile;
-      } catch {
-        return null;
+    } catch (e) {
+      if (isSupabaseConfigured) {
+        try {
+          if (await this.syncSupabaseAuth()) {
+            const { profile } = await request<{ profile: UserProfile }>('/auth/me');
+            return profile;
+          }
+        } catch {
+          /* keep API token when Supabase sync is unavailable */
+        }
       }
+      if (isInvalidTokenError(e)) {
+        await setToken(null);
+      }
+      return null;
     }
   },
 

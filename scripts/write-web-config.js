@@ -7,18 +7,9 @@ function trimUrl(value) {
   return (value ?? '').replace(/\/$/, '');
 }
 
-function resolvePublicApkDownloadUrl(siteUrl, apkDirect) {
-  const site = trimUrl(siteUrl);
-  const direct = trimUrl(apkDirect);
-  return site ? `${site}/tingting.apk` : direct;
-}
-
 function writeWebConfig() {
-  const siteUrl = trimUrl(process.env.EXPO_PUBLIC_SITE_URL);
-  const apkDirect = trimUrl(process.env.EXPO_PUBLIC_APK_DOWNLOAD_URL);
   const config = {
-    apkDownloadUrl: resolvePublicApkDownloadUrl(siteUrl, apkDirect),
-    siteUrl,
+    siteUrl: trimUrl(process.env.EXPO_PUBLIC_SITE_URL),
     apiUrl: trimUrl(process.env.EXPO_PUBLIC_API_URL),
   };
 
@@ -28,13 +19,11 @@ function writeWebConfig() {
   }
 
   fs.writeFileSync(path.join(distDir, 'app-config.json'), `${JSON.stringify(config, null, 2)}\n`);
-  console.log(
-    `[write-web-config] wrote app-config.json (apk: ${config.apkDownloadUrl ? config.apkDownloadUrl : 'empty'})`,
-  );
+  console.log(`[write-web-config] wrote app-config.json (site: ${config.siteUrl || 'empty'})`);
   return config;
 }
 
-module.exports = { writeWebConfig, resolvePublicApkDownloadUrl };
+module.exports = { writeWebConfig };
 
 if (require.main === module) {
   writeWebConfig();

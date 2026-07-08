@@ -1,7 +1,6 @@
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
-import { Linking, Platform } from 'react-native';
-import { loadPublicConfig } from './public-config';
+import { Platform } from 'react-native';
 
 export type AppUpdateStatus = 'disabled' | 'upToDate' | 'available' | 'error';
 
@@ -43,12 +42,4 @@ export async function checkForAppUpdate(): Promise<{ status: AppUpdateStatus; me
 export async function applyAppUpdate(): Promise<void> {
   await Updates.fetchUpdateAsync();
   await Updates.reloadAsync();
-}
-
-export async function openLatestApkDownload(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
-  const config = await loadPublicConfig();
-  if (!config.apkDownloadUrl) return false;
-  await Linking.openURL(config.apkDownloadUrl);
-  return true;
 }

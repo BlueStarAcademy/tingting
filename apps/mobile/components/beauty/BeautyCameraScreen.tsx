@@ -8,7 +8,6 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/hooks/useLocale';
 import { theme } from '@/constants/theme';
@@ -22,21 +21,6 @@ import {
 } from '@/lib/beauty-engine';
 import { getEditorFeaturesByCategory } from '@tingting/shared';
 import { pickCameraPhoto } from '@/lib/pick-photo';
-
-function isExpoGo(): boolean {
-  return Constants.appOwnership === 'expo';
-}
-
-function canTryVisionCamera(): boolean {
-  if (Platform.OS === 'web' || isExpoGo()) return false;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('react-native-vision-camera');
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 type Props = {
   onCapture: (uri: string) => void;
@@ -69,29 +53,8 @@ function loadExpoCamera(): ExpoCameraModule | null {
   }
 }
 
-/**
- * Prefers Vision Camera (Dev Client only) → expo-camera → image-picker camera.
- * Expo Go never loads vision-camera (broken config plugin / native module).
- */
+/** Live beauty camera via expo-camera (web/Expo Go/Dev Client safe). */
 export function BeautyCameraScreen(props: Props) {
-  const [forceExpo, setForceExpo] = useState(!canTryVisionCamera());
-
-  if (!forceExpo) {
-    // Lazy require so Expo Go / metro config never evaluates vision-camera at import time.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { VisionBeautyCamera } = require('@/components/beauty/VisionBeautyCamera') as typeof import('@/components/beauty/VisionBeautyCamera');
-    return (
-      <VisionBeautyCamera
-        {...props}
-        onUnavailable={() => setForceExpo(true)}
-      />
-    );
-  }
-
-  return <ExpoBeautyCameraFallback {...props} />;
-}
-
-function ExpoBeautyCameraFallback(props: Props) {
   const expoCamera = useMemo(() => loadExpoCamera(), []);
   if (!expoCamera) {
     return <PickerOnlyCameraFallback {...props} />;
@@ -107,6 +70,10 @@ function PickerOnlyCameraFallback({ onCapture, onClose }: Props) {
     if (busy) return;
     setBusy(true);
     try {
+      if (Platform.OS === 'web') {
+        Alert.alert(t('common.alert'), t('photos.liveCameraDevClient'));
+        return;
+      }
       const uri = await pickCameraPhoto({
         permissionTitle: t('visits.cameraPermissionTitle'),
         permissionMessage: t('visits.cameraPermissionMessage'),
@@ -122,13 +89,15 @@ function PickerOnlyCameraFallback({ onCapture, onClose }: Props) {
   return (
     <View style={styles.center}>
       <Text style={styles.permissionText}>{t('photos.liveCameraDevClient')}</Text>
-      <Pressable style={styles.primaryBtn} onPress={() => void takePhoto()} disabled={busy}>
-        {busy ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.primaryBtnText}>{t('photos.shoot')}</Text>
-        )}
-      </Pressable>
+      {Platform.OS !== 'web' ? (
+        <Pressable style={styles.primaryBtn} onPress={() => void takePhoto()} disabled={busy}>
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>{t('photos.shoot')}</Text>
+          )}
+        </Pressable>
+      ) : null}
       <Pressable onPress={onClose} style={styles.linkBtn}>
         <Text style={styles.linkText}>{t('header.cancel')}</Text>
       </Pressable>

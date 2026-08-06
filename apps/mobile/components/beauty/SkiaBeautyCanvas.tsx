@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import type { PhotoAdjustmentValues, PhotoFrameStyle } from '@/lib/photo-effects';
 import type { BeautyParams, FaceLandmarks, MakeupParams } from '@/lib/beauty-engine';
@@ -9,10 +9,9 @@ import {
   reshapeLandmarks,
 } from '@/lib/beauty-engine';
 import { hexToRgba } from '@/lib/beauty-engine/filter-luts';
+import type { SkiaBeautyCanvasHandle } from './skia-beauty-types';
 
-export type SkiaBeautyCanvasHandle = {
-  exportJpeg: () => Promise<string>;
-};
+export type { SkiaBeautyCanvasHandle } from './skia-beauty-types';
 
 type StickerDraw = {
   id: string;

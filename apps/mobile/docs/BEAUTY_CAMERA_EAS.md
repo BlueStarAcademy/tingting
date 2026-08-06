@@ -1,51 +1,27 @@
-# Beauty Camera — EAS Development Build
+# Beauty Camera
 
-Live beauty, face landmarks, Skia, and Vision Camera require a **development build** (not Expo Go).
+## Runtime
 
-## Build
+| Environment | Camera | Compose |
+|-------------|--------|---------|
+| Web | Gallery/edit only (live camera message) | Overlay + view-shot |
+| Expo Go | `expo-camera` | Overlay + view-shot (Skia optional if linked) |
+| Dev Client / release | `expo-camera` | Skia ColorMatrix when `@shopify/react-native-skia` is available |
 
-```bash
-# from repo root
-npm install
-npm run eas:android:dev
-# or from apps/mobile:
-# npx eas-cli build --profile development --platform android
-```
-
-Install the APK/IPA on device, then:
-
-```bash
-npm run mobile:dev-client
-# or: npx expo start --dev-client
-```
-
-> Note: Do **not** put `react-native-vision-camera` in `app.json` plugins on this Expo SDK —
-> v5 has no `app.plugin.js` and breaks `expo start`. Use `expo-camera` permissions plugin;
-> Vision Camera is optional via runtime require in Dev Client only.
-
-## Stack (Dev Client)
-
-| Layer | Package | Role |
-|-------|---------|------|
-| Live camera | `react-native-vision-camera` | Viewfinder + shutter (falls back to `expo-camera`) |
-| GPU compose | `@shopify/react-native-skia` | ColorMatrix LUT filters + beauty/makeup bake |
-| Face | `mediapipe-provider` + `face-detect` | Landmarks for makeup/AR; swap in native MediaPipe via `registerNativeFaceDetector` |
-| Persist | `POST /media/upload` | HTTPS URL for visits/groups + MediaLibrary album save |
+`react-native-vision-camera` was removed — it has no Expo config plugin on this SDK and broke web static export (`react-native-nitro-modules` missing).
 
 ## Verify checklist
 
-1. Admin login (`tingadmin`) unlocks all editor passes, slots, nickname, ad-free.
-2. Photos tab → **뷰티 촬영** opens Vision Camera (or expo-camera fallback) with lens chips; shutter returns to editor.
-3. Beauty / Makeup / Lens tabs apply face-anchored layers; **Apply** prefers Skia JPEG export (no stickers) else view-shot.
-4. Save to device creates/updates TingTing album (native) or downloads (web).
-5. Visit editor / group gallery save uploads via `POST /media/upload` and stores HTTPS URL.
-6. Set `SUPABASE_SERVICE_ROLE_KEY` + run `006_photos_storage.sql` for Supabase Storage; otherwise API serves `/media/files/*`.
+1. Admin login unlocks editor passes / slots / ad-free.
+2. Photos tab → beauty shoot uses expo-camera on native; web shows fallback copy.
+3. Beauty / Makeup / Lens tabs apply face-anchored layers; Apply flattens via Skia (native) or view-shot.
+4. Device save → TingTing album / web download.
+5. Visit / group gallery → `POST /media/upload` HTTPS URLs.
+6. Optional: `SUPABASE_SERVICE_ROLE_KEY` + `006_photos_storage.sql`.
 
-## Native face landmarker
+## Face landmarker hook
 
 ```ts
 import { registerNativeFaceDetector } from '@/lib/beauty-engine';
-registerNativeFaceDetector(async (uri) => { /* MediaPipe 478 pts → FaceLandmarks */ });
+registerNativeFaceDetector(async (uri) => { /* map landmarks */ });
 ```
-
-Until linked, `analyzeFaceFromImage` places selfie-oriented anchors for makeup/AR.

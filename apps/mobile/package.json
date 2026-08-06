@@ -35,9 +35,7 @@
     "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-view-shot": "^4.0.3",
-    "react-native-vision-camera": "^5.2.2",
-    "react-native-web": "^0.21.2",
-    "react-native-worklets-core": "^1.6.3"
+    "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@expo/config-plugins": "^56.0.9",

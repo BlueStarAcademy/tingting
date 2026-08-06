@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response as ExpressResponse, NextFunction } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -168,7 +168,7 @@ app.get('/debug/jwks', async (_req, res) => {
   }
 });
 
-async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
+async function authMiddleware(req: AuthedRequest, res: ExpressResponse, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Unauthorized' });
@@ -224,7 +224,7 @@ async function authMiddleware(req: AuthedRequest, res: Response, next: NextFunct
   }
 }
 
-async function adminMiddleware(req: AuthedRequest, res: Response, next: NextFunction) {
+async function adminMiddleware(req: AuthedRequest, res: ExpressResponse, next: NextFunction) {
   if (!req.user?.userId) {
     res.status(401).json({ error: 'Unauthorized' });
     return;

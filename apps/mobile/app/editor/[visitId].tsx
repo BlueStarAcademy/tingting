@@ -6,6 +6,7 @@ import { AppScreen } from '@/components/AppScreen';
 import { PremiumButton } from '@/components/PremiumButton';
 import { PhotoEditorPanel } from '@/components/PhotoEditorPanel';
 import { api } from '@/lib/api';
+import { persistPhotoForShare } from '@/lib/upload-photo';
 import type { Visit } from '@tingting/shared';
 import { useLocale } from '@/hooks/useLocale';
 
@@ -51,7 +52,8 @@ export default function EditorScreen() {
         showPickAnother={false}
         saveLabel={t('editor.save')}
         onSave={async (uri) => {
-          await api.updateVisit(visit.id, { editedPhotoUri: uri });
+          const remoteUri = await persistPhotoForShare(uri);
+          await api.updateVisit(visit.id, { editedPhotoUri: remoteUri });
           Alert.alert(t('editor.saved'), t('editor.savedMessage'));
           router.back();
         }}

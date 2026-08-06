@@ -223,7 +223,16 @@ export interface FeaturePass {
   expiresAt: string | null;
 }
 
-export type EditorFeatureCategory = 'filter' | 'sticker' | 'frame' | 'ai' | 'adjust' | 'effect';
+export type EditorFeatureCategory =
+  | 'filter'
+  | 'sticker'
+  | 'frame'
+  | 'ai'
+  | 'adjust'
+  | 'effect'
+  | 'beauty'
+  | 'makeup'
+  | 'lens';
 
 export interface EditorFeature {
   id: string;

@@ -23,6 +23,7 @@ import type {
 import { getAuthRedirectUrl, getSupabase, isSupabaseConfigured } from './supabase';
 import { httpApi, hasApiToken, isHttpApiConfigured } from './http-api';
 import { localStore } from './local-store';
+import { persistPhotoForShare } from './upload-photo';
 import type { MinigameId } from '@/lib/minigames/stages';
 import type { MinigameBetState, MinigameBetTicket } from '@/lib/minigame-bets';
 import { DEMO_EMAIL } from '@tingting/shared';
@@ -460,36 +461,45 @@ export const api = {
   },
 
   async createVisit(input: Parameters<typeof localStore.createVisit>[0]): Promise<Visit> {
-    if (isHttpApiConfigured()) return httpApi.createVisit(input);
-    if (!isSupabaseConfigured) return localStore.createVisit(input);
+    const photoUri = await persistPhotoForShare(input.photoUri);
+    const payload = { ...input, photoUri };
+    if (isHttpApiConfigured()) return httpApi.createVisit(payload);
+    if (!isSupabaseConfigured) return localStore.createVisit(payload);
     const sb = getSupabase()!;
     const session = await this.getSession();
     const { data, error } = await sb.from('visits').insert({
       user_id: session!.userId,
-      place_id: input.placeId,
-      group_id: input.groupId,
-      photo_uri: input.photoUri,
-      note: input.note,
-      is_public: input.isPublic ?? false,
-      lat: input.lat,
-      lng: input.lng,
+      place_id: payload.placeId,
+      group_id: payload.groupId,
+      photo_uri: payload.photoUri,
+      note: payload.note,
+      is_public: payload.isPublic ?? false,
+      lat: payload.lat,
+      lng: payload.lng,
     }).select().single();
     if (error) throw error;
     return mapVisit(data);
   },
 
   async updateVisit(id: string, patch: Partial<Visit>): Promise<Visit> {
-    if (isHttpApiConfigured()) return httpApi.updateVisit(id, patch);
-    if (!isSupabaseConfigured) return localStore.updateVisit(id, patch);
+    const next: Partial<Visit> = { ...patch };
+    if (patch.editedPhotoUri) {
+      next.editedPhotoUri = await persistPhotoForShare(patch.editedPhotoUri);
+    }
+    if (patch.photoUri) {
+      next.photoUri = await persistPhotoForShare(patch.photoUri);
+    }
+    if (isHttpApiConfigured()) return httpApi.updateVisit(id, next);
+    if (!isSupabaseConfigured) return localStore.updateVisit(id, next);
     const sb = getSupabase()!;
     const body: Record<string, unknown> = {
-      edited_photo_uri: patch.editedPhotoUri,
-      filter: patch.filter,
-      note: patch.note,
-      is_public: patch.isPublic,
+      edited_photo_uri: next.editedPhotoUri,
+      filter: next.filter,
+      note: next.note,
+      is_public: next.isPublic,
     };
-    if (patch.photoUri) {
-      body.photo_uri = patch.photoUri;
+    if (next.photoUri) {
+      body.photo_uri = next.photoUri;
       body.edited_photo_uri = null;
       body.filter = null;
     }

@@ -38,7 +38,11 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -76,6 +80,14 @@
         {
           "photosPermission": "편집한 사진을 갤러리에 저장하기 위해 접근이 필요합니다.",
           "savePhotosPermission": "편집한 사진을 갤러리에 저장하기 위해 접근이 필요합니다."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "스노우급 뷰티 촬영을 위해 카메라 접근이 필요합니다.",
+          "microphonePermission": "영상 촬영을 위해 마이크 접근이 필요합니다.",
+          "recordAudioAndroid": false
         }
       ]
     ],

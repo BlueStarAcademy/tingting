@@ -58,8 +58,10 @@ import type {
   FeaturePassTier,
 } from '@tingting/shared';
 import type { Place } from '@tingting/shared';
+import { getUploadsDir, persistMediaUpload } from './media-upload';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const PUBLIC_API_URL = (process.env.PUBLIC_API_URL ?? '').replace(/\/$/, '');
 const JWT_SECRET = process.env.JWT_SECRET ?? 'tingting-dev-secret-change-me';
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const SUPABASE_URL = (process.env.SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
@@ -137,7 +139,8 @@ type RecommendedVisitQuest = Quest & {
 
 const app = express();
 app.use(cors({ origin: resolveCorsOrigin, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '16mb' }));
+app.use('/media/files', express.static(getUploadsDir(), { maxAge: '7d', fallthrough: false }));
 
 app.get('/health', (_req, res) => res.json({
   ok: true,
@@ -794,7 +797,8 @@ app.post('/profile/display-name', authMiddleware, async (req: AuthedRequest, res
     }
 
     const priorCount = Number(user.display_name_change_count ?? 0);
-    const cost = getDisplayNameChangeCost(priorCount);
+    const isAdmin = await userIsAdmin(req.user!.userId);
+    const cost = isAdmin ? 0 : getDisplayNameChangeCost(priorCount);
     if (cost > 0 && Number(user.stars) < cost) {
       res.status(400).json({ error: '스타가 부족합니다' });
       return;
@@ -1330,6 +1334,37 @@ app.get('/feed/experiences', async (_req, res) => {
   res.json([...fromVisits, ...SEED_PUBLIC_EXPERIENCE_POSTS]);
 });
 
+// --- Media upload ---
+
+app.post('/media/upload', authMiddleware, async (req: AuthedRequest, res) => {
+  try {
+    const { base64, contentType, filename } = req.body as {
+      base64?: string;
+      contentType?: string;
+      filename?: string;
+    };
+    if (!base64 || typeof base64 !== 'string') {
+      res.status(400).json({ error: 'base64 required' });
+      return;
+    }
+    const hostBase =
+      PUBLIC_API_URL ||
+      `${req.protocol}://${req.get('host') ?? `localhost:${PORT}`}`;
+    const result = await persistMediaUpload(
+      {
+        base64,
+        contentType,
+        filename,
+        userId: req.user!.userId,
+      },
+      hostBase,
+    );
+    res.json(result);
+  } catch (e: unknown) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Upload failed' });
+  }
+});
+
 // --- Visits ---
 
 app.get('/visits', authMiddleware, async (req: AuthedRequest, res) => {
@@ -1628,7 +1663,7 @@ app.get('/editor/unlocks', authMiddleware, async (req: AuthedRequest, res) => {
 
 app.post('/editor/unlock', authMiddleware, async (req: AuthedRequest, res) => {
   const { assetId, cost } = req.body as { assetId?: string; cost?: number };
-  if (!assetId || !cost) {
+  if (!assetId || cost == null) {
     res.status(400).json({ error: 'assetId and cost required' });
     return;
   }
@@ -1639,12 +1674,16 @@ app.post('/editor/unlock', authMiddleware, async (req: AuthedRequest, res) => {
     res.json(rows.map((r) => r.asset_id));
     return;
   }
-  const { rows: userRows } = await pool.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
-  if (userRows[0].stars < cost) {
-    res.status(400).json({ error: 'Insufficient stars' });
-    return;
+  const isAdmin = await userIsAdmin(userId);
+  const charge = isAdmin ? 0 : Number(cost);
+  if (!isAdmin) {
+    const { rows: userRows } = await pool.query('SELECT stars FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    if (userRows[0].stars < charge) {
+      res.status(400).json({ error: 'Insufficient stars' });
+      return;
+    }
+    await pool.query('UPDATE users SET stars = stars - $1 WHERE id = $2', [charge, userId]);
   }
-  await pool.query('UPDATE users SET stars = stars - $1 WHERE id = $2', [cost, userId]);
   await pool.query('INSERT INTO editor_unlocks (user_id, asset_id) VALUES ($1,$2)', [userId, assetId]);
   const { rows } = await pool.query('SELECT asset_id FROM editor_unlocks WHERE user_id = $1', [userId]);
   res.json(rows.map((r) => r.asset_id));

@@ -26,6 +26,7 @@ import {
 } from '@tingting/shared';
 import { pickGalleryPhotos, pickCameraPhoto, pickPhoto } from '@/lib/pick-photo';
 import { savePhotoToGallery } from '@/lib/save-photo';
+import { persistPhotoForShare } from '@/lib/upload-photo';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
@@ -239,9 +240,10 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
 
     setSharedUploading(true);
     try {
+      const remoteUri = await persistPhotoForShare(uri);
       await api.createVisit({
         placeId: regionPlaces[0].id,
-        photoUri: uri,
+        photoUri: remoteUri,
         groupId: group.id,
         isSharedGallery: true,
       });
@@ -341,9 +343,10 @@ export function GroupGalleryTab({ group, isOwner, regionCode, quests, visits, pl
     }
     setSavingReview(true);
     try {
+      const remoteUri = await persistPhotoForShare(pendingPhotoUri);
       await api.createVisit({
         placeId: regionPlaces[0].id,
-        photoUri: pendingPhotoUri,
+        photoUri: remoteUri,
         groupId: group.id,
         note: trimmed,
         isPublic: reviewPublic,

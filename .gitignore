@@ -3,6 +3,8 @@
 dist/
 apps/mobile/dist/
 apps/api/dist/
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
 packages/shared/dist/
 web-build/
 .env

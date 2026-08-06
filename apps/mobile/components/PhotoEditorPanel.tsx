@@ -45,7 +45,29 @@ import {
 import { capturePreviewUri, waitForPaintFrames } from '@/lib/capture-preview';
 import { savePhotoWithFilename } from '@/lib/save-photo';
 import { PhotoSaveSheet } from '@/components/PhotoSaveSheet';
+import { BeautyLayers } from '@/components/beauty/BeautyLayers';
+import {
+  SkiaBeautyCanvas,
+  type SkiaBeautyCanvasHandle,
+} from '@/components/beauty/SkiaBeautyCanvas';
+import {
+  AI_BEAUTY_PRESETS,
+  BEAUTY_KEY_BY_EFFECT,
+  DEFAULT_BEAUTY,
+  DEFAULT_MAKEUP,
+  MAKEUP_KEY_BY_EFFECT,
+  beautyHasActiveEdits,
+  detectFaceLandmarks,
+  isSkiaAvailableSync,
+  mediapipeFaceProvider,
+  setFaceLandmarksProvider,
+  type BeautyParams,
+  type FaceLandmarks,
+  type MakeupParams,
+} from '@/lib/beauty-engine';
 import { theme } from '@/constants/theme';
+
+setFaceLandmarksProvider(mediapipeFaceProvider);
 
 interface Props {
   sourceUri?: string | null;
@@ -60,8 +82,20 @@ interface Props {
   onScrollLockChange?: (locked: boolean) => void;
 }
 
-type EditorTab = 'filter' | 'ai' | 'adjust' | 'sticker' | 'frame' | 'effect' | 'watermark';
+type EditorTab =
+  | 'filter'
+  | 'beauty'
+  | 'makeup'
+  | 'lens'
+  | 'ai'
+  | 'adjust'
+  | 'sticker'
+  | 'frame'
+  | 'effect'
+  | 'watermark';
 type AdjustmentKey = keyof PhotoAdjustmentValues;
+type BeautyKey = keyof BeautyParams;
+type MakeupKey = keyof MakeupParams;
 
 interface StickerInstance {
   id: string;
@@ -70,6 +104,8 @@ interface StickerInstance {
   y: number;
   scale: number;
   rotation: number;
+  /** Face-anchored AR sticker vs free drag */
+  anchor?: 'free' | 'face';
 }
 
 const ADJUSTMENT_KEYS: AdjustmentKey[] = [
@@ -206,14 +242,14 @@ function DraggableSticker({
       {isSelected ? <View style={styles.stickerSelection} pointerEvents="none" /> : null}
       <View
         {...movePanResponder.panHandlers}
-        style={[styles.stickerBody, Platform.OS === 'web' ? styles.stickerOverlayWeb : null]}
+        style={[styles.stickerBody, Platform.OS === 'web' ? ({ touchAction: 'none', userSelect: 'none' } as object) : null]}
       >
         <Text style={styles.stickerOverlayText}>{emoji}</Text>
       </View>
       {isSelected ? (
         <View
           {...resizePanResponder.panHandlers}
-          style={[styles.stickerResizeHandle, Platform.OS === 'web' ? styles.stickerOverlayWeb : null]}
+          style={[styles.stickerResizeHandle, Platform.OS === 'web' ? ({ touchAction: 'none', userSelect: 'none' } as object) : null]}
           accessibilityLabel="Resize sticker"
         >
           <Ionicons name="resize-outline" size={12} color={theme.colors.primaryDark} />
@@ -232,6 +268,9 @@ const getAdjustmentKey = (effectKey?: string): AdjustmentKey | null => {
 
 const EDITOR_TABS: { id: EditorTab; labelKey: string }[] = [
   { id: 'filter', labelKey: 'editor.filters' },
+  { id: 'beauty', labelKey: 'photos.beauty' },
+  { id: 'makeup', labelKey: 'photos.makeup' },
+  { id: 'lens', labelKey: 'photos.lens' },
   { id: 'ai', labelKey: 'editor.ai' },
   { id: 'adjust', labelKey: 'photos.adjust' },
   { id: 'sticker', labelKey: 'editor.stickers' },
@@ -255,6 +294,8 @@ export function PhotoEditorPanel({
   const { watchAd } = useAdFree();
   const lang = locale === 'ko' ? 'ko' : 'en';
   const previewRef = useRef<View>(null);
+  const skiaRef = useRef<SkiaBeautyCanvasHandle>(null);
+  const useSkiaPreview = isSkiaAvailableSync();
 
   const [workingUri, setWorkingUri] = useState(sourceUri ?? '');
   const [passes, setPasses] = useState<FeaturePass[]>([]);
@@ -278,6 +319,12 @@ export function PhotoEditorPanel({
   const [activeTab, setActiveTab] = useState<EditorTab>('filter');
   const [stickerDragging, setStickerDragging] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [beauty, setBeauty] = useState<BeautyParams>(DEFAULT_BEAUTY);
+  const [makeup, setMakeup] = useState<MakeupParams>(DEFAULT_MAKEUP);
+  const [lensId, setLensId] = useState<string | null>(null);
+  const [activeBeautyKey, setActiveBeautyKey] = useState<BeautyKey>('smooth');
+  const [activeMakeupKey, setActiveMakeupKey] = useState<MakeupKey>('blush');
+  const [face, setFace] = useState<FaceLandmarks | null>(null);
 
   const setStickerDragActive = useCallback(
     (active: boolean) => {
@@ -300,7 +347,14 @@ export function PhotoEditorPanel({
       setSelectedStickerId(null);
       setActiveEffects([]);
       setAdjustments(DEFAULT_ADJUSTMENTS);
+      setBeauty(DEFAULT_BEAUTY);
+      setMakeup(DEFAULT_MAKEUP);
+      setLensId(null);
+      setFace(null);
       reloadPasses();
+      if (sourceUri) {
+        void detectFaceLandmarks(sourceUri).then(setFace);
+      }
     }, [sourceUri, reloadPasses]),
   );
 
@@ -333,21 +387,32 @@ export function PhotoEditorPanel({
     ...(framePreset.overlays ?? []),
   ];
 
-  const hasActiveEdits = useMemo(() => {
-    if (activeStickers.length > 0) return true;
-    if (activeFilterId || activeFrameId || activeEffects.length > 0) return true;
-    if (showWatermark) return true;
-    if (allOverlays.length > 0) return true;
-    return ADJUSTMENT_KEYS.some((key) => adjustments[key] !== DEFAULT_ADJUSTMENTS[key]);
-  }, [
-    activeStickers.length,
-    activeFilterId,
-    activeFrameId,
-    activeEffects.length,
-    showWatermark,
-    allOverlays.length,
-    adjustments,
-  ]);
+  const hasActiveEdits = useMemo(
+    () =>
+      beautyHasActiveEdits({
+        filterId: activeFilterId,
+        frameId: activeFrameId,
+        effects: activeEffects,
+        stickers: activeStickers.length,
+        adjustmentsChanged: ADJUSTMENT_KEYS.some(
+          (key) => adjustments[key] !== DEFAULT_ADJUSTMENTS[key],
+        ),
+        beauty,
+        makeup,
+        lensId,
+      }) || allOverlays.length > 0,
+    [
+      activeStickers.length,
+      activeFilterId,
+      activeFrameId,
+      activeEffects,
+      allOverlays.length,
+      adjustments,
+      beauty,
+      makeup,
+      lensId,
+    ],
+  );
 
   const updateUri = (uri: string) => {
     setWorkingUri(uri);
@@ -402,6 +467,14 @@ export function PhotoEditorPanel({
     setSelectedStickerId(null);
     await waitForPaintFrames(3);
     try {
+      // Prefer GPU Skia bake when there are no free-drag stickers (stickers still use view-shot)
+      if (useSkiaPreview && skiaRef.current && activeStickers.length === 0 && hasActiveEdits) {
+        try {
+          return await skiaRef.current.exportJpeg();
+        } catch {
+          // fall through to view-shot
+        }
+      }
       return await capturePreviewUri(previewRef, workingUri, {
         mustCapture: hasActiveEdits,
         width: previewSize.width,
@@ -435,6 +508,10 @@ export function PhotoEditorPanel({
       setSelectedStickerId(null);
       setActiveEffects([]);
       setAdjustments(DEFAULT_ADJUSTMENTS);
+      setBeauty(DEFAULT_BEAUTY);
+      setMakeup(DEFAULT_MAKEUP);
+      setLensId(null);
+      void detectFaceLandmarks(uri).then(setFace);
     } catch {
       Alert.alert(t('common.error'), t('photos.applyFailed'));
     } finally {
@@ -443,7 +520,47 @@ export function PhotoEditorPanel({
   };
 
   const selectFilter = (feature: EditorFeature) => {
-    ensureFeature(feature, () => setActiveFilterId(feature.id));
+    ensureFeature(feature, () => {
+      setActiveFilterId(feature.id);
+      const key = feature.effectKey;
+      if (key && AI_BEAUTY_PRESETS[key]) {
+        setBeauty((prev) => ({ ...prev, ...AI_BEAUTY_PRESETS[key] }));
+      }
+    });
+  };
+
+  const selectBeauty = (feature: EditorFeature) => {
+    ensureFeature(feature, () => {
+      const key = feature.effectKey ? BEAUTY_KEY_BY_EFFECT[feature.effectKey] : undefined;
+      if (!key) return;
+      setActiveBeautyKey(key);
+      setBeauty((prev) => ({
+        ...prev,
+        [key]: prev[key] > 0.05 ? prev[key] : 0.45,
+      }));
+    });
+  };
+
+  const selectMakeup = (feature: EditorFeature) => {
+    ensureFeature(feature, () => {
+      const key = feature.effectKey ? MAKEUP_KEY_BY_EFFECT[feature.effectKey] : undefined;
+      if (!key) return;
+      setActiveMakeupKey(key);
+      setMakeup((prev) => ({
+        ...prev,
+        [key]: prev[key] > 0.05 ? prev[key] : 0.5,
+      }));
+    });
+  };
+
+  const selectLens = (feature: EditorFeature) => {
+    ensureFeature(feature, () => {
+      if (feature.id === 'lens_none') {
+        setLensId(null);
+        return;
+      }
+      setLensId((current) => (current === feature.id ? null : feature.id));
+    });
   };
 
   const selectFrame = (feature: EditorFeature) => {
@@ -454,13 +571,21 @@ export function PhotoEditorPanel({
 
   const addSticker = (feature: EditorFeature) => {
     ensureFeature(feature, () => {
+      const faceAnchor =
+        feature.group?.ko === '표정' ||
+        feature.group?.ko === 'K-감성' ||
+        feature.id.includes('heart') ||
+        feature.id.includes('crown');
+      const fx = face ? face.forehead.x * (previewSize.width || 300) - 24 : previewSize.width / 2 - 24;
+      const fy = face ? face.forehead.y * (previewSize.height || 300) - 40 : previewSize.height / 2 - 24;
       const instance: StickerInstance = {
         id: `${feature.id}-${Date.now()}`,
         featureId: feature.id,
-        x: previewSize.width > 0 ? previewSize.width / 2 - 24 : 120,
-        y: previewSize.height / 2 - 24,
+        x: faceAnchor ? fx : previewSize.width > 0 ? previewSize.width / 2 - 24 : 120,
+        y: faceAnchor ? fy : previewSize.height / 2 - 24,
         scale: 1,
         rotation: 0,
+        anchor: faceAnchor ? 'face' : 'free',
       };
       setActiveStickers((prev) => [...prev, instance]);
       setSelectedStickerId(instance.id);
@@ -567,10 +692,23 @@ export function PhotoEditorPanel({
     }
     setSaving(true);
     try {
-      const captured = await flattenPreview();
+      let captured: string;
+      try {
+        captured = await flattenPreview();
+      } catch {
+        Alert.alert(t('common.error'), t('photos.applyFailed'));
+        return;
+      }
       const uri = await prepareSaveUri(captured);
       if (onSave) {
-        await onSave(uri);
+        try {
+          await onSave(uri);
+        } catch (e: unknown) {
+          Alert.alert(
+            t('common.error'),
+            e instanceof Error ? e.message : t('photos.saveFailed'),
+          );
+        }
       } else if (saveToDevice) {
         setPendingSaveUri(uri);
         setSaveSheetOpen(true);
@@ -621,6 +759,9 @@ export function PhotoEditorPanel({
   const aiTools = getEditorFeaturesByCategory('ai');
   const adjusts = getEditorFeaturesByCategory('adjust');
   const effects = getEditorFeaturesByCategory('effect').filter((f) => f.id !== 'watermark_remove');
+  const beautyTools = getEditorFeaturesByCategory('beauty');
+  const makeupTools = getEditorFeaturesByCategory('makeup');
+  const lensTools = getEditorFeaturesByCategory('lens');
 
   const frameStyle = framePreset.frame;
   const selectedSticker = activeStickers.find((sticker) => sticker.id === selectedStickerId);
@@ -731,15 +872,21 @@ export function PhotoEditorPanel({
     const features =
       activeTab === 'filter'
         ? filters
-        : activeTab === 'ai'
-          ? aiTools
-          : activeTab === 'adjust'
-            ? adjusts
-            : activeTab === 'sticker'
-              ? stickers
-              : activeTab === 'frame'
-                ? frames
-                : effects;
+        : activeTab === 'beauty'
+          ? beautyTools
+          : activeTab === 'makeup'
+            ? makeupTools
+            : activeTab === 'lens'
+              ? lensTools
+              : activeTab === 'ai'
+                ? aiTools
+                : activeTab === 'adjust'
+                  ? adjusts
+                  : activeTab === 'sticker'
+                    ? stickers
+                    : activeTab === 'frame'
+                      ? frames
+                      : effects;
 
     return (
       <>
@@ -747,18 +894,29 @@ export function PhotoEditorPanel({
           {features.map((feature) => {
             const isFilterLike = activeTab === 'filter' || activeTab === 'ai';
             const adjustmentKey = getAdjustmentKey(feature.effectKey);
+            const beautyKey = feature.effectKey ? BEAUTY_KEY_BY_EFFECT[feature.effectKey] : undefined;
+            const makeupKey = feature.effectKey ? MAKEUP_KEY_BY_EFFECT[feature.effectKey] : undefined;
             const active = isFilterLike
               ? activeFilterId === feature.id
-              : activeTab === 'sticker'
-                ? activeStickers.some((sticker) => sticker.featureId === feature.id)
-                : activeTab === 'frame'
-                  ? activeFrameId === feature.id
-                  : activeTab === 'effect'
-                    ? activeEffects.includes(feature.id)
-                    : activeAdjustmentKey === adjustmentKey;
+              : activeTab === 'beauty'
+                ? activeBeautyKey === beautyKey
+                : activeTab === 'makeup'
+                  ? activeMakeupKey === makeupKey
+                  : activeTab === 'lens'
+                    ? (lensId === feature.id || (!lensId && feature.id === 'lens_none'))
+                    : activeTab === 'sticker'
+                      ? activeStickers.some((sticker) => sticker.featureId === feature.id)
+                      : activeTab === 'frame'
+                        ? activeFrameId === feature.id
+                        : activeTab === 'effect'
+                          ? activeEffects.includes(feature.id)
+                          : activeAdjustmentKey === adjustmentKey;
 
             const onPress = () => {
               if (activeTab === 'filter' || activeTab === 'ai') selectFilter(feature);
+              else if (activeTab === 'beauty') selectBeauty(feature);
+              else if (activeTab === 'makeup') selectMakeup(feature);
+              else if (activeTab === 'lens') selectLens(feature);
               else if (activeTab === 'adjust') runAdjust(feature);
               else if (activeTab === 'sticker') addSticker(feature);
               else if (activeTab === 'frame') selectFrame(feature);
@@ -777,6 +935,28 @@ export function PhotoEditorPanel({
             return renderFeatureChip(feature, active, onPress, preview);
           })}
         </ScrollView>
+        {activeTab === 'beauty' ? (
+          <View style={styles.controlPanel}>
+            <Text style={styles.label}>{t('photos.beautyIntensity')}</Text>
+            {renderValueSlider(
+              beauty[activeBeautyKey],
+              (value) => setBeauty((prev) => ({ ...prev, [activeBeautyKey]: clamp(value, 0, 1) })),
+              0,
+              1,
+            )}
+          </View>
+        ) : null}
+        {activeTab === 'makeup' ? (
+          <View style={styles.controlPanel}>
+            <Text style={styles.label}>{t('photos.makeupIntensity')}</Text>
+            {renderValueSlider(
+              makeup[activeMakeupKey],
+              (value) => setMakeup((prev) => ({ ...prev, [activeMakeupKey]: clamp(value, 0, 1) })),
+              0,
+              1,
+            )}
+          </View>
+        ) : null}
         {activeTab === 'adjust' ? renderAdjustControls() : null}
         {activeTab === 'sticker' ? renderStickerControls() : null}
         {selectedSticker && activeTab !== 'sticker' ? (
@@ -821,10 +1001,32 @@ export function PhotoEditorPanel({
         >
           <View style={styles.previewWrap} onLayout={onPreviewLayout}>
             {hasPhoto ? (
-              <Image
-                source={{ uri: workingUri }}
-                style={[styles.preview, filterPreset.imageOpacity ? { opacity: filterPreset.imageOpacity } : null]}
-              />
+              <>
+                {useSkiaPreview && previewSize.width > 0 ? (
+                  <SkiaBeautyCanvas
+                    ref={skiaRef}
+                    uri={workingUri}
+                    width={previewSize.width}
+                    height={previewSize.height || 300}
+                    filterEffectKey={aiFeature?.effectKey ?? filterFeature?.effectKey ?? null}
+                    beauty={beauty}
+                    makeup={makeup}
+                    adjustments={adjustments}
+                    face={face}
+                    lensId={lensId}
+                    frame={frameStyle}
+                    watermark={showWatermark}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: workingUri }}
+                    style={[
+                      styles.preview,
+                      filterPreset.imageOpacity != null ? { opacity: filterPreset.imageOpacity } : null,
+                    ]}
+                  />
+                )}
+              </>
             ) : (
               <Pressable style={styles.previewEmpty} onPress={onPickAnother}>
                 <View style={styles.previewEmptyIcon}>
@@ -839,20 +1041,25 @@ export function PhotoEditorPanel({
                 ) : null}
               </Pressable>
             )}
-            {allOverlays.map((layer, index) => (
-              <View
-                key={`${layer.backgroundColor}-${index}`}
-                pointerEvents="none"
-                style={[
-                  StyleSheet.absoluteFill,
-                  {
-                    backgroundColor: layer.backgroundColor,
-                    opacity: layer.opacity ?? 0.2,
-                  },
-                  layer.style,
-                ]}
-              />
-            ))}
+            {!useSkiaPreview
+              ? allOverlays.map((layer, index) => (
+                  <View
+                    key={`${layer.backgroundColor}-${index}`}
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFill,
+                      {
+                        backgroundColor: layer.backgroundColor,
+                        opacity: layer.opacity ?? 0.2,
+                      },
+                      layer.style,
+                    ]}
+                  />
+                ))
+              : null}
+            {hasPhoto && !useSkiaPreview ? (
+              <BeautyLayers beauty={beauty} makeup={makeup} lensId={lensId} face={face} />
+            ) : null}
             {activeStickers.map((sticker) => {
               const feature = getEditorFeature(sticker.featureId);
               if (!feature?.emoji) return null;
@@ -870,7 +1077,9 @@ export function PhotoEditorPanel({
                 />
               );
             })}
-            {hasPhoto && showWatermark ? <Text style={styles.watermark}>TingTing</Text> : null}
+            {hasPhoto && showWatermark && !useSkiaPreview ? (
+              <Text style={styles.watermark}>TingTing</Text>
+            ) : null}
           </View>
         </View>
 
@@ -994,7 +1203,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stickerSelection: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: 2,
     borderColor: theme.colors.primaryLight,
     borderRadius: theme.radius.sm,
@@ -1014,7 +1223,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryLight,
     zIndex: 2,
   },
-  stickerOverlayWeb: { touchAction: 'none', cursor: 'grab', userSelect: 'none' } as const,
   stickerOverlayText: { fontSize: 40, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 3, textShadowOffset: { width: 0, height: 2 } },
   watermark: {
     position: 'absolute',

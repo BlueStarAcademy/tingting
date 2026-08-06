@@ -6,10 +6,13 @@
     "@expo/metro-runtime": "^57.0.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "^2.10.2",
     "@supabase/supabase-js": "^2.110.0",
     "@tingting/shared": "*",
     "expo": "~56.0.12",
+    "expo-camera": "~56.0.0",
     "expo-constants": "~56.0.18",
+    "expo-file-system": "~56.0.0",
     "expo-image-manipulator": "~56.0.19",
     "expo-image-picker": "~56.0.18",
     "expo-linear-gradient": "~56.0.4",
@@ -21,6 +24,7 @@
     "expo-sensors": "~56.0.6",
     "expo-status-bar": "~56.0.4",
     "expo-updates": "~56.0.20",
+    "html2canvas": "^1.4.1",
     "react": "19.2.3",
     "react-dom": "^19.2.3",
     "react-native": "0.85.3",
@@ -31,7 +35,9 @@
     "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-view-shot": "^4.0.3",
-    "react-native-web": "^0.21.2"
+    "react-native-vision-camera": "^5.2.2",
+    "react-native-web": "^0.21.2",
+    "react-native-worklets-core": "^1.6.3"
   },
   "devDependencies": {
     "@expo/config-plugins": "^56.0.9",
@@ -47,7 +53,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eas:android:dev": "npx --yes eas-cli build --profile development --platform android",
+    "eas:ios:dev": "npx --yes eas-cli build --profile development --platform ios",
+    "start:dev-client": "expo start --dev-client"
   },
   "private": true
 }

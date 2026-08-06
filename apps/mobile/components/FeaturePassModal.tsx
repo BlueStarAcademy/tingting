@@ -18,10 +18,11 @@ interface Props {
   loading?: boolean;
 }
 
-const TIER_LABEL_KEYS: Record<(typeof FEATURE_PASS_TIERS)[number], string> = {
+const TIER_LABEL_KEYS: Record<FeaturePassTier, string> = {
   day1: 'photos.passDay1',
   day7: 'photos.passDay7',
   day30: 'photos.passDay30',
+  permanent: 'photos.passPermanent',
 };
 
 export function FeaturePassModal({

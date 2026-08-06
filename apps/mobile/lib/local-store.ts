@@ -814,7 +814,7 @@ export const localStore = {
     }
 
     const priorCount = profile.displayNameChangeCount ?? 0;
-    const cost = getDisplayNameChangeCost(priorCount);
+    const cost = isAdminProfile(profile) ? 0 : getDisplayNameChangeCost(priorCount);
     if (cost > 0 && profile.stars < cost) throw new Error('스타가 부족합니다');
 
     const updated: UserProfile = {
@@ -1359,13 +1359,16 @@ export const localStore = {
     const unlocked = group.unlockedMemberSlots ?? FREE_GROUP_MEMBER_COUNT;
     if (unlocked >= MAX_GROUP_MEMBER_SLOTS) throw new Error('더 이상 슬롯을 열 수 없습니다');
 
-    const cost = getGroupMemberSlotUnlockCost(unlocked);
-    if (profile.stars < cost) throw new Error('스타가 부족합니다');
+    const cost = isAdminProfile(profile) ? 0 : getGroupMemberSlotUnlockCost(unlocked);
+    if (!isAdminProfile(profile) && profile.stars < cost) throw new Error('스타가 부족합니다');
 
     const updatedGroup: Group = { ...group, unlockedMemberSlots: unlocked + 1 };
     groups[idx] = updatedGroup;
     await writeJson(KEYS.groups, groups);
-    await writeJson(KEYS.profile, { ...profile, stars: profile.stars - cost });
+    await writeJson(KEYS.profile, {
+      ...profile,
+      stars: isAdminProfile(profile) ? profile.stars : profile.stars - cost,
+    });
 
     return { group: updatedGroup, cost };
   },
@@ -1383,13 +1386,16 @@ export const localStore = {
     if (group.ownerId !== session.userId) throw new Error('방장만 슬롯을 해금할 수 있습니다');
 
     const unlocked = group.unlockedGallerySlots ?? 0;
-    const cost = getGallerySlotUnlockCost();
-    if (profile.stars < cost) throw new Error('스타가 부족합니다');
+    const cost = isAdminProfile(profile) ? 0 : getGallerySlotUnlockCost();
+    if (!isAdminProfile(profile) && profile.stars < cost) throw new Error('스타가 부족합니다');
 
     const updatedGroup: Group = { ...group, unlockedGallerySlots: unlocked + GALLERY_SLOT_BATCH_SIZE };
     groups[idx] = updatedGroup;
     await writeJson(KEYS.groups, groups);
-    await writeJson(KEYS.profile, { ...profile, stars: profile.stars - cost });
+    await writeJson(KEYS.profile, {
+      ...profile,
+      stars: isAdminProfile(profile) ? profile.stars : profile.stars - cost,
+    });
 
     return { group: updatedGroup, cost };
   },

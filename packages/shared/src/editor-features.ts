@@ -141,6 +141,39 @@ const effects: FeatureSeed[] = [
   { id: 'watermark_remove', name: { ko: '워터마크 제거', en: 'Remove Watermark' }, effectKey: 'watermark_remove', icon: 'T' },
 ];
 
+const beautyTools: FeatureSeed[] = [
+  { id: 'beauty_smooth', name: { ko: '피부 보정', en: 'Smooth' }, free, effectKey: 'beauty_smooth', icon: '🧴', group: { ko: '피부', en: 'Skin' } },
+  { id: 'beauty_whiten', name: { ko: '미백', en: 'Whiten' }, free, effectKey: 'beauty_whiten', icon: '🤍', group: { ko: '피부', en: 'Skin' } },
+  { id: 'beauty_clarity', name: { ko: '피부 선명', en: 'Clarity' }, free, effectKey: 'beauty_clarity', icon: '✨', group: { ko: '피부', en: 'Skin' } },
+  { id: 'beauty_slim_face', name: { ko: '얼굴 슬림', en: 'Slim Face' }, effectKey: 'beauty_slim_face', icon: '🪞', group: { ko: '성형', en: 'Reshape' } },
+  { id: 'beauty_jaw', name: { ko: '턱선', en: 'Jawline' }, effectKey: 'beauty_jaw', icon: '📐', group: { ko: '성형', en: 'Reshape' } },
+  { id: 'beauty_eyes', name: { ko: '눈 확대', en: 'Enlarge Eyes' }, effectKey: 'beauty_eyes', icon: '👀', group: { ko: '성형', en: 'Reshape' } },
+  { id: 'beauty_nose', name: { ko: '코 슬림', en: 'Slim Nose' }, effectKey: 'beauty_nose', icon: '👃', group: { ko: '성형', en: 'Reshape' } },
+  { id: 'beauty_cheek', name: { ko: '광대', en: 'Cheeks' }, effectKey: 'beauty_cheek', icon: '😊', group: { ko: '성형', en: 'Reshape' } },
+];
+
+const makeupTools: FeatureSeed[] = [
+  { id: 'makeup_blush', name: { ko: '블러셔', en: 'Blush' }, free, effectKey: 'makeup_blush', icon: '🌸', previewColor: '#FB7185', group: { ko: '치크', en: 'Cheek' } },
+  { id: 'makeup_lip', name: { ko: '립', en: 'Lip' }, free, effectKey: 'makeup_lip', icon: '💋', previewColor: '#E11D48', group: { ko: '립', en: 'Lip' } },
+  { id: 'makeup_eyeshadow', name: { ko: '아이섀도', en: 'Eyeshadow' }, effectKey: 'makeup_eyeshadow', icon: '👁️', previewColor: '#A78BFA', group: { ko: '아이', en: 'Eye' } },
+  { id: 'makeup_eyeliner', name: { ko: '아이라인', en: 'Eyeliner' }, effectKey: 'makeup_eyeliner', icon: '✒️', previewColor: '#111827', group: { ko: '아이', en: 'Eye' } },
+  { id: 'makeup_concealer', name: { ko: '컨실러', en: 'Concealer' }, free, effectKey: 'makeup_concealer', icon: '🧴', previewColor: '#FDE68A', group: { ko: '베이스', en: 'Base' } },
+  { id: 'makeup_highlight', name: { ko: '하이라이트', en: 'Highlight' }, effectKey: 'makeup_highlight', icon: '💫', previewColor: '#FEF3C7', group: { ko: '베이스', en: 'Base' } },
+];
+
+const lensTools: FeatureSeed[] = [
+  { id: 'lens_none', name: { ko: '없음', en: 'None' }, free, effectKey: 'lens_none', icon: '🚫', group: { ko: '기본', en: 'Basic' } },
+  { id: 'lens_dog_ears', name: { ko: '강아지 귀', en: 'Dog Ears' }, free, effectKey: 'lens_dog_ears', icon: '🐶', group: { ko: '귀여움', en: 'Cute' } },
+  { id: 'lens_cat_ears', name: { ko: '고양이 귀', en: 'Cat Ears' }, free, effectKey: 'lens_cat_ears', icon: '🐱', group: { ko: '귀여움', en: 'Cute' } },
+  { id: 'lens_sunglasses', name: { ko: '선글라스', en: 'Sunglasses' }, effectKey: 'lens_sunglasses', icon: '🕶️', group: { ko: '소품', en: 'Props' } },
+  { id: 'lens_crown', name: { ko: '왕관', en: 'Crown' }, effectKey: 'lens_crown', icon: '👑', group: { ko: '소품', en: 'Props' } },
+  { id: 'lens_heart_eyes', name: { ko: '하트눈', en: 'Heart Eyes' }, effectKey: 'lens_heart_eyes', icon: '😍', group: { ko: '귀여움', en: 'Cute' } },
+  { id: 'lens_travel_stamp', name: { ko: '여행 스탬프', en: 'Travel Stamp' }, free, effectKey: 'lens_travel_stamp', icon: '✈️', group: { ko: '여행', en: 'Travel' } },
+  { id: 'lens_sparkle', name: { ko: '반짝', en: 'Sparkle' }, free, effectKey: 'lens_sparkle', icon: '✨', group: { ko: '효과', en: 'FX' } },
+  { id: 'lens_bunny', name: { ko: '토끼', en: 'Bunny' }, effectKey: 'lens_bunny', icon: '🐰', group: { ko: '귀여움', en: 'Cute' } },
+  { id: 'lens_flower_crown', name: { ko: '꽃관', en: 'Flower Crown' }, effectKey: 'lens_flower_crown', icon: '🌺', group: { ko: '소품', en: 'Props' } },
+];
+
 export const EDITOR_FEATURES: EditorFeature[] = [
   ...filters.map((feature) => ({ ...feature, category: 'filter' as const })),
   ...stickers,
@@ -148,6 +181,9 @@ export const EDITOR_FEATURES: EditorFeature[] = [
   ...aiTools.map((feature) => ({ ...feature, category: 'ai' as const })),
   ...adjusts.map((feature) => ({ ...feature, category: 'adjust' as const })),
   ...effects.map((feature) => ({ ...feature, category: 'effect' as const })),
+  ...beautyTools.map((feature) => ({ ...feature, category: 'beauty' as const })),
+  ...makeupTools.map((feature) => ({ ...feature, category: 'makeup' as const })),
+  ...lensTools.map((feature) => ({ ...feature, category: 'lens' as const })),
 ];
 
 export function getEditorFeature(id: string): EditorFeature | undefined {

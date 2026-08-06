@@ -1,4 +1,5 @@
 import { Alert, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 
 type SavePhotoLabels = {
   permissionTitle: string;
@@ -11,6 +12,7 @@ type SavePhotoLabels = {
 };
 
 const INVALID_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
+const ALBUM_NAME = 'TingTing';
 
 export function defaultPhotoFilename(): string {
   const now = new Date();
@@ -41,12 +43,33 @@ async function downloadPhotoOnWeb(uri: string, filename: string): Promise<void> 
   URL.revokeObjectURL(objectUrl);
 }
 
+async function materializeLocalFile(uri: string, filename: string): Promise<string> {
+  if (uri.startsWith('file://') || uri.startsWith('content://')) {
+    return uri;
+  }
+
+  const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+  if (!cacheDir) return uri;
+
+  const target = `${cacheDir}${filename}`;
+  if (uri.startsWith('data:')) {
+    const base64 = uri.split(',')[1] ?? '';
+    await FileSystem.writeAsStringAsync(target, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return target;
+  }
+
+  const download = await FileSystem.downloadAsync(uri, target);
+  return download.uri;
+}
+
 /** 편집한 사진을 기기 갤러리(카메라 롤)에 저장 */
 export async function savePhotoToGallery(uri: string, labels: SavePhotoLabels): Promise<boolean> {
   return savePhotoWithFilename(uri, defaultPhotoFilename(), labels);
 }
 
-/** 파일 이름을 지정해 저장 (웹: 다운로드 대화상자, 앱: 사진 앱) */
+/** 파일 이름을 지정해 저장 (웹: 다운로드 대화상자, 앱: TingTing 앨범) */
 export async function savePhotoWithFilename(
   uri: string,
   filename: string,
@@ -68,14 +91,26 @@ export async function savePhotoWithFilename(
 
   const MediaLibrary = await import('expo-media-library');
 
-  const perm = await MediaLibrary.requestPermissionsAsync();
+  const perm = await MediaLibrary.requestPermissionsAsync(true);
   if (!perm.granted) {
     Alert.alert(labels.permissionTitle, labels.permissionMessage);
     return false;
   }
 
   try {
-    await MediaLibrary.saveToLibraryAsync(uri);
+    const localUri = await materializeLocalFile(uri, safeName);
+    const asset = await MediaLibrary.createAssetAsync(localUri);
+    try {
+      const albums = await MediaLibrary.getAlbumsAsync();
+      const existing = albums.find((album) => album.title === ALBUM_NAME);
+      if (existing) {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], existing, false);
+      } else {
+        await MediaLibrary.createAlbumAsync(ALBUM_NAME, asset, false);
+      }
+    } catch {
+      // Album helpers can fail on some OEMs; asset is already in the library.
+    }
     Alert.alert(labels.savedTitle, successMessage);
     return true;
   } catch {

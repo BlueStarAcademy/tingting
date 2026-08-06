@@ -8,6 +8,9 @@
   ],
   "scripts": {
     "mobile": "npm run build:shared && npm run start --workspace=mobile",
+    "mobile:dev-client": "npm run build:shared && npm run start:dev-client --workspace=mobile",
+    "eas:android:dev": "eas-cli build --profile development --platform android --project-dir apps/mobile",
+    "eas:ios:dev": "eas-cli build --profile development --platform ios --project-dir apps/mobile",
     "typecheck": "npm run typecheck --workspace=mobile",
     "build:shared": "npm run build --workspace=@tingting/shared",
     "build:api": "npm run build:shared && npm run build --workspace=@tingting/api",
@@ -18,6 +21,7 @@
   },
   "devDependencies": {
     "dotenv": "^16.4.7",
+    "eas-cli": "^16.32.0",
     "serve": "^14.2.4"
   },
   "dependencies": {

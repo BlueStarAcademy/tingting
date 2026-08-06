@@ -32,15 +32,39 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function captureWebNode(node: unknown, quality = 0.92): Promise<string> {
-  const html2canvas = (await import('html2canvas')).default;
   const element = node as HTMLElement;
-  const canvas = await html2canvas(element, {
-    useCORS: true,
-    allowTaint: true,
-    backgroundColor: null,
-    scale: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
-    logging: false,
-  });
+  if (typeof document !== 'undefined' && element instanceof HTMLElement) {
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null,
+        scale: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+        logging: false,
+      });
+      return canvas.toDataURL('image/jpeg', quality);
+    } catch {
+      // fall through to native canvas snapshot when available
+    }
+  }
+
+  const width = Math.max(1, Math.round(element.clientWidth || 1));
+  const height = Math.max(1, Math.round(element.clientHeight || 1));
+  const canvas = document.createElement('canvas');
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unavailable');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, width, height);
+  const images = element.querySelectorAll('img');
+  if (images.length > 0) {
+    const img = images[0] as HTMLImageElement;
+    ctx.drawImage(img, 0, 0, width, height);
+  }
   return canvas.toDataURL('image/jpeg', quality);
 }
 

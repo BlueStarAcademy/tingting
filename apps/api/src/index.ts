@@ -31,7 +31,7 @@ app.get('/health', (_req, res) => {
     appKey: Boolean(config.appKey),
     kakaoSearch: Boolean(config.kakaoRestApiKey),
     uploadsDir: config.uploadsDir,
-    myboxBackup: myboxBackupStatus(),
+    myboxBackup: Boolean(config.myboxToken),
   });
 });
 
@@ -54,6 +54,23 @@ app.post(
     } catch (e) {
       throw new HttpError(400, e instanceof Error ? e.message : '업로드 실패');
     }
+  }),
+);
+
+app.get(
+  '/backup',
+  authMiddleware,
+  handle(async (_req, res) => {
+    res.json(await myboxBackupStatus());
+  }),
+);
+
+app.post(
+  '/backup/run',
+  authMiddleware,
+  handle(async (_req, res) => {
+    requestMyboxBackup();
+    res.json(await myboxBackupStatus());
   }),
 );
 

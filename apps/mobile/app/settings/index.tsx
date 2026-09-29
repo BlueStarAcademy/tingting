@@ -4,6 +4,7 @@ import { AppScreen } from '@/components/AppScreen';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
 import { SettingsMenuRow } from '@/components/settings/SettingsMenuRow';
+import { BackupStatusCard } from '@/components/settings/BackupStatusCard';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import { useLogoutConfirm } from '@/hooks/useLogoutConfirm';
@@ -62,6 +63,8 @@ export default function SettingsScreen() {
         </Text>
         <Text style={styles.coupleSub}>우리 둘만의 여행 기록</Text>
       </View>
+
+      <BackupStatusCard />
 
       <View style={styles.section}>
         <SettingsMenuRow

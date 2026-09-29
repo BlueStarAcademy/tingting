@@ -81,6 +81,23 @@ const ko: Record<string, string> = {
   'settings.updateAppliedMessage': '잠시 후 앱이 다시 시작돼요.',
   'settings.updateFailed': '업데이트 확인에 실패했어요',
   'settings.updateDisabled': '이 빌드에서는 앱 내 업데이트를 사용할 수 없어요',
+
+  'backup.title': '마이박스 사진 백업',
+  'backup.ok': '정상',
+  'backup.running': '백업 중 · {{count}}장 남음',
+  'backup.waiting': '백업 대기 중 · {{count}}장',
+  'backup.off': '꺼져 있어요',
+  'backup.offDetail': '서버에 MYBOX_TOKEN을 넣으면 사진을 마이박스에도 백업해요',
+  'backup.tokenExpired': '토큰이 만료됐어요',
+  'backup.tokenExpiredDetail': '마이박스에서 새 토큰을 발급해 서버의 MYBOX_TOKEN을 바꿔 주세요. 밀린 사진은 자동으로 이어서 올려요.',
+  'backup.quotaFull': '마이박스 용량이 부족해요',
+  'backup.failed': '백업에 실패했어요',
+  'backup.retryDetail': '사진은 앱에 안전하게 있고, 30분마다 다시 시도해요',
+  'backup.count': '백업된 사진 {{count}}장',
+  'backup.lastChecked': '마지막 확인 {{time}}',
+  'backup.tokenExpiry': '토큰 만료 {{date}} · {{dday}}',
+  'backup.tokenExpiryUnknown': '토큰 만료일을 보려면 서버에 MYBOX_TOKEN_EXPIRES를 넣어 주세요',
+  'backup.runNow': '지금 백업',
 };
 
 export function translate(key: string, params?: Record<string, string | number>): string {

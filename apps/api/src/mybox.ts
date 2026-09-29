@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { BackupStatus } from '@tingting/shared';
 import { config } from './config';
 import { pool } from './db';
 import { getUploadsDir } from './media-upload';
@@ -18,9 +19,8 @@ class MyboxError extends Error {
 const state = {
   running: false,
   rerun: false,
-  pending: 0,
-  lastRunAt: null as string | null,
-  lastError: null as string | null,
+  lastSuccessAt: null as string | null,
+  lastError: null as { status: number; message: string } | null,
 };
 
 async function myboxPost<T>(endpoint: string, body: unknown): Promise<T> {
@@ -83,22 +83,21 @@ async function uploadFile(fileName: string): Promise<string> {
   return `${month}/${name}`;
 }
 
-async function runBackup(): Promise<void> {
+async function scanUploads(): Promise<{ pending: string[]; backedUp: number }> {
   const files = (await fs.promises.readdir(getUploadsDir())).filter((f) => IMAGE_RE.test(f));
   const { rows } = await pool.query<{ file_name: string }>('SELECT file_name FROM mybox_backups');
   const done = new Set(rows.map((r) => r.file_name));
-  const pending = files.filter((f) => !done.has(f)).sort();
-  state.pending = pending.length;
+  return { pending: files.filter((f) => !done.has(f)).sort(), backedUp: rows.length };
+}
 
+async function runBackup(): Promise<void> {
+  const { pending } = await scanUploads();
   for (const fileName of pending) {
     let resourcePath: string;
     try {
       resourcePath = await uploadFile(fileName);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
-        state.pending--;
-        continue;
-      }
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue;
       // Someone deleted our folders in MYBOX; recreate them on the next pass.
       if (e instanceof MyboxError && e.status === 404) await pool.query('DELETE FROM mybox_folders');
       throw e;
@@ -107,7 +106,6 @@ async function runBackup(): Promise<void> {
       'INSERT INTO mybox_backups (file_name, resource_path) VALUES ($1, $2) ON CONFLICT (file_name) DO NOTHING',
       [fileName, resourcePath],
     );
-    state.pending--;
     console.log(`[mybox] backed up ${fileName} -> ${resourcePath}`);
   }
 }
@@ -123,14 +121,15 @@ export function requestMyboxBackup(): void {
   runBackup()
     .then(() => {
       state.lastError = null;
+      state.lastSuccessAt = new Date().toISOString();
     })
     .catch((e: unknown) => {
-      state.lastError = e instanceof Error ? e.message : String(e);
-      console.error('[mybox] backup failed:', state.lastError);
+      const message = e instanceof Error ? e.message : String(e);
+      state.lastError = { status: e instanceof MyboxError ? e.status : 0, message };
+      console.error('[mybox] backup failed:', message);
     })
     .finally(() => {
       state.running = false;
-      state.lastRunAt = new Date().toISOString();
       if (state.rerun) {
         state.rerun = false;
         requestMyboxBackup();
@@ -147,11 +146,16 @@ export function startMyboxBackup(): void {
   setInterval(requestMyboxBackup, RETRY_INTERVAL_MS).unref();
 }
 
-export function myboxBackupStatus() {
+export async function myboxBackupStatus(): Promise<BackupStatus> {
+  const { pending, backedUp } = await scanUploads();
   return {
     enabled: Boolean(config.myboxToken),
-    pending: state.pending,
-    lastRunAt: state.lastRunAt,
-    lastError: state.lastError,
+    running: state.running,
+    backedUp,
+    pending: pending.length,
+    lastSuccessAt: state.lastSuccessAt ?? undefined,
+    errorStatus: state.lastError?.status,
+    errorMessage: state.lastError?.message,
+    tokenExpiresAt: config.myboxTokenExpires || undefined,
   };
 }

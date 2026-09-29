@@ -18,6 +18,10 @@ export const config = {
   /** MYBOX personal access token; uploads are copied to MYBOX when set. */
   myboxToken: (process.env.MYBOX_TOKEN ?? '').trim(),
   myboxFolderName: process.env.MYBOX_FOLDER_NAME?.trim() || 'TingTing 사진 백업',
+  /** YYYY-MM-DD; MYBOX has no API for this, so it is entered by hand to show in the app. */
+  myboxTokenExpires: /^\d{4}-\d{2}-\d{2}$/.test(process.env.MYBOX_TOKEN_EXPIRES?.trim() ?? '')
+    ? process.env.MYBOX_TOKEN_EXPIRES!.trim()
+    : '',
   coupleNames: [process.env.COUPLE_USER1_NAME?.trim() || '나', process.env.COUPLE_USER2_NAME?.trim() || '너'],
 };
 

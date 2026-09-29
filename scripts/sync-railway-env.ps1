@@ -67,7 +67,7 @@ function Write-EnvFile([string]$Path, [hashtable]$Vars, [string[]]$KeyOrder, [st
 $rootOrder = @(
     'DATABASE_URL', 'JWT_SECRET', 'NODE_ENV', 'CORS_ORIGIN', 'PORT', 'PGSSLMODE', 'UPLOADS_DIR',
     'APP_KEY', 'COUPLE_USER1_NAME', 'COUPLE_USER2_NAME',
-    'KAKAO_REST_API_KEY', 'MYBOX_TOKEN', 'MYBOX_FOLDER_NAME', 'EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_APP_KEY'
+    'KAKAO_REST_API_KEY', 'MYBOX_TOKEN', 'MYBOX_TOKEN_EXPIRES', 'MYBOX_FOLDER_NAME', 'EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_APP_KEY'
 )
 
 Write-EnvFile -Path (Join-Path $root '.env') -Vars $merged -KeyOrder $rootOrder -Header @'

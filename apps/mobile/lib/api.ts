@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import type {
   AuthSession,
+  BackupStatus,
   CoupleUser,
   HomeDashboard,
   KakaoPlaceResult,
@@ -108,6 +109,14 @@ export const api = {
 
   updateMe(patch: { displayName?: string; avatarUri?: string }): Promise<CoupleUser> {
     return request('/auth/me', { method: 'PATCH', body: json(patch) });
+  },
+
+  getBackupStatus(): Promise<BackupStatus> {
+    return request('/backup');
+  },
+
+  runBackup(): Promise<BackupStatus> {
+    return request('/backup/run', { method: 'POST' });
   },
 
   getDashboard(): Promise<HomeDashboard> {

@@ -20,6 +20,20 @@ export interface AuthSession {
   partner: CoupleUser | null;
 }
 
+export interface BackupStatus {
+  /** False when the server has no MYBOX_TOKEN. */
+  enabled: boolean;
+  running: boolean;
+  backedUp: number;
+  pending: number;
+  lastSuccessAt?: string;
+  /** HTTP status of the last failed MYBOX call (401 = token expired or invalid). */
+  errorStatus?: number;
+  errorMessage?: string;
+  /** YYYY-MM-DD, from MYBOX_TOKEN_EXPIRES. */
+  tokenExpiresAt?: string;
+}
+
 export interface Place {
   id: string;
   regionCode: string;

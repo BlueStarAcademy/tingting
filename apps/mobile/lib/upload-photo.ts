@@ -1,21 +1,6 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { isHttpApiConfigured } from '@/lib/http-api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
-
-const TOKEN_KEY = '@tingting/api-token';
-const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
-
-async function getAuthToken(): Promise<string | null> {
-  const stored = await AsyncStorage.getItem(TOKEN_KEY);
-  if (stored) return stored;
-  if (isSupabaseConfigured) {
-    const { data } = await getSupabase()!.auth.getSession();
-    if (data.session?.access_token) return data.session.access_token;
-  }
-  return null;
-}
+import { API_URL, getToken } from '@/lib/api';
 
 function guessContentType(uri: string): string {
   const lower = uri.toLowerCase();
@@ -54,20 +39,13 @@ export function isRemotePhotoUrl(uri: string | null | undefined): boolean {
   return /^https?:\/\//i.test(uri);
 }
 
-/**
- * Upload a local/tmp/data image and return a durable HTTPS (or API-served) URL.
- * When HTTP API is not configured, returns the original URI (local-only mode).
- */
-export async function uploadPhotoUri(
-  uri: string,
-  filename = `tingting_${Date.now()}.jpg`,
-): Promise<string> {
+/** Upload a local image to the Railway volume and return its public URL. */
+export async function uploadPhotoUri(uri: string, filename = `tingting_${Date.now()}.jpg`): Promise<string> {
   if (!uri) throw new Error('Photo URI required');
   if (isRemotePhotoUrl(uri)) return uri;
-  if (!isHttpApiConfigured()) return uri;
 
-  const token = await getAuthToken();
-  if (!token) throw new Error('로그인이 필요합니다');
+  const token = await getToken();
+  if (!token) throw new Error('로그인이 필요해요');
 
   const { base64, contentType } = await uriToBase64Payload(uri);
   const res = await fetch(`${API_URL}/media/upload`, {
@@ -80,17 +58,7 @@ export async function uploadPhotoUri(
   });
   const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
   if (!res.ok || !data.url) {
-    throw new Error(data.error ?? `Upload failed (${res.status})`);
+    throw new Error(data.error ?? `업로드 실패 (${res.status})`);
   }
   return data.url;
-}
-
-/** Prefer remote URL for visit/group persistence; fall back to local URI offline. */
-export async function persistPhotoForShare(uri: string): Promise<string> {
-  try {
-    return await uploadPhotoUri(uri);
-  } catch (error) {
-    if (!isHttpApiConfigured()) return uri;
-    throw error;
-  }
 }

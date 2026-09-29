@@ -4,16 +4,15 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && node scripts/copy-seed.cjs",
+    "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "node -r ../../scripts/load-dotenv.cjs --import tsx --watch src/index.ts"
   },
   "dependencies": {
     "@tingting/shared": "*",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.14.1"
   },

@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView, Pressable } from 'react-native';
+import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
-import { KakaoLoginButton } from '@/components/auth/KakaoLoginButton';
 import { api } from '@/lib/api';
 import { APP_ENTRY_HREF } from '@/lib/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
-import { isKakaoLoginConfigured, requestKakaoAccessToken } from '@/lib/kakao-auth';
 import { theme } from '@/constants/theme';
 
 export default function LoginScreen() {
@@ -18,47 +17,19 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const showKakao = isKakaoLoginConfigured();
-
-  const finishLogin = async () => {
-    await refresh();
-    router.replace(APP_ENTRY_HREF);
-  };
 
   const handleLogin = async () => {
-    if (!email.trim()) return Alert.alert(t('common.alert'), t('auth.email') + '을(를) 입력해 주세요');
+    if (!email.trim() || !password) {
+      Alert.alert(t('common.alert'), '이메일과 비밀번호를 입력해 주세요');
+      return;
+    }
     setLoading(true);
     try {
       await api.signIn(email.trim(), password);
-      await finishLogin();
+      await refresh();
+      router.replace(APP_ENTRY_HREF);
     } catch (e: unknown) {
       Alert.alert(t('auth.loginFailed'), e instanceof Error ? e.message : t('auth.unknownError'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKakao = async () => {
-    setLoading(true);
-    try {
-      const accessToken = await requestKakaoAccessToken();
-      await api.signInWithKakao(accessToken);
-      await finishLogin();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : t('auth.unknownError');
-      if (!/cancel/i.test(message)) {
-        Alert.alert(t('auth.kakaoLoginFailed'), message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDemo = async () => {
-    setLoading(true);
-    try {
-      await api.signInDemo();
-      await finishLogin();
     } finally {
       setLoading(false);
     }
@@ -73,6 +44,9 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
+          <View style={styles.heart}>
+            <Ionicons name="heart" size={34} color={theme.colors.onPrimary} />
+          </View>
           <Text style={styles.logo}>{t('appName')}</Text>
           <Text style={styles.sub}>{t('auth.tagline')}</Text>
           <View style={styles.form}>
@@ -92,24 +66,9 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              onSubmitEditing={handleLogin}
             />
-            <Pressable style={styles.forgotLink} onPress={() => router.push('/(auth)/forgot-password')}>
-              <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
-            </Pressable>
             <PremiumButton title={t('auth.login')} onPress={handleLogin} loading={loading} />
-            {showKakao ? (
-              <>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>{t('auth.or')}</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-                <KakaoLoginButton onPress={handleKakao} loading={loading} />
-              </>
-            ) : null}
-            <View style={styles.gap} />
-            <PremiumButton title={t('auth.demo')} onPress={handleDemo} loading={loading} variant="outline" />
-            <PremiumButton title={t('auth.signup')} onPress={() => router.push('/(auth)/signup')} variant="outline" />
           </View>
         </KeyboardAvoidingView>
       </ScrollView>
@@ -119,8 +78,18 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: theme.spacing.lg },
   container: { flexGrow: 1, justifyContent: 'center', padding: theme.spacing.lg },
+  heart: {
+    alignSelf: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+    marginBottom: theme.spacing.md,
+  },
   logo: {
     fontSize: 44,
     fontWeight: '800',
@@ -152,30 +121,4 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.tint.border,
     fontSize: 16,
   },
-  forgotLink: {
-    alignSelf: 'flex-end',
-    paddingVertical: 4,
-  },
-  forgotText: {
-    color: theme.colors.primaryDark,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginVertical: 4,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: theme.colors.border,
-  },
-  dividerText: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  gap: { height: theme.spacing.sm },
 });

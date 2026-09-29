@@ -1,14 +1,5 @@
-export interface GroupChatMessage {
-  id: string;
-  groupId: string;
-  userId: string;
-  displayName: string;
-  text: string;
-  createdAt: string;
-  deletedAt?: string | null;
-}
-
-export type RegionMenuCategory = 'food' | 'stay' | 'play' | 'sight' | 'event';
+export type PlaceCategory = 'food' | 'play' | 'event' | 'stay';
+export type PlaceStatus = 'wish' | 'visited';
 
 export interface Region {
   code: string;
@@ -17,210 +8,120 @@ export interface Region {
   color: string;
 }
 
+export interface CoupleUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUri?: string;
+}
+
+export interface AuthSession {
+  user: CoupleUser;
+  partner: CoupleUser | null;
+}
+
 export interface Place {
   id: string;
   regionCode: string;
+  category: PlaceCategory;
   name: string;
-  description: string;
+  address?: string;
   lat: number;
   lng: number;
-  category: string;
-  imageUrl?: string;
-}
-
-export interface GroupMember {
-  id: string;
-  displayName: string;
   phone?: string;
-  photoUri?: string;
-  isOwner?: boolean;
-}
-
-export interface Group {
-  id: string;
-  name: string;
-  description?: string;
-  ownerId: string;
-  memberIds: string[];
-  members?: GroupMember[];
-  createdAt: string;
-  slotIndex?: number;
-  /** 해금된 구성원 슬롯 수 (방장 포함, 기본 2) */
-  unlockedMemberSlots?: number;
-  /** 해금된 갤러리 슬롯 수 (레거시·스타 구매용, 지역별 슬롯은 퀘스트 완료로 해금) */
-  unlockedGallerySlots?: number;
-  /** 공용 갤러리 업로드 권한을 위임받은 멤버 ID. 없으면 방장만 업로드 가능 */
-  sharedGalleryUploaderId?: string;
-}
-
-/** 그룹 여행 일정 (지역별) */
-export interface GroupSchedule {
-  id: string;
-  groupId: string;
-  regionCode: string;
-  title: string;
-  /** YYYY-MM-DD */
-  date: string;
-  note?: string;
-  stickerId?: string;
+  url?: string;
+  kakaoPlaceId?: string;
+  kakaoCategory?: string;
+  /** YYYY-MM-DD, events only */
+  eventStart?: string;
+  eventEnd?: string;
+  memo?: string;
+  status: PlaceStatus;
   createdBy: string;
   createdAt: string;
+  updatedAt: string;
+  coverPhotoUri?: string;
+  photoCount?: number;
+}
+
+export type PlaceInput = Omit<Place, 'id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'coverPhotoUri' | 'photoCount' | 'regionCode' | 'status'> & {
+  regionCode?: string;
+  status?: PlaceStatus;
+};
+
+export interface PlaceReview {
+  placeId: string;
+  userId: string;
+  /** 1-5 */
+  rating: number;
+  comment?: string;
+  updatedAt: string;
 }
 
 export interface Visit {
   id: string;
-  userId: string;
   placeId: string;
-  groupId?: string;
-  photoUri: string;
-  editedPhotoUri?: string;
+  /** YYYY-MM-DD */
+  visitedOn: string;
   note?: string;
-  visitedAt: string;
-  lat?: number;
-  lng?: number;
-  filter?: string;
-  /** 추천 피드에 공개 여부 */
-  isPublic?: boolean;
-  /** 그룹 공용 갤러리 사진 여부 */
-  isSharedGallery?: boolean;
-  /** 업로드한 사용자 닉네임 (공용 갤러리) */
-  uploaderName?: string;
-}
-
-/** 다른 유저가 공개한 여행 체험 후기 */
-export interface PublicExperiencePost {
-  id: string;
-  userId: string;
-  displayName: string;
-  userPhotoUri?: string;
-  placeId: string;
-  placeName: string;
-  regionCode: string;
-  photoUri: string;
-  note?: string;
-  visitedAt: string;
-  recommendCount?: number;
-}
-
-export type UserRole = 'user' | 'admin';
-
-export interface UserProfile {
-  id: string;
-  email: string;
-  displayName: string;
-  stars: number;
-  onboardingComplete: boolean;
-  visitedRegions: string[];
-  role?: UserRole;
-  /** Convenience flag mirrored from role === 'admin' */
-  isAdmin?: boolean;
-  photoUri?: string;
-  birthday?: string;
-  mbti?: string;
-  mbtiTestCompleted?: boolean;
-  phone?: string;
-  /** 닉네임 변경 횟수 (첫 변경 무료) */
-  displayNameChangeCount?: number;
-  /** 만보기 타임존 (IANA) */
-  stepTimezone?: string;
-  /** 타임존 변경 잠금 해제 시각 */
-  stepTimezoneLockedUntil?: string;
-  /** 해금된 여행 그룹 슬롯 수 (1~6, 첫 슬롯 기본 해금) */
-  unlockedGroupSlots?: number;
-  /** 전화번호 인증 완료 여부 */
-  phoneVerified?: boolean;
-  /** 이메일 인증 완료 여부 */
-  emailVerified?: boolean;
-  /** 전화번호 초대 검색 거부 */
-  blockPhoneInvite?: boolean;
-  /** 프로필 상세(생년월일·MBTI 등) 공개 여부 */
-  profilePublic?: boolean;
-}
-
-export type MailboxMessageType = 'notice' | 'notification' | 'group_invite' | 'star_reward';
-
-export type GroupInviteStatus = 'pending' | 'accepted' | 'declined';
-
-export interface CustomerInquiry {
-  id: string;
-  userId?: string;
-  userEmail?: string;
-  userDisplayName?: string;
-  message: string;
-  status: 'open' | 'resolved';
+  createdBy: string;
   createdAt: string;
-  resolvedAt?: string;
 }
 
-export interface AdminUserSummary {
+export interface Photo {
   id: string;
-  email: string;
-  displayName: string;
-  stars: number;
-  role?: UserRole;
-  createdAt?: string;
-}
-
-export interface MailboxMessage {
-  id: string;
-  userId: string;
-  type: MailboxMessageType;
-  title: string;
-  body: string;
-  createdAt: string;
-  readAt?: string;
-  groupId?: string;
-  groupName?: string;
-  inviterId?: string;
-  inviterName?: string;
-  inviteStatus?: GroupInviteStatus;
-  /** 구독 일일 스타 우편 */
-  rewardStars?: number;
-  rewardClaimedAt?: string;
-  subscriptionPlanId?: 'premium' | 'premium_plus';
-  subscriptionDayKey?: string;
-  subscriptionDayIndex?: number;
-}
-
-export interface Quest {
-  id: string;
-  placeId: string;
-  title: string;
-  description: string;
-  rewardStars: number;
-  targetLat: number;
-  targetLng: number;
-  radiusMeters: number;
-  completed?: boolean;
-  /** stars(기본) | gallery_slots */
-  rewardType?: 'stars' | 'gallery_slots';
-  rewardGallerySlots?: number;
-  /** 그룹 대표역 방문 퀘스트 */
-  isStationQuest?: boolean;
+  placeId?: string;
+  visitId?: string;
   regionCode?: string;
-  /** 지역 활동 퀘스트 */
-  questKind?: 'photo_reviews' | 'recommended_visits';
-  targetCount?: number;
-  progressCount?: number;
+  originalUri: string;
+  editedUri?: string;
+  takenAt: string;
+  createdBy: string;
+  createdAt: string;
 }
 
-export interface ShopItem {
+export interface TripPlan {
   id: string;
-  name: string;
-  description: string;
-  cost: number;
-  type: 'ai_effect' | 'group_slot' | 'boost';
+  /** YYYY-MM-DD */
+  date: string;
+  title: string;
+  placeId?: string;
+  memo?: string;
+  done: boolean;
+  createdBy: string;
+  createdAt: string;
 }
 
-/** 사진 편집 기능 이용권 기간 */
-export type FeaturePassTier = 'day1' | 'day7' | 'day30' | 'permanent';
+export interface PlaceDetail {
+  place: Place;
+  reviews: PlaceReview[];
+  visits: Visit[];
+  photos: Photo[];
+}
 
-export interface FeaturePass {
-  featureId: string;
-  tier: FeaturePassTier;
-  purchasedAt: string;
-  /** null = 영구 */
-  expiresAt: string | null;
+export interface KakaoPlaceResult {
+  kakaoPlaceId: string;
+  name: string;
+  category: PlaceCategory;
+  kakaoCategory: string;
+  address: string;
+  lat: number;
+  lng: number;
+  phone?: string;
+  url?: string;
+  regionCode: string;
+  /** Already saved as a place */
+  savedPlaceId?: string;
+}
+
+export interface HomeDashboard {
+  visitedRegionCodes: string[];
+  placeCount: number;
+  visitedPlaceCount: number;
+  photoCount: number;
+  upcomingPlans: TripPlan[];
+  recentPhotos: Photo[];
+  wishPlaces: Place[];
 }
 
 export type EditorFeatureCategory =
@@ -239,7 +140,6 @@ export interface EditorFeature {
   category: EditorFeatureCategory;
   name: { ko: string; en: string };
   description?: { ko: string; en: string };
-  free?: boolean;
   previewColor?: string;
   emoji?: string;
   regionCode?: string;
@@ -251,45 +151,4 @@ export interface EditorFeature {
   intensity?: number;
   /** photo-effects.ts 매핑 키 */
   effectKey?: string;
-}
-
-export interface PlaceRecommendation {
-  id: string;
-  placeId: string;
-  userId: string;
-  text: string;
-  rating: number;
-  createdAt: string;
-}
-
-export interface HomeDashboard {
-  profile: UserProfile;
-  groups: Group[];
-  recentVisits: Visit[];
-  regionProgress: { code: string; visited: boolean }[];
-  totalRegions: number;
-  visitedCount: number;
-}
-
-export interface PedometerDayState {
-  dayKey: string;
-  baselineSteps: number;
-  dailySteps: number;
-  rouletteUsed: number;
-  claimedMilestones: number[];
-  /** 만보기 룰렛 2배 수령 완료 마일스톤 */
-  doubledMilestones?: number[];
-}
-
-export interface RankingEntry {
-  id: string;
-  displayName: string;
-  value: number;
-  rank: number;
-}
-
-export interface AuthSession {
-  userId: string;
-  email: string;
-  isDemo: boolean;
 }

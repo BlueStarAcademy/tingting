@@ -19,14 +19,10 @@ function Is-RailwayInternalKey([string]$Key) {
 }
 
 $api = Get-RailwayVars 'tingting-api'
-$web = Get-RailwayVars 'tingting-web'
 $pg = Get-RailwayVars 'Postgres'
 
 $merged = @{}
 foreach ($pair in $api.GetEnumerator()) {
-    if (-not (Is-RailwayInternalKey $pair.Key)) { $merged[$pair.Key] = $pair.Value }
-}
-foreach ($pair in $web.GetEnumerator()) {
     if (-not (Is-RailwayInternalKey $pair.Key)) { $merged[$pair.Key] = $pair.Value }
 }
 if ($pg.ContainsKey('DATABASE_PUBLIC_URL')) {
@@ -38,18 +34,13 @@ if ($pg.ContainsKey('DATABASE_PUBLIC_URL')) {
 # Local development overrides
 $merged['NODE_ENV'] = 'development'
 $merged['EXPO_PUBLIC_API_URL'] = 'http://localhost:3000'
-$merged['CORS_ORIGIN'] = 'http://localhost:8080,http://localhost:8081,http://localhost:19006'
+$merged['CORS_ORIGIN'] = '*'
 $merged['PORT'] = '3000'
 $merged['PGSSLMODE'] = 'require'
+$merged['UPLOADS_DIR'] = (Join-Path $root 'apps/api/uploads')
+$merged.Remove('PUBLIC_API_URL')
 
-$expoKeys = @(
-    'EXPO_PUBLIC_API_URL',
-    'EXPO_PUBLIC_SUPABASE_URL',
-    'EXPO_PUBLIC_SUPABASE_ANON_KEY',
-    'EXPO_PUBLIC_SITE_URL',
-    'EXPO_PUBLIC_KAKAO_JS_KEY',
-    'EXPO_PUBLIC_REVENUECAT_API_KEY'
-)
+$expoKeys = @('EXPO_PUBLIC_API_URL')
 
 function Write-EnvFile([string]$Path, [hashtable]$Vars, [string[]]$KeyOrder, [string]$Header) {
     $lines = New-Object System.Collections.Generic.List[string]
@@ -73,17 +64,16 @@ function Write-EnvFile([string]$Path, [hashtable]$Vars, [string[]]$KeyOrder, [st
 }
 
 $rootOrder = @(
-    'DATABASE_URL', 'JWT_SECRET', 'SUPABASE_JWT_SECRET', 'SUPABASE_URL', 'SUPABASE_ANON_KEY',
-    'NODE_ENV', 'CORS_ORIGIN', 'KAKAO_APP_ID', 'PORT', 'PGSSLMODE',
-    'EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY',
-    'EXPO_PUBLIC_SITE_URL', 'EXPO_PUBLIC_KAKAO_JS_KEY',
-    'EXPO_PUBLIC_REVENUECAT_API_KEY'
+    'DATABASE_URL', 'JWT_SECRET', 'NODE_ENV', 'CORS_ORIGIN', 'PORT', 'PGSSLMODE', 'UPLOADS_DIR',
+    'COUPLE_USER1_EMAIL', 'COUPLE_USER1_PASSWORD', 'COUPLE_USER1_NAME',
+    'COUPLE_USER2_EMAIL', 'COUPLE_USER2_PASSWORD', 'COUPLE_USER2_NAME',
+    'KAKAO_REST_API_KEY', 'EXPO_PUBLIC_API_URL'
 )
 
 Write-EnvFile -Path (Join-Path $root '.env') -Vars $merged -KeyOrder $rootOrder -Header @'
-# Synced from Railway (tingting travel / production) — do not commit.
+# Synced from Railway (tingting / production) — do not commit.
 # Regenerate: powershell -File scripts/sync-railway-env.ps1
-# Local overrides: API on :3000, web on :8080, NODE_ENV=development
+# Local overrides: API on :3000, NODE_ENV=development
 '@
 
 $mobileVars = @{}

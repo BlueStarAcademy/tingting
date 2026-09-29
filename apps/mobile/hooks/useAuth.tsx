@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import type { AuthSession, UserProfile } from '@tingting/shared';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { AuthSession, CoupleUser } from '@tingting/shared';
 import { api } from '@/lib/api';
-import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 interface AuthContextValue {
   session: AuthSession | null;
-  profile: UserProfile | null;
+  user: CoupleUser | null;
+  partner: CoupleUser | null;
   loading: boolean;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -13,7 +13,8 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue>({
   session: null,
-  profile: null,
+  user: null,
+  partner: null,
   loading: true,
   refresh: async () => {},
   signOut: async () => {},
@@ -21,42 +22,32 @@ const AuthContext = createContext<AuthContextValue>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = async () => {
-    const s = await api.getSession();
-    setSession(s);
-    if (s) {
-      const p = await api.getProfile();
-      if (p) setProfile(p);
-    } else {
-      setProfile(null);
-    }
-  };
+  const refresh = useCallback(async () => {
+    setSession(await api.getSession());
+  }, []);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
 
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    const {
-      data: { subscription },
-    } = getSupabase()!.auth.onAuthStateChange(() => {
-      refresh().catch(() => undefined);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await api.signOut();
     setSession(null);
-    setProfile(null);
-  };
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, refresh, signOut }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user: session?.user ?? null,
+        partner: session?.partner ?? null,
+        loading,
+        refresh,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -15,14 +15,12 @@
     "build:shared": "npm run build --workspace=@tingting/shared",
     "build:api": "npm run build:shared && npm run build --workspace=@tingting/api",
     "start:api": "node -r ./scripts/load-dotenv.cjs apps/api/dist/index.js",
-    "build:web": "npm run build:shared && npm run export:web --workspace=mobile && node -r ./scripts/load-dotenv.cjs scripts/write-web-config.js",
-    "start:web": "node -r ./scripts/load-dotenv.cjs scripts/serve-web.js",
+    "dev:api": "npm run build:shared && npm run dev --workspace=@tingting/api",
     "sync:env": "powershell -ExecutionPolicy Bypass -File scripts/sync-railway-env.ps1"
   },
   "devDependencies": {
     "dotenv": "^16.4.7",
-    "eas-cli": "^16.32.0",
-    "serve": "^14.2.4"
+    "eas-cli": "^16.32.0"
   },
   "dependencies": {
     "expo-router": "~56.2.11"

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { HomeDashboard } from '@tingting/shared';
 import { pool } from '../db';
 import { handle, publicBaseUrl } from '../http';
-import { mapPhoto, mapPlace, mapPlan, PHOTO_SELECT, PLACE_SELECT } from '../mappers';
+import { mapPhoto, mapPlace, mapPlan, PHOTO_SELECT, PLACE_SELECT, PLAN_SELECT } from '../mappers';
 
 export const dashboardRouter = Router();
 
@@ -20,7 +20,7 @@ dashboardRouter.get(
         (SELECT COUNT(*) FROM places) AS places,
         (SELECT COUNT(*) FROM places WHERE status = 'visited') AS visited,
         (SELECT COUNT(*) FROM photos) AS photos`),
-      pool.query('SELECT * FROM plans WHERE plan_date >= $1 AND NOT done ORDER BY plan_date LIMIT 5', [today]),
+      pool.query(`${PLAN_SELECT} WHERE pn.plan_date >= $1 AND NOT pn.done ORDER BY pn.plan_date LIMIT 5`, [today]),
       pool.query(`${PHOTO_SELECT} ORDER BY ph.taken_at DESC LIMIT 12`),
       pool.query(`${PLACE_SELECT} WHERE p.status = 'wish' ORDER BY p.event_start NULLS LAST, p.created_at DESC LIMIT 8`),
     ]);

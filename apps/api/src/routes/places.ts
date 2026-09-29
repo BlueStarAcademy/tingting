@@ -163,6 +163,15 @@ placesRouter.patch(
     for (const [key, column] of [['address', 'address'], ['phone', 'phone'], ['url', 'url'], ['memo', 'memo']] as const) {
       if (key in body) set(column, optionalString(body[key]));
     }
+    const newAddress = 'address' in body ? optionalString(body.address) : undefined;
+    if (newAddress) {
+      const geo = await geocodeAddress(newAddress).catch(() => null);
+      if (geo) {
+        set('lat', geo.lat);
+        set('lng', geo.lng);
+        if (!('regionCode' in body)) set('region_code', resolveRegionCode(newAddress, geo.lat, geo.lng));
+      }
+    }
     if ('eventStart' in body) set('event_start', optionalDate(body.eventStart));
     if ('eventEnd' in body) set('event_end', optionalDate(body.eventEnd));
     if (sets.length === 0) throw new HttpError(400, '변경할 내용이 없어요');

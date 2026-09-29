@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/hooks/useAuth';
 import { LogoutConfirmProvider } from '@/hooks/useLogoutConfirm';
@@ -13,6 +14,7 @@ import { theme } from '@/constants/theme';
 
 export default function RootLayout() {
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <WebLayoutFix />
       <AppShell>
@@ -40,5 +42,6 @@ export default function RootLayout() {
         </LocaleProvider>
       </AppShell>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

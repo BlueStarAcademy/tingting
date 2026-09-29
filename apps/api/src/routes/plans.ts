@@ -1,14 +1,20 @@
 import { Router } from 'express';
 import { pool } from '../db';
 import { handle, HttpError, optionalDate, optionalString, userId } from '../http';
-import { mapPlan } from '../mappers';
+import { mapPlan, PLAN_SELECT } from '../mappers';
 
 export const plansRouter = Router();
+
+async function loadPlan(id: string) {
+  const { rows } = await pool.query(`${PLAN_SELECT} WHERE pn.id = $1`, [id]);
+  if (!rows[0]) throw new HttpError(404, '일정을 찾을 수 없어요');
+  return mapPlan(rows[0]);
+}
 
 plansRouter.get(
   '/',
   handle(async (_req, res) => {
-    const { rows } = await pool.query('SELECT * FROM plans ORDER BY plan_date, created_at');
+    const { rows } = await pool.query(`${PLAN_SELECT} ORDER BY pn.plan_date, pn.created_at`);
     res.json(rows.map(mapPlan));
   }),
 );
@@ -20,10 +26,10 @@ plansRouter.post(
     const title = optionalString(req.body?.title);
     if (!date || !title) throw new HttpError(400, '날짜와 제목을 입력해 주세요');
     const { rows } = await pool.query(
-      `INSERT INTO plans (plan_date, title, place_id, memo, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO plans (plan_date, title, place_id, memo, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [date, title, optionalString(req.body?.placeId), optionalString(req.body?.memo), userId(req)],
     );
-    res.status(201).json(mapPlan(rows[0]));
+    res.status(201).json(await loadPlan(String(rows[0].id)));
   }),
 );
 
@@ -51,13 +57,11 @@ plansRouter.patch(
     if ('memo' in body) set('memo', optionalString(body.memo));
     if ('done' in body) set('done', Boolean(body.done));
     if (sets.length === 0) throw new HttpError(400, '변경할 내용이 없어요');
-    params.push(req.params.id);
-    const { rows } = await pool.query(
-      `UPDATE plans SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
-      params,
-    );
-    if (!rows[0]) throw new HttpError(404, '일정을 찾을 수 없어요');
-    res.json(mapPlan(rows[0]));
+    const id = String(req.params.id);
+    params.push(id);
+    const { rowCount } = await pool.query(`UPDATE plans SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    if (!rowCount) throw new HttpError(404, '일정을 찾을 수 없어요');
+    res.json(await loadPlan(id));
   }),
 );
 

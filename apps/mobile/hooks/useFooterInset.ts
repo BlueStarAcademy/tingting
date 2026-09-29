@@ -1,8 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getFooterBottomInset } from '@/constants/layout';
 
-/** Bottom inset so modals/overlays sit above the tab bar (and optional group chat bubble). */
-export function useFooterInset(withGroupChat = false): number {
+/** Bottom inset for modal sheets (they render above the tab bar, so only the safe area matters). */
+export function useFooterInset(): number {
   const insets = useSafeAreaInsets();
-  return getFooterBottomInset({ safeAreaBottom: insets.bottom, withGroupChat });
+  return Math.max(insets.bottom, 12);
 }

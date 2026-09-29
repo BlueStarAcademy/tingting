@@ -44,9 +44,15 @@ export interface Place {
   photoCount?: number;
 }
 
-export type PlaceInput = Omit<Place, 'id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'coverPhotoUri' | 'photoCount' | 'regionCode' | 'status'> & {
+export type PlaceInput = Omit<
+  Place,
+  'id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'coverPhotoUri' | 'photoCount' | 'regionCode' | 'status' | 'lat' | 'lng'
+> & {
   regionCode?: string;
   status?: PlaceStatus;
+  /** Omit to geocode the address (or fall back to the region center) */
+  lat?: number;
+  lng?: number;
 };
 
 export interface PlaceReview {
@@ -73,6 +79,7 @@ export interface Photo {
   placeId?: string;
   visitId?: string;
   regionCode?: string;
+  placeName?: string;
   originalUri: string;
   editedUri?: string;
   takenAt: string;
@@ -86,6 +93,8 @@ export interface TripPlan {
   date: string;
   title: string;
   placeId?: string;
+  placeName?: string;
+  placeRegionCode?: string;
   memo?: string;
   done: boolean;
   createdBy: string;

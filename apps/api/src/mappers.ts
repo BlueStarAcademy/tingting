@@ -67,6 +67,7 @@ export function mapPhoto(row: Row, base: string): Photo {
     placeId: str(row.place_id),
     visitId: str(row.visit_id),
     regionCode: str(row.region_code),
+    placeName: str(row.place_name),
     originalUri: toPublicUri(String(row.original_uri), base)!,
     editedUri: toPublicUri(str(row.edited_uri), base),
     takenAt: iso(row.taken_at),
@@ -81,6 +82,8 @@ export function mapPlan(row: Row): TripPlan {
     date: String(row.plan_date),
     title: String(row.title),
     placeId: str(row.place_id),
+    placeName: str(row.place_name),
+    placeRegionCode: str(row.place_region_code),
     memo: str(row.memo),
     done: Boolean(row.done),
     createdBy: String(row.created_by ?? ''),
@@ -97,6 +100,11 @@ export const PLACE_SELECT = `
   FROM places p`;
 
 export const PHOTO_SELECT = `
-  SELECT ph.*, pl.region_code
+  SELECT ph.*, pl.region_code, pl.name AS place_name
   FROM photos ph
   LEFT JOIN places pl ON pl.id = ph.place_id`;
+
+export const PLAN_SELECT = `
+  SELECT pn.*, pl.name AS place_name, pl.region_code AS place_region_code
+  FROM plans pn
+  LEFT JOIN places pl ON pl.id = pn.place_id`;

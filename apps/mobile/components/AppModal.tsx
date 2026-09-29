@@ -1,5 +1,14 @@
 import type { ReactNode } from 'react';
-import { Modal, View, Pressable, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  View,
+  Pressable,
+  StyleSheet,
+  Platform,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useBottomSheetLayout } from '@/hooks/useBottomSheetLayout';
 import { theme } from '@/constants/theme';
 
@@ -12,8 +21,6 @@ interface Props {
   variant?: Variant;
   animationType?: 'none' | 'slide' | 'fade';
   transparent?: boolean;
-  /** Group detail: clear tab bar + TingTalk bubble */
-  withGroupChat?: boolean;
   /** Tap backdrop to dismiss (default true except fullscreen) */
   dismissOnBackdrop?: boolean;
   sheetStyle?: StyleProp<ViewStyle>;
@@ -26,11 +33,16 @@ export function AppModal({
   variant = 'bottomSheet',
   animationType = 'slide',
   transparent = true,
-  withGroupChat = false,
   dismissOnBackdrop = variant !== 'fullscreen',
   sheetStyle,
 }: Props) {
-  const { footerInset, maxSheetHeight } = useBottomSheetLayout(withGroupChat);
+  const { footerInset, maxSheetHeight } = useBottomSheetLayout();
+
+  const backdrop = dismissOnBackdrop ? (
+    <Pressable style={styles.backdrop} onPress={onRequestClose} accessibilityRole="button" />
+  ) : (
+    <View style={styles.backdrop} />
+  );
 
   return (
     <Modal
@@ -41,42 +53,21 @@ export function AppModal({
       statusBarTranslucent
     >
       {variant === 'fullscreen' ? (
-        <View style={[styles.fullscreen, { paddingBottom: footerInset }]}>{children}</View>
+        <View style={styles.fullscreen}>{children}</View>
       ) : (
-        <View style={[styles.root, variant === 'center' ? styles.rootCenterSplit : null]}>
+        <KeyboardAvoidingView
+          style={[styles.root, variant === 'center' && styles.rootCenter]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {backdrop}
           {variant === 'center' ? (
-            <>
-              {dismissOnBackdrop ? (
-                <Pressable style={styles.flexDismiss} onPress={onRequestClose} accessibilityRole="button" />
-              ) : (
-                <View style={styles.flexDismiss} />
-              )}
-              <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.92 }, sheetStyle]}>
-                {children}
-              </View>
-              {dismissOnBackdrop ? (
-                <Pressable style={styles.flexDismiss} onPress={onRequestClose} accessibilityRole="button" />
-              ) : (
-                <View style={styles.flexDismiss} />
-              )}
-            </>
+            <View style={[styles.centerSheet, { maxHeight: maxSheetHeight * 0.92 }, sheetStyle]}>{children}</View>
           ) : (
-            <>
-              {dismissOnBackdrop ? (
-                <Pressable style={styles.backdrop} onPress={onRequestClose} accessibilityRole="button" />
-              ) : (
-                <View style={styles.backdrop} />
-              )}
-              {variant === 'bottomSheet' ? (
-                <View
-                  style={[styles.bottomSheet, { marginBottom: footerInset, maxHeight: maxSheetHeight }, sheetStyle]}
-                >
-                  {children}
-                </View>
-              ) : null}
-            </>
+            <View style={[styles.bottomSheet, { paddingBottom: footerInset, maxHeight: maxSheetHeight }, sheetStyle]}>
+              {children}
+            </View>
           )}
-        </View>
+        </KeyboardAvoidingView>
       )}
     </Modal>
   );
@@ -86,7 +77,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     justifyContent: 'flex-end',
-    zIndex: 200,
     ...Platform.select({
       web: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 },
     }),
@@ -95,38 +85,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.lg,
   },
-  rootCenterSplit: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.lg,
-  },
-  flexDismiss: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(30,15,20,0.45)',
   },
   bottomSheet: {
     alignSelf: 'stretch',
-    zIndex: 201,
     flexShrink: 1,
     overflow: 'hidden',
     backgroundColor: theme.colors.surfaceElevated,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: theme.colors.border,
   },
   centerSheet: {
     alignSelf: 'stretch',
-    zIndex: 201,
     overflow: 'hidden',
     backgroundColor: theme.colors.surfaceElevated,
     borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     ...Platform.select({
       android: { elevation: 12 },
       default: {},
@@ -135,6 +110,5 @@ const styles = StyleSheet.create({
   fullscreen: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    zIndex: 200,
   },
 });

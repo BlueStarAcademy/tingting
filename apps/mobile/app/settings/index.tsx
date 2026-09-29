@@ -15,10 +15,7 @@ export default function SettingsScreen() {
   const { t } = useLocale();
   const { user, partner, refresh } = useAuth();
   const { requestLogout } = useLogoutConfirm();
-  const [pwOpen, setPwOpen] = useState(false);
   const [nameOpen, setNameOpen] = useState(false);
-  const [pwCurrent, setPwCurrent] = useState('');
-  const [pwNext, setPwNext] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -32,15 +29,6 @@ export default function SettingsScreen() {
       setBusy(false);
     }
   };
-
-  const changePassword = () =>
-    run(async () => {
-      await api.changePassword(pwCurrent, pwNext);
-      setPwCurrent('');
-      setPwNext('');
-      setPwOpen(false);
-      Alert.alert(t('settings.pwChanged'), t('settings.pwChangedMessage'));
-    });
 
   const saveName = () =>
     run(async () => {
@@ -84,7 +72,6 @@ export default function SettingsScreen() {
             setNameOpen(true);
           }}
         />
-        <SettingsMenuRow label={t('settings.changePassword')} onPress={() => setPwOpen(true)} />
         {Platform.OS !== 'web' ? (
           <SettingsMenuRow
             label={t('settings.appUpdate')}
@@ -107,34 +94,6 @@ export default function SettingsScreen() {
             maxLength={20}
           />
           <PremiumButton title="저장" onPress={saveName} loading={busy} disabled={!name.trim()} />
-        </View>
-      </AppModal>
-
-      <AppModal visible={pwOpen} animationType="fade" onRequestClose={() => setPwOpen(false)} variant="center">
-        <View style={styles.modalSheet}>
-          <Text style={styles.modalTitle}>{t('settings.changePassword')}</Text>
-          <TextInput
-            style={styles.input}
-            value={pwCurrent}
-            onChangeText={setPwCurrent}
-            placeholder={t('settings.currentPassword')}
-            placeholderTextColor={theme.colors.textMuted}
-            secureTextEntry
-          />
-          <TextInput
-            style={styles.input}
-            value={pwNext}
-            onChangeText={setPwNext}
-            placeholder={t('settings.newPassword')}
-            placeholderTextColor={theme.colors.textMuted}
-            secureTextEntry
-          />
-          <PremiumButton
-            title={t('settings.changePassword')}
-            onPress={changePassword}
-            loading={busy}
-            disabled={!pwCurrent || pwNext.length < 6}
-          />
         </View>
       </AppModal>
     </AppScreen>

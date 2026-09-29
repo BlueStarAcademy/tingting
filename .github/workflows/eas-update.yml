@@ -33,8 +33,12 @@ jobs:
 
       - name: Publish OTA update (preview)
         working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_APP_KEY: ${{ secrets.APP_KEY }}
         run: eas update --branch preview --non-interactive --message "${{ github.event.head_commit.message }}"
 
       - name: Publish OTA update (production)
         working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_APP_KEY: ${{ secrets.APP_KEY }}
         run: eas update --branch production --non-interactive --message "${{ github.event.head_commit.message }}"

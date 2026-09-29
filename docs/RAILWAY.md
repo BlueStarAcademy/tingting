@@ -39,11 +39,13 @@ Railway 프로젝트 하나에 **API 서비스 + PostgreSQL + Volume**만 둡니
 | `CORS_ORIGIN` | `*` |
 | `PUBLIC_API_URL` | 2단계에서 만든 공개 주소 (끝 `/` 없이) |
 | `UPLOADS_DIR` | `/data/uploads` |
-| `COUPLE_USER1_EMAIL` / `COUPLE_USER1_PASSWORD` / `COUPLE_USER1_NAME` | 첫 번째 계정 |
-| `COUPLE_USER2_EMAIL` / `COUPLE_USER2_PASSWORD` / `COUPLE_USER2_NAME` | 두 번째 계정 |
+| `APP_KEY` | 랜덤 문자열. 앱의 `EXPO_PUBLIC_APP_KEY`와 **같은 값** |
+| `COUPLE_USER1_NAME` / `COUPLE_USER2_NAME` | (선택) 처음 만들 두 사람 이름. 기본값 `나` / `너` |
 | `KAKAO_REST_API_KEY` | [Kakao Developers](https://developers.kakao.com) → 내 애플리케이션 → 앱 키 → REST API 키 |
 
-- 두 계정은 서버가 시작될 때 **없으면** 생성됩니다. 이미 있는 계정의 비밀번호는 덮어쓰지 않으니, 이후 변경은 앱 **설정 → 비밀번호 변경**에서 하세요.
+- 로그인은 없습니다. 앱을 처음 열 때 "누구세요?"에서 한 번 고르면 이후엔 바로 홈으로 들어갑니다.
+- 두 사람은 서버가 시작될 때 **없으면** 생성됩니다. 이름은 앱 **설정 → 내 이름**에서 바꾸세요.
+- `APP_KEY`가 없으면 API 주소를 아는 누구나 들어올 수 있으니 꼭 설정하세요.
 - 카카오 키가 없으면 장소 검색만 꺼지고 직접 입력은 그대로 됩니다.
 
 ## 5. 데이터베이스 마이그레이션
@@ -55,6 +57,9 @@ Railway 프로젝트 하나에 **API 서비스 + PostgreSQL + Volume**만 둡니
 ## 6. 앱 연결
 
 - EAS 빌드/업데이트 시 `EXPO_PUBLIC_API_URL`을 API 공개 주소로 설정 (`apps/mobile/eas.json`의 env)
+- `EXPO_PUBLIC_APP_KEY`는 저장소에 커밋하지 말고 따로 넣습니다
+  - OTA 업데이트: GitHub repo **Settings → Secrets → Actions**에 `APP_KEY`
+  - EAS 빌드: `eas env:create --name EXPO_PUBLIC_APP_KEY --value <값> --environment preview --environment production`
 - 기존 `tingting-web` 서비스가 있다면 Railway에서 삭제해도 됩니다.
 
 ---

@@ -8,7 +8,7 @@ export default function TabsLayout() {
   const { session, loading } = useAuth();
   const contentWidth = useContentWidth();
 
-  if (!loading && !session) return <Redirect href="/login" />;
+  if (!loading && !session) return <Redirect href="/select-user" />;
 
   return (
     <View style={[styles.root, { width: contentWidth, maxWidth: contentWidth }]}>

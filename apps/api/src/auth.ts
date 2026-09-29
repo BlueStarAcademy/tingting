@@ -1,5 +1,4 @@
-import { Router, type NextFunction, type Response } from 'express';
-import bcrypt from 'bcryptjs';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { AuthSession } from '@tingting/shared';
 import { config } from './config';
@@ -14,7 +13,7 @@ function signToken(id: string, email: string): string {
 export function authMiddleware(req: AuthedRequest, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
-    res.status(401).json({ error: '로그인이 필요해요' });
+    res.status(401).json({ error: '사용자를 먼저 선택해 주세요' });
     return;
   }
   try {
@@ -22,26 +21,32 @@ export function authMiddleware(req: AuthedRequest, res: Response, next: NextFunc
     req.user = { userId: payload.userId, email: payload.email };
     next();
   } catch {
-    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요' });
+    res.status(401).json({ error: '세션이 만료됐어요. 앱을 다시 열어 주세요' });
   }
 }
 
-/** Create the two couple accounts from env on first boot. Existing passwords are never overwritten. */
-export async function seedCoupleUsers(): Promise<void> {
-  if (config.coupleUsers.length === 0) {
-    console.warn('[auth] COUPLE_USER1_EMAIL / COUPLE_USER1_PASSWORD not set; no accounts seeded');
+function requireAppKey(req: Request, res: Response, next: NextFunction): void {
+  if (!config.appKey || req.get('x-app-key') === config.appKey) {
+    next();
     return;
   }
-  for (const u of config.coupleUsers) {
-    const hash = await bcrypt.hash(u.password, 10);
+  res.status(401).json({ error: '허용되지 않은 앱이에요' });
+}
+
+/** Make sure both of us exist. There is no password login, so email/password_hash are placeholders. */
+export async function seedCoupleUsers(): Promise<void> {
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+  for (let n = Number(rows[0].n) + 1; n <= 2; n++) {
     const { rowCount } = await pool.query(
-      `INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3)
+      `INSERT INTO users (email, password_hash, display_name) VALUES ($1, '', $2)
        ON CONFLICT (email) DO NOTHING`,
-      [u.email, hash, u.displayName],
+      [`user${n}@tingting.local`, config.coupleNames[n - 1]],
     );
-    if (rowCount) console.log(`[auth] seeded ${u.email}`);
+    if (rowCount) console.log(`[auth] seeded user${n}`);
   }
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function buildSession(id: string, base: string): Promise<AuthSession> {
   const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at');
@@ -53,19 +58,26 @@ async function buildSession(id: string, base: string): Promise<AuthSession> {
 
 export const authRouter = Router();
 
-authRouter.post(
-  '/login',
+authRouter.get(
+  '/users',
+  requireAppKey,
   handle(async (req, res) => {
-    const email = optionalString(req.body?.email)?.toLowerCase();
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    if (!email || !password) throw new HttpError(400, '이메일과 비밀번호를 입력해 주세요');
-    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    const row = rows[0];
-    if (!row || !(await bcrypt.compare(password, String(row.password_hash)))) {
-      throw new HttpError(401, '이메일 또는 비밀번호가 올바르지 않아요');
-    }
-    const session = await buildSession(String(row.id), publicBaseUrl(req));
-    res.json({ token: signToken(String(row.id), email), session });
+    const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at LIMIT 2');
+    const base = publicBaseUrl(req);
+    res.json(rows.map((r) => mapUser(r, base)));
+  }),
+);
+
+authRouter.post(
+  '/enter',
+  requireAppKey,
+  handle(async (req, res) => {
+    const id = optionalString(req.body?.userId);
+    if (!id || !UUID_RE.test(id)) throw new HttpError(400, '사용자를 선택해 주세요');
+    const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (!rows[0]) throw new HttpError(404, '사용자를 찾을 수 없어요');
+    const session = await buildSession(id, publicBaseUrl(req));
+    res.json({ token: signToken(id, String(rows[0].email)), session });
   }),
 );
 
@@ -91,21 +103,5 @@ authRouter.patch(
       [displayName, avatarUri ? toStoredUri(avatarUri) : null, userId(req)],
     );
     res.json(mapUser(rows[0], publicBaseUrl(req)));
-  }),
-);
-
-authRouter.post(
-  '/password',
-  authMiddleware,
-  handle(async (req, res) => {
-    const current = String(req.body?.currentPassword ?? '');
-    const next = String(req.body?.newPassword ?? '');
-    if (next.length < 6) throw new HttpError(400, '새 비밀번호는 6자 이상이어야 해요');
-    const { rows } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId(req)]);
-    if (!rows[0] || !(await bcrypt.compare(current, String(rows[0].password_hash)))) {
-      throw new HttpError(400, '현재 비밀번호가 올바르지 않아요');
-    }
-    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(next, 10), userId(req)]);
-    res.status(204).end();
   }),
 );

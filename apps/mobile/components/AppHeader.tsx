@@ -3,7 +3,6 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumIconButton } from '@/components/PremiumIconButton';
-import { useLogoutConfirm } from '@/hooks/useLogoutConfirm';
 import { useLocale } from '@/hooks/useLocale';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { safeBack } from '@/lib/navigation';
@@ -20,7 +19,6 @@ export function AppHeader({ title, showBack, showActions = true, right }: AppHea
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const contentWidth = useContentWidth();
-  const { requestLogout } = useLogoutConfirm();
   const { t } = useLocale();
 
   return (
@@ -39,14 +37,11 @@ export function AppHeader({ title, showBack, showActions = true, right }: AppHea
         <View style={styles.actions}>
           {right}
           {showActions ? (
-            <>
-              <PremiumIconButton
-                icon="settings-outline"
-                onPress={() => router.push('/settings' as Href)}
-                accessibilityLabel={t('header.settings')}
-              />
-              <PremiumIconButton icon="log-out-outline" onPress={requestLogout} accessibilityLabel={t('header.logout')} />
-            </>
+            <PremiumIconButton
+              icon="settings-outline"
+              onPress={() => router.push('/settings' as Href)}
+              accessibilityLabel={t('header.settings')}
+            />
           ) : null}
           {!showActions && !right ? <View style={styles.iconSpacer} /> : null}
         </View>

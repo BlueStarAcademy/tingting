@@ -18,22 +18,28 @@ import type {
 } from '@tingting/shared';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
+const APP_KEY = process.env.EXPO_PUBLIC_APP_KEY ?? '';
 
 const TOKEN_KEY = 'tingting.api-token';
+const USER_KEY = 'tingting.user-id';
 
-export async function getToken(): Promise<string | null> {
-  if (Platform.OS === 'web') return AsyncStorage.getItem(TOKEN_KEY);
-  return SecureStore.getItemAsync(TOKEN_KEY);
+async function readItem(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') return AsyncStorage.getItem(key);
+  return SecureStore.getItemAsync(key);
 }
 
-async function setToken(token: string | null): Promise<void> {
+async function writeItem(key: string, value: string | null): Promise<void> {
   if (Platform.OS === 'web') {
-    if (token) await AsyncStorage.setItem(TOKEN_KEY, token);
-    else await AsyncStorage.removeItem(TOKEN_KEY);
+    if (value) await AsyncStorage.setItem(key, value);
+    else await AsyncStorage.removeItem(key);
     return;
   }
-  if (token) await SecureStore.setItemAsync(TOKEN_KEY, token);
-  else await SecureStore.deleteItemAsync(TOKEN_KEY);
+  if (value) await SecureStore.setItemAsync(key, value);
+  else await SecureStore.deleteItemAsync(key);
+}
+
+export function getToken(): Promise<string | null> {
+  return readItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {
@@ -50,6 +56,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     ...(options.headers as Record<string, string>),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (APP_KEY) headers['X-App-Key'] = APP_KEY;
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (res.status === 204) return undefined as T;
@@ -68,35 +75,39 @@ function query(params: Record<string, string | undefined>): string {
 const json = (body: unknown) => JSON.stringify(body);
 
 export const api = {
+  /** Re-enter as the remembered user on every launch so the token never runs out. */
   async getSession(): Promise<AuthSession | null> {
-    if (!(await getToken())) return null;
+    const userId = await readItem(USER_KEY);
+    if (!userId) return null;
     try {
-      return await request<AuthSession>('/auth/me');
+      return await api.enterAs(userId);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) await setToken(null);
+      if (e instanceof ApiError && (e.status === 400 || e.status === 404)) await api.signOut();
       return null;
     }
   },
 
-  async signIn(email: string, password: string): Promise<AuthSession> {
-    const data = await request<{ token: string; session: AuthSession }>('/auth/login', {
+  listUsers(): Promise<CoupleUser[]> {
+    return request('/auth/users');
+  },
+
+  async enterAs(userId: string): Promise<AuthSession> {
+    const data = await request<{ token: string; session: AuthSession }>('/auth/enter', {
       method: 'POST',
-      body: json({ email, password }),
+      body: json({ userId }),
     });
-    await setToken(data.token);
+    await writeItem(TOKEN_KEY, data.token);
+    await writeItem(USER_KEY, userId);
     return data.session;
   },
 
   async signOut(): Promise<void> {
-    await setToken(null);
+    await writeItem(TOKEN_KEY, null);
+    await writeItem(USER_KEY, null);
   },
 
   updateMe(patch: { displayName?: string; avatarUri?: string }): Promise<CoupleUser> {
     return request('/auth/me', { method: 'PATCH', body: json(patch) });
-  },
-
-  changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    return request('/auth/password', { method: 'POST', body: json({ currentPassword, newPassword }) });
   },
 
   getDashboard(): Promise<HomeDashboard> {

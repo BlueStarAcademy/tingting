@@ -33,7 +33,7 @@ export function LogoutConfirmProvider({ children }: { children: ReactNode }) {
     try {
       await signOut();
       setOpen(false);
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/select-user');
     } finally {
       setLoggingOut(false);
     }

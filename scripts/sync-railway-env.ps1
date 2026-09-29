@@ -39,8 +39,9 @@ $merged['PORT'] = '3000'
 $merged['PGSSLMODE'] = 'require'
 $merged['UPLOADS_DIR'] = (Join-Path $root 'apps/api/uploads')
 $merged.Remove('PUBLIC_API_URL')
+if ($merged.ContainsKey('APP_KEY')) { $merged['EXPO_PUBLIC_APP_KEY'] = $merged['APP_KEY'] }
 
-$expoKeys = @('EXPO_PUBLIC_API_URL')
+$expoKeys = @('EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_APP_KEY')
 
 function Write-EnvFile([string]$Path, [hashtable]$Vars, [string[]]$KeyOrder, [string]$Header) {
     $lines = New-Object System.Collections.Generic.List[string]
@@ -65,9 +66,8 @@ function Write-EnvFile([string]$Path, [hashtable]$Vars, [string[]]$KeyOrder, [st
 
 $rootOrder = @(
     'DATABASE_URL', 'JWT_SECRET', 'NODE_ENV', 'CORS_ORIGIN', 'PORT', 'PGSSLMODE', 'UPLOADS_DIR',
-    'COUPLE_USER1_EMAIL', 'COUPLE_USER1_PASSWORD', 'COUPLE_USER1_NAME',
-    'COUPLE_USER2_EMAIL', 'COUPLE_USER2_PASSWORD', 'COUPLE_USER2_NAME',
-    'KAKAO_REST_API_KEY', 'EXPO_PUBLIC_API_URL'
+    'APP_KEY', 'COUPLE_USER1_NAME', 'COUPLE_USER2_NAME',
+    'KAKAO_REST_API_KEY', 'EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_APP_KEY'
 )
 
 Write-EnvFile -Path (Join-Path $root '.env') -Vars $merged -KeyOrder $rootOrder -Header @'

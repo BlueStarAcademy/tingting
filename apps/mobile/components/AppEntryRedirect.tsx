@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { theme } from '@/constants/theme';
 
-/** 인증 상태에 따라 로그인 / 홈으로 이동 */
+/** 사용자를 골랐으면 홈, 아니면 사용자 선택으로 이동 */
 export function AppEntryRedirect() {
   const router = useRouter();
   const { session, loading } = useAuth();
@@ -12,7 +12,7 @@ export function AppEntryRedirect() {
   useEffect(() => {
     if (loading) return;
     if (!session) {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/select-user');
     } else {
       router.replace('/(tabs)/home');
     }

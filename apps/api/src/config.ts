@@ -13,13 +13,9 @@ export const config = {
   uploadsDir: process.env.UPLOADS_DIR ?? path.join(__dirname, '..', 'uploads'),
   maxUploadBytes: 25 * 1024 * 1024,
   kakaoRestApiKey: process.env.KAKAO_REST_API_KEY ?? '',
-  coupleUsers: [1, 2]
-    .map((n) => ({
-      email: (process.env[`COUPLE_USER${n}_EMAIL`] ?? '').trim().toLowerCase(),
-      password: process.env[`COUPLE_USER${n}_PASSWORD`] ?? '',
-      displayName: (process.env[`COUPLE_USER${n}_NAME`] ?? '').trim() || `사용자${n}`,
-    }))
-    .filter((u) => u.email && u.password),
+  /** Shared with the app as EXPO_PUBLIC_APP_KEY; empty disables the check. */
+  appKey: (process.env.APP_KEY ?? '').trim(),
+  coupleNames: [process.env.COUPLE_USER1_NAME?.trim() || '나', process.env.COUPLE_USER2_NAME?.trim() || '너'],
 };
 
 export function assertConfig(): void {
@@ -30,5 +26,8 @@ export function assertConfig(): void {
   if (config.isProduction && config.jwtSecret === DEV_JWT_SECRET) {
     console.error('JWT_SECRET must be set in production');
     process.exit(1);
+  }
+  if (!config.appKey) {
+    console.warn('[auth] APP_KEY not set; anyone who knows the API URL can enter');
   }
 }

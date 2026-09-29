@@ -27,7 +27,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'tingting-api',
-    coupleAccounts: config.coupleUsers.length,
+    appKey: Boolean(config.appKey),
     kakaoSearch: Boolean(config.kakaoRestApiKey),
     uploadsDir: config.uploadsDir,
   });

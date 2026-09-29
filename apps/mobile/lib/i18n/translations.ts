@@ -8,15 +8,13 @@ const ko: Record<string, string> = {
   'common.cancel': '취소',
 
   'header.settings': '설정',
-  'header.logout': '로그아웃',
-  'header.logoutConfirm': '로그아웃 하시겠어요?',
+  'header.logout': '사용자 바꾸기',
+  'header.logoutConfirm': '처음 화면으로 돌아가 다른 사람으로 들어갈까요?',
   'header.cancel': '취소',
 
   'auth.tagline': '우리 둘만의 전국일주 기록',
-  'auth.email': '이메일',
-  'auth.password': '비밀번호',
-  'auth.login': '로그인',
-  'auth.loginFailed': '로그인 실패',
+  'auth.whoAreYou': '누구세요?',
+  'auth.retry': '다시 시도',
   'auth.unknownError': '알 수 없는 오류가 발생했어요',
 
   'map.nationalProgressTitle': '전국일주 진행도',
@@ -83,11 +81,6 @@ const ko: Record<string, string> = {
   'settings.updateAppliedMessage': '잠시 후 앱이 다시 시작돼요.',
   'settings.updateFailed': '업데이트 확인에 실패했어요',
   'settings.updateDisabled': '이 빌드에서는 앱 내 업데이트를 사용할 수 없어요',
-  'settings.changePassword': '비밀번호 변경',
-  'settings.currentPassword': '현재 비밀번호',
-  'settings.newPassword': '새 비밀번호',
-  'settings.pwChanged': '변경 완료',
-  'settings.pwChangedMessage': '비밀번호가 변경됐어요',
 };
 
 export function translate(key: string, params?: Record<string, string | number>): string {

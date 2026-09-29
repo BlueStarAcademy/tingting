@@ -9,6 +9,7 @@ import { placesRouter, visitsRouter } from './routes/places';
 import { photosRouter } from './routes/photos';
 import { plansRouter } from './routes/plans';
 import { dashboardRouter } from './routes/dashboard';
+import { myboxBackupStatus, requestMyboxBackup, startMyboxBackup } from './mybox';
 
 assertConfig();
 
@@ -30,6 +31,7 @@ app.get('/health', (_req, res) => {
     appKey: Boolean(config.appKey),
     kakaoSearch: Boolean(config.kakaoRestApiKey),
     uploadsDir: config.uploadsDir,
+    myboxBackup: myboxBackupStatus(),
   });
 });
 
@@ -48,6 +50,7 @@ app.post(
         filename: typeof req.body?.filename === 'string' ? req.body.filename : undefined,
       });
       res.status(201).json({ url: `${publicBaseUrl(req)}${stored}` });
+      requestMyboxBackup();
     } catch (e) {
       throw new HttpError(400, e instanceof Error ? e.message : '업로드 실패');
     }
@@ -80,6 +83,7 @@ async function start() {
   app.listen(config.port, () => {
     console.log(`tingting-api listening on :${config.port}`);
   });
+  startMyboxBackup();
 }
 
 start().catch((e) => {

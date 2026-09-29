@@ -15,6 +15,9 @@ export const config = {
   kakaoRestApiKey: process.env.KAKAO_REST_API_KEY ?? '',
   /** Shared with the app as EXPO_PUBLIC_APP_KEY; empty disables the check. */
   appKey: (process.env.APP_KEY ?? '').trim(),
+  /** MYBOX personal access token; uploads are copied to MYBOX when set. */
+  myboxToken: (process.env.MYBOX_TOKEN ?? '').trim(),
+  myboxFolderName: process.env.MYBOX_FOLDER_NAME?.trim() || 'TingTing 사진 백업',
   coupleNames: [process.env.COUPLE_USER1_NAME?.trim() || '나', process.env.COUPLE_USER2_NAME?.trim() || '너'],
 };
 

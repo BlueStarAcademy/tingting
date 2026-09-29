@@ -42,11 +42,14 @@ Railway 프로젝트 하나에 **API 서비스 + PostgreSQL + Volume**만 둡니
 | `APP_KEY` | 랜덤 문자열. 앱의 `EXPO_PUBLIC_APP_KEY`와 **같은 값** |
 | `COUPLE_USER1_NAME` / `COUPLE_USER2_NAME` | (선택) 처음 만들 두 사람 이름. 기본값 `나` / `너` |
 | `KAKAO_REST_API_KEY` | [Kakao Developers](https://developers.kakao.com) → 내 애플리케이션 → 앱 키 → REST API 키 |
+| `MYBOX_TOKEN` | (선택) [MYBOX Open API](https://developers.mybox.naver.com/) 개인 액세스 토큰. 설정하면 사진을 마이박스에 백업 |
+| `MYBOX_FOLDER_NAME` | (선택) 마이박스 백업 폴더 이름. 기본값 `TingTing 사진 백업` |
 
 - 로그인은 없습니다. 앱을 처음 열 때 "누구세요?"에서 한 번 고르면 이후엔 바로 홈으로 들어갑니다.
 - 두 사람은 서버가 시작될 때 **없으면** 생성됩니다. 이름은 앱 **설정 → 내 이름**에서 바꾸세요.
 - `APP_KEY`가 없으면 API 주소를 아는 누구나 들어올 수 있으니 꼭 설정하세요.
 - 카카오 키가 없으면 장소 검색만 꺼지고 직접 입력은 그대로 됩니다.
+- 마이박스 백업: 볼륨의 사진 중 아직 백업되지 않은 것을 업로드 직후·서버 시작 시·30분마다 `MYBOX_FOLDER_NAME/YYYY-MM/`에 올립니다. 앱에서 사진을 지워도 마이박스 사본은 남습니다. 토큰이 만료되면 `/health`의 `myboxBackup.lastError`에 표시되고, 새 토큰을 넣으면 밀린 사진부터 이어서 올립니다.
 
 ## 5. 데이터베이스 마이그레이션
 

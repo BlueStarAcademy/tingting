@@ -21,8 +21,5 @@
   "devDependencies": {
     "dotenv": "^16.4.7",
     "eas-cli": "^16.32.0"
-  },
-  "dependencies": {
-    "expo-router": "~56.2.11"
   }
 }

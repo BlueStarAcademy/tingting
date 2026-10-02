@@ -23,6 +23,8 @@ export const config = {
     ? process.env.MYBOX_TOKEN_EXPIRES!.trim()
     : '',
   coupleNames: [process.env.COUPLE_USER1_NAME?.trim() || '나', process.env.COUPLE_USER2_NAME?.trim() || '너'],
+  /** Hashed into any user whose password is still empty; changed later in the app. */
+  coupleInitialPassword: process.env.COUPLE_INITIAL_PASSWORD?.trim() ?? '',
 };
 
 export function assertConfig(): void {
@@ -36,5 +38,8 @@ export function assertConfig(): void {
   }
   if (!config.appKey) {
     console.warn('[auth] APP_KEY not set; anyone who knows the API URL can enter');
+  }
+  if (!config.coupleInitialPassword) {
+    console.warn('[auth] COUPLE_INITIAL_PASSWORD not set; users without a password cannot enter');
   }
 }

@@ -12,12 +12,19 @@ import { api } from '@/lib/api';
 import { applyAppUpdate, checkForAppUpdate, getAppVersionLabel, isAppUpdateEnabled } from '@/lib/updates';
 import { theme } from '@/constants/theme';
 
+const MIN_PASSWORD_LENGTH = 4;
+
 export default function SettingsScreen() {
   const { t } = useLocale();
   const { user, partner, refresh } = useAuth();
   const { requestLogout } = useLogoutConfirm();
   const [nameOpen, setNameOpen] = useState(false);
   const [name, setName] = useState('');
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNext, setPwNext] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwError, setPwError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const run = async (action: () => Promise<void>) => {
@@ -37,6 +44,32 @@ export default function SettingsScreen() {
       await refresh();
       setNameOpen(false);
     });
+
+  const openPasswordModal = () => {
+    setPwCurrent('');
+    setPwNext('');
+    setPwConfirm('');
+    setPwError('');
+    setPwOpen(true);
+  };
+
+  const changePassword = async () => {
+    if (pwNext !== pwConfirm) {
+      setPwError(t('settings.passwordMismatch'));
+      return;
+    }
+    setBusy(true);
+    setPwError('');
+    try {
+      await api.changePassword(pwCurrent, pwNext);
+      setPwOpen(false);
+      Alert.alert(t('settings.pwChanged'), t('settings.pwChangedMessage'));
+    } catch (e: unknown) {
+      setPwError(e instanceof Error ? e.message : t('auth.unknownError'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleAppUpdate = () =>
     run(async () => {
@@ -75,6 +108,7 @@ export default function SettingsScreen() {
             setNameOpen(true);
           }}
         />
+        <SettingsMenuRow label={t('settings.changePassword')} onPress={openPasswordModal} />
         {Platform.OS !== 'web' ? (
           <SettingsMenuRow
             label={t('settings.appUpdate')}
@@ -97,6 +131,48 @@ export default function SettingsScreen() {
             maxLength={20}
           />
           <PremiumButton title="저장" onPress={saveName} loading={busy} disabled={!name.trim()} />
+        </View>
+      </AppModal>
+
+      <AppModal visible={pwOpen} animationType="fade" onRequestClose={() => setPwOpen(false)} variant="center">
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>{t('settings.changePassword')}</Text>
+          <TextInput
+            style={styles.input}
+            value={pwCurrent}
+            onChangeText={setPwCurrent}
+            placeholder={t('settings.currentPassword')}
+            placeholderTextColor={theme.colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={styles.input}
+            value={pwNext}
+            onChangeText={setPwNext}
+            placeholder={t('settings.newPassword', { min: MIN_PASSWORD_LENGTH })}
+            placeholderTextColor={theme.colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={styles.input}
+            value={pwConfirm}
+            onChangeText={setPwConfirm}
+            placeholder={t('settings.confirmPassword')}
+            placeholderTextColor={theme.colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            onSubmitEditing={changePassword}
+          />
+          {pwError ? <Text style={styles.error}>{pwError}</Text> : null}
+          <PremiumButton
+            title={t('settings.changePassword')}
+            onPress={changePassword}
+            loading={busy}
+            disabled={!pwCurrent || pwNext.length < MIN_PASSWORD_LENGTH || !pwConfirm}
+          />
+          <PremiumButton title={t('common.cancel')} variant="ghost" onPress={() => setPwOpen(false)} disabled={busy} />
         </View>
       </AppModal>
     </AppScreen>
@@ -134,4 +210,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.surfaceLight,
   },
+  error: { color: theme.colors.error, fontSize: 13 },
 });

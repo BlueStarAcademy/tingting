@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Image, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, Pressable, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { CoupleUser } from '@tingting/shared';
+import { AppModal } from '@/components/AppModal';
 import { GradientBackground } from '@/components/GradientBackground';
 import { PremiumButton } from '@/components/PremiumButton';
 import { api } from '@/lib/api';
@@ -21,6 +22,9 @@ export default function SelectUserScreen() {
   const [users, setUsers] = useState<CoupleUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [enteringId, setEnteringId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<CoupleUser | null>(null);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
@@ -36,14 +40,28 @@ export default function SelectUserScreen() {
     load();
   }, [load]);
 
-  const enter = async (user: CoupleUser) => {
-    setEnteringId(user.id);
+  const openPassword = (user: CoupleUser) => {
+    setSelected(user);
+    setPassword('');
+    setPasswordError('');
+  };
+
+  const closePassword = () => {
+    if (enteringId) return;
+    setSelected(null);
+  };
+
+  const enter = async () => {
+    if (!selected || !password) return;
+    setEnteringId(selected.id);
+    setPasswordError('');
     try {
-      await api.enterAs(user.id);
+      await api.enterAs(selected.id, password);
       await refresh();
+      setSelected(null);
       router.replace(APP_ENTRY_HREF);
     } catch (e: unknown) {
-      Alert.alert(t('common.error'), e instanceof Error ? e.message : t('auth.unknownError'));
+      setPasswordError(e instanceof Error ? e.message : t('auth.unknownError'));
     } finally {
       setEnteringId(null);
     }
@@ -72,7 +90,7 @@ export default function SelectUserScreen() {
                 key={u.id}
                 accessibilityRole="button"
                 accessibilityLabel={u.displayName}
-                onPress={() => enter(u)}
+                onPress={() => openPassword(u)}
                 disabled={enteringId != null}
                 style={({ pressed }) => [
                   styles.userCard,
@@ -99,6 +117,32 @@ export default function SelectUserScreen() {
           </View>
         )}
       </ScrollView>
+
+      <AppModal visible={selected != null} animationType="fade" onRequestClose={closePassword} variant="center">
+        <View style={styles.passwordSheet}>
+          <Text style={styles.passwordTitle}>{t('auth.passwordTitle', { name: selected?.displayName ?? '' })}</Text>
+          <TextInput
+            style={styles.passwordInput}
+            value={password}
+            onChangeText={(v) => {
+              setPassword(v);
+              setPasswordError('');
+            }}
+            placeholder={t('auth.password')}
+            placeholderTextColor={theme.colors.textMuted}
+            secureTextEntry
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="go"
+            onSubmitEditing={enter}
+            editable={enteringId == null}
+          />
+          {passwordError ? <Text style={styles.passwordError}>{passwordError}</Text> : null}
+          <PremiumButton title={t('auth.enter')} onPress={enter} loading={enteringId != null} disabled={!password} />
+          <PremiumButton title={t('common.cancel')} variant="ghost" onPress={closePassword} disabled={enteringId != null} />
+        </View>
+      </AppModal>
     </GradientBackground>
   );
 }
@@ -187,6 +231,21 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   errorBox: { gap: theme.spacing.sm },
+  passwordSheet: {
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  passwordTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '800', marginBottom: theme.spacing.xs },
+  passwordInput: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    padding: 14,
+    color: theme.colors.text,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceLight,
+  },
+  passwordError: { color: theme.colors.error, fontSize: 13 },
   error: {
     color: theme.colors.textMuted,
     fontSize: 14,

@@ -16,6 +16,9 @@ const ko: Record<string, string> = {
   'auth.whoAreYou': '누구세요?',
   'auth.retry': '다시 시도',
   'auth.unknownError': '알 수 없는 오류가 발생했어요',
+  'auth.passwordTitle': '{{name}}, 비밀번호를 입력해 주세요',
+  'auth.password': '비밀번호',
+  'auth.enter': '입장하기',
 
   'map.nationalProgressTitle': '전국일주 진행도',
   'map.nationalProgressSub': '{{visited}}/{{total}} 지역 방문',
@@ -81,6 +84,13 @@ const ko: Record<string, string> = {
   'settings.updateAppliedMessage': '잠시 후 앱이 다시 시작돼요.',
   'settings.updateFailed': '업데이트 확인에 실패했어요',
   'settings.updateDisabled': '이 빌드에서는 앱 내 업데이트를 사용할 수 없어요',
+  'settings.changePassword': '비밀번호 변경',
+  'settings.currentPassword': '현재 비밀번호',
+  'settings.newPassword': '새 비밀번호 ({{min}}자 이상)',
+  'settings.confirmPassword': '새 비밀번호 확인',
+  'settings.passwordMismatch': '새 비밀번호가 서로 달라요',
+  'settings.pwChanged': '변경 완료',
+  'settings.pwChangedMessage': '비밀번호가 변경됐어요. 다음 입장부터 새 비밀번호를 써 주세요.',
 
   'backup.title': '마이박스 사진 백업',
   'backup.ok': '정상',

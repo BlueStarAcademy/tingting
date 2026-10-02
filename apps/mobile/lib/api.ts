@@ -76,14 +76,16 @@ function query(params: Record<string, string | undefined>): string {
 const json = (body: unknown) => JSON.stringify(body);
 
 export const api = {
-  /** Re-enter as the remembered user on every launch so the token never runs out. */
+  /** Swap the stored token for a fresh one on every launch so it never runs out. */
   async getSession(): Promise<AuthSession | null> {
-    const userId = await readItem(USER_KEY);
-    if (!userId) return null;
+    if (!(await getToken())) return null;
     try {
-      return await api.enterAs(userId);
+      const data = await request<{ token: string; session: AuthSession }>('/auth/refresh', { method: 'POST' });
+      await writeItem(TOKEN_KEY, data.token);
+      await writeItem(USER_KEY, data.session.user.id);
+      return data.session;
     } catch (e) {
-      if (e instanceof ApiError && (e.status === 400 || e.status === 404)) await api.signOut();
+      if (e instanceof ApiError && e.status === 401) await api.signOut();
       return null;
     }
   },
@@ -92,14 +94,18 @@ export const api = {
     return request('/auth/users');
   },
 
-  async enterAs(userId: string): Promise<AuthSession> {
+  async enterAs(userId: string, password: string): Promise<AuthSession> {
     const data = await request<{ token: string; session: AuthSession }>('/auth/enter', {
       method: 'POST',
-      body: json({ userId }),
+      body: json({ userId, password }),
     });
     await writeItem(TOKEN_KEY, data.token);
     await writeItem(USER_KEY, userId);
     return data.session;
+  },
+
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return request('/auth/password', { method: 'POST', body: json({ currentPassword, newPassword }) });
   },
 
   async signOut(): Promise<void> {

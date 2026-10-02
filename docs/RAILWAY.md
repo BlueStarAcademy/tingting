@@ -41,12 +41,15 @@ Railway 프로젝트 하나에 **API 서비스 + PostgreSQL + Volume**만 둡니
 | `UPLOADS_DIR` | `/data/uploads` |
 | `APP_KEY` | 랜덤 문자열. 앱의 `EXPO_PUBLIC_APP_KEY`와 **같은 값** |
 | `COUPLE_USER1_NAME` / `COUPLE_USER2_NAME` | (선택) 처음 만들 두 사람 이름. 기본값 `나` / `너` |
+| `COUPLE_INITIAL_PASSWORD` | 입장 비밀번호 초기값. 비밀번호가 비어 있는 사용자에게만 서버 시작 시 적용 (값은 저장소에 적지 마세요) |
 | `KAKAO_REST_API_KEY` | [Kakao Developers](https://developers.kakao.com) → 내 애플리케이션 → 앱 키 → REST API 키 |
 | `MYBOX_TOKEN` | (선택) [MYBOX Open API](https://developers.mybox.naver.com/) 개인 액세스 토큰. 설정하면 사진을 마이박스에 백업 |
 | `MYBOX_TOKEN_EXPIRES` | (선택) 토큰 만료일 `YYYY-MM-DD`. 설정하면 앱 설정 화면에 D-day 표시 |
 | `MYBOX_FOLDER_NAME` | (선택) 마이박스 백업 폴더 이름. 기본값 `TingTing 사진 백업` |
 
-- 로그인은 없습니다. 앱을 처음 열 때 "누구세요?"에서 한 번 고르면 이후엔 바로 홈으로 들어갑니다.
+- "누구세요?"에서 사람을 고른 뒤 비밀번호를 입력하면 들어갑니다. 이후엔 앱을 열 때마다 세션이 갱신돼 다시 입력하지 않아도 되고, **사용자 바꾸기**를 하면 다시 비밀번호가 필요합니다.
+- 비밀번호는 각자 앱 **설정 → 비밀번호 변경**에서 바꿉니다. 5번 연속 틀리면 5분간 잠깁니다.
+- `COUPLE_INITIAL_PASSWORD`가 없으면 비밀번호가 비어 있는 사용자는 들어올 수 없습니다.
 - 두 사람은 서버가 시작될 때 **없으면** 생성됩니다. 이름은 앱 **설정 → 내 이름**에서 바꾸세요.
 - `APP_KEY`가 없으면 API 주소를 아는 누구나 들어올 수 있으니 꼭 설정하세요.
 - 카카오 키가 없으면 장소 검색만 꺼지고 직접 입력은 그대로 됩니다.

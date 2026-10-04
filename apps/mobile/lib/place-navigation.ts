@@ -42,13 +42,35 @@ function getPlaceNavigationUrls(place: Place, provider: PlaceNavigationProvider)
   }
 }
 
-export async function openPlaceNavigation(place: Place, provider: PlaceNavigationProvider) {
-  const { appUrl, fallbackUrl } = getPlaceNavigationUrls(place, provider);
+async function openAppOrWeb(appUrl: string, fallbackUrl: string) {
   const url = Platform.OS === 'web' ? fallbackUrl : appUrl;
 
   try {
     await Linking.openURL(url);
   } catch {
     await Linking.openURL(fallbackUrl);
+  }
+}
+
+export async function openPlaceNavigation(place: Place, provider: PlaceNavigationProvider) {
+  const { appUrl, fallbackUrl } = getPlaceNavigationUrls(place, provider);
+  await openAppOrWeb(appUrl, fallbackUrl);
+}
+
+type MapTarget = { name: string; lat: number; lng: number; kakaoPlaceId?: string };
+
+/** Shows a place (not a route) in Kakao Map or Naver Map; Kakao results open their own place page. */
+export async function openPlaceInMap(target: MapTarget, provider: 'kakao' | 'naver') {
+  const name = encode(target.name);
+  const { lat, lng } = target;
+  if (provider === 'naver') {
+    await openAppOrWeb(
+      `nmap://place?lat=${lat}&lng=${lng}&name=${name}&appname=${APP_NAME}`,
+      `https://map.naver.com/p/search/${name}?c=${lng},${lat},15,0,0,0,dh`,
+    );
+  } else if (target.kakaoPlaceId) {
+    await openAppOrWeb(`kakaomap://place?id=${target.kakaoPlaceId}`, `https://place.map.kakao.com/${target.kakaoPlaceId}`);
+  } else {
+    await openAppOrWeb(`kakaomap://look?p=${lat},${lng}`, `https://map.kakao.com/link/map/${name},${lat},${lng}`);
   }
 }

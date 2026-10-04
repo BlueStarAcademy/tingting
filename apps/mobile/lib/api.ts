@@ -19,6 +19,10 @@ import type {
   PlaceInput,
   PlaceReview,
   PlaceStatus,
+  RecommendationCategory,
+  RecommendationPage,
+  RecommendationSource,
+  RegionVisitStat,
   TripPlan,
   Visit,
 } from '@tingting/shared';
@@ -132,6 +136,52 @@ export const api = {
 
   getDashboard(): Promise<HomeDashboard> {
     return request('/dashboard');
+  },
+
+  getRegionStats(): Promise<RegionVisitStat[]> {
+    return request('/dashboard/regions');
+  },
+
+  /** `source` keeps later pages on the provider that answered page 1. */
+  getRecommendations(input: {
+    regionCode: string;
+    category: RecommendationCategory;
+    page?: number;
+    source?: RecommendationSource;
+    from?: { lat: number; lng: number };
+  }): Promise<RecommendationPage> {
+    return request(
+      `/recommendations${query({
+        regionCode: input.regionCode,
+        category: input.category,
+        page: input.page ? String(input.page) : undefined,
+        source: input.source,
+        lat: input.from ? String(input.from.lat) : undefined,
+        lng: input.from ? String(input.from.lng) : undefined,
+      })}`,
+    );
+  },
+
+  searchNearby(input: {
+    lat: number;
+    lng: number;
+    radius: number;
+    category?: RecommendationCategory;
+    query?: string;
+    page?: number;
+    source?: RecommendationSource;
+  }): Promise<RecommendationPage> {
+    return request(
+      `/nearby${query({
+        lat: String(input.lat),
+        lng: String(input.lng),
+        radius: String(input.radius),
+        category: input.query ? undefined : input.category,
+        query: input.query,
+        page: input.page ? String(input.page) : undefined,
+        source: input.source,
+      })}`,
+    );
   },
 
   listPlaces(filter: { regionCode?: string; category?: PlaceCategory; status?: PlaceStatus } = {}): Promise<Place[]> {

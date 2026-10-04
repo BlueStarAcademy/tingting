@@ -5,6 +5,7 @@ import { getRegion, PLACE_CATEGORIES, type PlaceCategory, type PlaceStatus } fro
 import { Screen } from '@/components/Screen';
 import { PlaceRow } from '@/components/PlaceRow';
 import { PhotoGrid } from '@/components/PhotoGrid';
+import { RegionSheet } from '@/components/recommend/RegionSheet';
 import { ActionButton, Chip, EmptyState, Loading, Segment, SectionTitle, type IconName } from '@/components/ui';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useFocusLoad } from '@/hooks/useFocusLoad';
@@ -21,6 +22,7 @@ export default function RegionScreen() {
   const innerWidth = useContentWidth() - theme.spacing.lg * 2;
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
+  const [showRecommendations, setShowRecommendations] = useState(false);
 
   const { data, refreshing, refresh } = useFocusLoad(async () => {
     const [places, photos] = await Promise.all([
@@ -59,6 +61,7 @@ export default function RegionScreen() {
   }
 
   const visitedCount = (data?.places ?? []).filter((p) => p.status === 'visited').length;
+  const photoCount = data?.photos.length ?? 0;
 
   return (
     <Screen title={region.name} refreshing={refreshing} onRefresh={refresh}>
@@ -91,7 +94,10 @@ export default function RegionScreen() {
         </View>
       </View>
 
-      <ActionButton icon="add-circle" label="장소 추가 (카카오 검색 · 직접 입력)" tone="primary" onPress={addPlace} />
+      <View style={styles.actions}>
+        <ActionButton icon="sparkles" label="추천 장소 보기 (맛집 · 볼거리 · 행사)" onPress={() => setShowRecommendations(true)} />
+        <ActionButton icon="add-circle" label="장소 추가 (카카오 검색 · 직접 입력)" tone="primary" onPress={addPlace} />
+      </View>
 
       <SectionTitle title="장소" />
       {!data ? (
@@ -112,6 +118,25 @@ export default function RegionScreen() {
           <PhotoGrid photos={data.photos} width={innerWidth} onPress={(photo) => router.push(`/photo/${photo.id}` as Href)} />
         </>
       ) : null}
+
+      <RegionSheet
+        regionCode={showRecommendations ? region.code : null}
+        stat={{
+          regionCode: region.code,
+          placeCount: counts.all,
+          visitedPlaceCount: visitedCount,
+          photoCount,
+          visited: visitedCount > 0 || photoCount > 0,
+        }}
+        onClose={() => {
+          setShowRecommendations(false);
+          void refresh();
+        }}
+        onOpenPlace={(id) => {
+          setShowRecommendations(false);
+          router.push(`/place/${id}` as Href);
+        }}
+      />
     </Screen>
   );
 }
@@ -129,4 +154,5 @@ const styles = StyleSheet.create({
   summaryText: { color: theme.colors.text, fontSize: 13, fontWeight: '700' },
   filters: { gap: 10, marginVertical: theme.spacing.md },
   statusRow: { flexDirection: 'row', gap: 6 },
+  actions: { gap: 8 },
 });

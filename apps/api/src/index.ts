@@ -10,6 +10,8 @@ import { photosRouter } from './routes/photos';
 import { albumsRouter } from './routes/albums';
 import { plansRouter } from './routes/plans';
 import { dashboardRouter } from './routes/dashboard';
+import { nearbyRouter, recommendationsRouter } from './routes/recommendations';
+import { rateLimit } from './rate-limit';
 import { myboxBackupStatus, requestMyboxBackup, startMyboxBackup } from './mybox';
 
 assertConfig();
@@ -31,6 +33,7 @@ app.get('/health', (_req, res) => {
     service: 'tingting-api',
     appKey: Boolean(config.appKey),
     kakaoSearch: Boolean(config.kakaoRestApiKey),
+    tourApi: Boolean(config.tourApiKey),
     uploadsDir: config.uploadsDir,
     myboxBackup: Boolean(config.myboxToken),
   });
@@ -81,6 +84,9 @@ app.use('/visits', authMiddleware, visitsRouter);
 app.use('/photos', authMiddleware, photosRouter);
 app.use('/albums', authMiddleware, albumsRouter);
 app.use('/plans', authMiddleware, plansRouter);
+const searchLimit = rateLimit(60, 60_000);
+app.use('/recommendations', authMiddleware, searchLimit, recommendationsRouter);
+app.use('/nearby', authMiddleware, searchLimit, nearbyRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

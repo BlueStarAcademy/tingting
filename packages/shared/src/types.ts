@@ -188,6 +188,60 @@ export interface KakaoPlaceResult {
   savedPlaceId?: string;
 }
 
+/** Per-region totals behind the colored map; only regions with any record are returned. */
+export interface RegionVisitStat {
+  regionCode: string;
+  placeCount: number;
+  visitedPlaceCount: number;
+  /** Album photos filed under the region plus photos of its places */
+  photoCount: number;
+  /** Same rule as `HomeDashboard.visitedRegionCodes` */
+  visited: boolean;
+}
+
+export type RecommendationCategory = 'food' | 'cafe' | 'sight' | 'activity' | 'stay' | 'event';
+
+/** tour = 한국관광공사 TourAPI, kakao = Kakao Local, osm = OpenStreetMap (keyless fallback) */
+export type RecommendationSource = 'tour' | 'kakao' | 'osm';
+
+export interface RecommendedPlace {
+  /** `${source}:${externalId}`, stable across pages */
+  id: string;
+  source: RecommendationSource;
+  category: RecommendationCategory;
+  name: string;
+  /** Provider's own label, e.g. "한식" or "박물관" */
+  categoryLabel?: string;
+  address?: string;
+  lat: number;
+  lng: number;
+  /** Meters from the search point, when one was given */
+  distanceM?: number;
+  phone?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  kakaoPlaceId?: string;
+  /** Provider web page (Kakao place page etc.) */
+  url?: string;
+  regionCode: string;
+  /** YYYY-MM-DD, events only */
+  eventStart?: string;
+  eventEnd?: string;
+  /** Already saved as one of our places */
+  savedPlaceId?: string;
+}
+
+export type RecommendationNoticeCode = 'tour_key_required' | 'no_provider' | 'provider_error';
+
+export interface RecommendationPage {
+  items: RecommendedPlace[];
+  /** Provider that produced `items` */
+  source?: RecommendationSource;
+  hasMore: boolean;
+  /** Explains an empty or degraded list */
+  notice?: { code: RecommendationNoticeCode; message: string };
+}
+
 export interface HomeDashboard {
   visitedRegionCodes: string[];
   placeCount: number;

@@ -46,6 +46,9 @@ export const theme = {
     mapLabelBg: 'rgba(45,31,36,0.8)',
     mapFrameBorder: 'rgba(120,60,72,0.12)',
     mapControlBg: 'rgba(255,252,251,0.96)',
+    /** Visited-region fill, light to deep as records pile up */
+    mapHeat: ['#F6B8C6', '#EE8AA2', '#E0607E', '#B8435F'],
+    mapSelectedOutline: '#2D1F24',
     tint: {
       soft: 'rgba(224,96,126,0.06)',
       light: 'rgba(224,96,126,0.09)',

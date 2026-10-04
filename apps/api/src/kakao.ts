@@ -2,7 +2,7 @@ import { categoryFromKakao, resolveRegionCode, type KakaoPlaceResult } from '@ti
 import { config } from './config';
 import { HttpError } from './http';
 
-interface KakaoKeywordDoc {
+export interface KakaoKeywordDoc {
   id: string;
   place_name: string;
   category_name: string;
@@ -13,6 +13,14 @@ interface KakaoKeywordDoc {
   address_name: string;
   road_address_name?: string;
   place_url?: string;
+  /** Meters, only when x/y were sent */
+  distance?: string;
+}
+
+export interface KakaoMeta {
+  is_end: boolean;
+  pageable_count: number;
+  total_count: number;
 }
 
 interface KakaoAddressDoc {
@@ -21,13 +29,16 @@ interface KakaoAddressDoc {
   address_name: string;
 }
 
-async function kakaoGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+export async function kakaoGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
   if (!config.kakaoRestApiKey) {
     throw new HttpError(503, '서버에 KAKAO_REST_API_KEY가 설정되지 않았어요');
   }
   const url = new URL(`https://dapi.kakao.com${endpoint}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url, { headers: { Authorization: `KakaoAK ${config.kakaoRestApiKey}` } });
+  const res = await fetch(url, {
+    headers: { Authorization: `KakaoAK ${config.kakaoRestApiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) {
     throw new HttpError(502, `카카오 검색 오류 (${res.status})`);
   }

@@ -22,6 +22,8 @@ import {
   labelFontSize,
   labelPillSize,
   labelText,
+  readableLabel,
+  readableLabelColors,
   regionFill,
   regionStroke,
   regionStrokeWidth,
@@ -76,17 +78,29 @@ function renderVisualRegion(
   selectedCode: string | null | undefined,
   showLabels: boolean,
   visualVariant: KoreaMapVisualVariant,
+  fillByCode?: Record<string, string>,
+  labelPx?: number,
+  mapWidth = 1000,
 ) {
   const region = REGION_BY_CODE[code];
   if (!region) return null;
 
-  const fill = regionFill(code, visited, selectedCode, region, visualVariant);
-  const stroke = regionStroke(selectedCode, code, visualVariant);
-  const strokeWidth = regionStrokeWidth(selectedCode, code, visualVariant);
-  const isVisited = visited.has(code);
+  const outline = Boolean(fillByCode);
+  const fill = regionFill(code, visited, selectedCode, region, visualVariant, fillByCode);
+  const stroke = regionStroke(selectedCode, code, visualVariant, outline);
+  const strokeWidth = regionStrokeWidth(selectedCode, code, visualVariant, outline);
+  const isVisited = fillByCode ? code in fillByCode : visited.has(code);
   const text = labelText(region);
-  const fontSize = labelFontSize(code, selectedCode);
+  const pos = labelPx
+    ? readableLabel(code, label, mapWidth, labelPx, METRO_CODES.has(code))
+    : { ...label, fontSize: labelFontSize(code, selectedCode) };
+  const { fontSize } = pos;
   const { w, h } = labelPillSize(text, fontSize);
+  const colors = labelPx
+    ? readableLabelColors(isVisited, selectedCode === code)
+    : visualVariant === 'naver'
+      ? { bg: 'rgba(255,255,255,0.92)', fg: '#1F2933', stroke: 'rgba(3,199,90,0.22)' }
+      : { bg: theme.colors.mapLabelBg, fg: theme.colors.mapLabel, stroke: 'rgba(255,255,255,0.35)' };
 
   return (
     <G>
@@ -102,19 +116,19 @@ function renderVisualRegion(
       {showLabels ? (
         <G pointerEvents="none">
           <Rect
-            x={label.cx - w / 2}
-            y={label.cy - h / 2 + 1}
+            x={pos.cx - w / 2}
+            y={pos.cy - h / 2 + 1}
             width={w}
             height={h}
             rx={h / 2}
-            fill={visualVariant === 'naver' ? 'rgba(255,255,255,0.92)' : theme.colors.mapLabelBg}
-            stroke={visualVariant === 'naver' ? 'rgba(3,199,90,0.22)' : 'rgba(255,255,255,0.35)'}
-            strokeWidth={0.6}
+            fill={colors.bg}
+            stroke={colors.stroke}
+            strokeWidth={labelPx ? 1.5 : 0.6}
           />
           <SvgText
-            x={label.cx}
-            y={label.cy + fontSize * 0.34}
-            fill={visualVariant === 'naver' ? '#1F2933' : theme.colors.mapLabel}
+            x={pos.cx}
+            y={pos.cy + fontSize * 0.34}
+            fill={colors.fg}
             fontSize={fontSize}
             fontWeight="700"
             textAnchor="middle"
@@ -139,6 +153,10 @@ interface Props {
   pins?: MapPin[];
   regionProgress?: Record<string, number>;
   visualVariant?: KoreaMapVisualVariant;
+  /** Explicit fill per region (e.g. visit heat); others use the unvisited color and the selection gets an outline. */
+  fillByCode?: Record<string, string>;
+  /** Render labels at this on-screen size (px) instead of fixed map units */
+  labelPx?: number;
 }
 
 export function KoreaSvgMap({
@@ -152,11 +170,14 @@ export function KoreaSvgMap({
   frameless = false,
   pins = [],
   visualVariant = 'default',
+  fillByCode,
+  labelPx,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const mapWidth = width ?? Math.min(windowWidth - 32, 360);
   const mapHeight = height ?? mapWidth;
   const visited = new Set(visitedRegionCodes);
+  const selectedPath = fillByCode && selectedCode ? getMapRegionsForRender().find((r) => r.code === selectedCode) : undefined;
 
   return (
     <View
@@ -181,9 +202,14 @@ export function KoreaSvgMap({
         ) : null}
         {getMapRegionsForRender().map((entry) => (
           <Fragment key={`vis-${entry.code}`}>
-            {renderVisualRegion(entry, visited, selectedCode, showLabels, visualVariant)}
+            {renderVisualRegion(entry, visited, selectedCode, showLabels, visualVariant, fillByCode, labelPx, mapWidth)}
           </Fragment>
         ))}
+        {selectedPath ? (
+          <G pointerEvents="none">
+            <Path d={selectedPath.d} fill="none" stroke={theme.colors.mapSelectedOutline} strokeWidth={4} strokeLinejoin="round" />
+          </G>
+        ) : null}
         {pins.map((pin, i) => renderMapPin(pin, `pin-${i}`))}
         {interactive && onRegionPress
           ? getMapRegionsForRender()

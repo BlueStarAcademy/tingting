@@ -2,6 +2,17 @@ import path from 'path';
 
 const DEV_JWT_SECRET = 'tingting-dev-secret-change-me';
 
+/** data.go.kr shows an already URL-encoded key next to the raw one; store the raw one. */
+function decodeServiceKey(value: string): string {
+  const key = value.trim();
+  if (!key.includes('%')) return key;
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
 export const config = {
   port: parseInt(process.env.PORT ?? '3000', 10),
   isProduction: process.env.NODE_ENV === 'production',
@@ -13,6 +24,10 @@ export const config = {
   uploadsDir: process.env.UPLOADS_DIR ?? path.join(__dirname, '..', 'uploads'),
   maxUploadBytes: 25 * 1024 * 1024,
   kakaoRestApiKey: process.env.KAKAO_REST_API_KEY ?? '',
+  /** data.go.kr TourAPI (KorService2) key; either the Encoding or Decoding form works. */
+  tourApiKey: decodeServiceKey(process.env.TOUR_API_KEY ?? ''),
+  /** Keyless OpenStreetMap fallback for recommendations when no other provider can answer. */
+  overpassUrl: process.env.OVERPASS_URL?.trim() || 'https://overpass-api.de/api/interpreter',
   /** Shared with the app as EXPO_PUBLIC_APP_KEY; empty disables the check. */
   appKey: (process.env.APP_KEY ?? '').trim(),
   /** MYBOX personal access token; uploads are copied to MYBOX when set. */

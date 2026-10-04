@@ -2,9 +2,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getRegion, TOTAL_REGIONS } from '@tingting/shared';
+import { getRegion, REGIONS, TOTAL_REGIONS } from '@tingting/shared';
 import { Screen } from '@/components/Screen';
-import { KoreaSvgMap } from '@/components/KoreaSvgMap';
 import { PlaceCover } from '@/components/PlaceRow';
 import { Card, CategoryBadge, EmptyState, Loading, SectionTitle } from '@/components/ui';
 import { PhotoGrid } from '@/components/PhotoGrid';
@@ -16,6 +15,9 @@ import { dDayLabel, formatDateKey } from '@/lib/dates';
 import { cardSurface, shadow } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
+const STAMPS_PER_ROW = 6;
+const STAMP_GAP = 6;
+
 export default function HomeScreen() {
   const router = useRouter();
   const { user, partner } = useAuth();
@@ -25,6 +27,9 @@ export default function HomeScreen() {
 
   const visitedCount = data?.visitedRegionCodes.length ?? 0;
   const progress = visitedCount / TOTAL_REGIONS;
+  const visited = new Set(data?.visitedRegionCodes ?? []);
+  // 2px for the card border
+  const stampWidth = Math.floor((innerWidth - theme.spacing.md * 2 - 2 - STAMP_GAP * (STAMPS_PER_ROW - 1)) / STAMPS_PER_ROW);
 
   return (
     <Screen tab title="TingTing" refreshing={refreshing} onRefresh={refresh}>
@@ -54,16 +59,31 @@ export default function HomeScreen() {
       {error && !data ? <Text style={styles.error}>{error}</Text> : null}
       {!data && !error ? <Loading /> : null}
 
-      <SectionTitle title="전국 지도" action="크게 보기" onAction={() => router.push('/map')} />
-      <Card style={styles.mapCard}>
-        <KoreaSvgMap
-          width={innerWidth - theme.spacing.md * 2}
-          height={innerWidth - theme.spacing.md * 2}
-          visitedRegionCodes={data?.visitedRegionCodes ?? []}
-          onRegionPress={(region) => router.push(`/region/${region.code}` as Href)}
-          frameless
-        />
-      </Card>
+      <SectionTitle title="전국일주 도장판" action="지도 보기" onAction={() => router.push('/map')} />
+      <Pressable
+        style={({ pressed }) => [styles.stampCard, pressed && styles.pressed]}
+        onPress={() => router.push('/map')}
+        accessibilityRole="button"
+        accessibilityLabel={`전국일주 지도 보기, ${TOTAL_REGIONS}개 지역 중 ${visitedCount}곳 방문`}
+      >
+        <View style={styles.stampGrid}>
+          {REGIONS.map((region) => {
+            const on = visited.has(region.code);
+            return (
+              <View key={region.code} style={[styles.stamp, { width: stampWidth }, on && styles.stampOn]}>
+                <Text style={[styles.stampText, on && styles.stampTextOn]}>{region.name}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={styles.stampFooter}>
+          <View style={styles.stampIcon}>
+            <Ionicons name="map" size={16} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.stampHint}>지도에서 색칠된 곳을 보고, 지역별 맛집 · 놀거리 · 행사를 찾아보세요</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.textSubtle} />
+        </View>
+      </Pressable>
 
       <SectionTitle title="다가오는 일정" action="전체" onAction={() => router.push('/plans')} />
       {data && data.upcomingPlans.length === 0 ? (
@@ -148,7 +168,32 @@ const styles = StyleSheet.create({
   statValue: { color: '#fff', fontSize: 20, fontWeight: '900' },
   statLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '700', marginTop: 2 },
   error: { color: theme.colors.error, textAlign: 'center', marginTop: theme.spacing.md },
-  mapCard: { alignItems: 'center', overflow: 'hidden' },
+  pressed: { opacity: 0.88 },
+  stampCard: { ...cardSurface(), padding: theme.spacing.md, gap: 12 },
+  stampGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: STAMP_GAP },
+  stamp: {
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.borderStrong,
+    backgroundColor: theme.colors.background,
+  },
+  stampOn: { borderStyle: 'solid', borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+  stampText: { color: theme.colors.textSubtle, fontSize: 12, fontWeight: '800' },
+  stampTextOn: { color: '#fff' },
+  stampFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stampIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.tint.light,
+  },
+  stampHint: { flex: 1, color: theme.colors.textMuted, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   muted: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
   planRow: { ...cardSurface(), flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, marginBottom: 8 },
   dday: {

@@ -1,10 +1,18 @@
 import { Router } from 'express';
-import type { HomeDashboard } from '@tingting/shared';
+import type { HomeDashboard, RegionVisitStat } from '@tingting/shared';
 import { pool } from '../db';
 import { handle, publicBaseUrl } from '../http';
 import { mapPhoto, mapPlace, mapPlan, PHOTO_SELECT, PLACE_SELECT, PLAN_SELECT } from '../mappers';
 
 export const dashboardRouter = Router();
+
+/** A region counts as visited once it has a visited place, a photo of one of its places, or an album photo. */
+const VISITED_REGIONS_SQL = `
+  SELECT DISTINCT region_code FROM places WHERE status = 'visited'
+  UNION
+  SELECT DISTINCT pl.region_code FROM photos ph JOIN places pl ON pl.id = ph.place_id
+  UNION
+  SELECT DISTINCT region_code FROM photos WHERE region_code IS NOT NULL`;
 
 dashboardRouter.get(
   '/',
@@ -12,12 +20,7 @@ dashboardRouter.get(
     const base = publicBaseUrl(req);
     const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
     const [regions, counts, plans, photos, wish] = await Promise.all([
-      pool.query(`
-        SELECT DISTINCT region_code FROM places WHERE status = 'visited'
-        UNION
-        SELECT DISTINCT pl.region_code FROM photos ph JOIN places pl ON pl.id = ph.place_id
-        UNION
-        SELECT DISTINCT region_code FROM photos WHERE region_code IS NOT NULL`),
+      pool.query(VISITED_REGIONS_SQL),
       pool.query(`SELECT
         (SELECT COUNT(*) FROM places) AS places,
         (SELECT COUNT(*) FROM places WHERE status = 'visited') AS visited,
@@ -37,5 +40,39 @@ dashboardRouter.get(
       wishPlaces: wish.rows.map((r) => mapPlace(r, base)),
     };
     res.json(dashboard);
+  }),
+);
+
+dashboardRouter.get(
+  '/regions',
+  handle(async (_req, res) => {
+    const { rows } = await pool.query(`
+      WITH place_stats AS (
+        SELECT region_code, COUNT(*) AS places, COUNT(*) FILTER (WHERE status = 'visited') AS visited_places
+        FROM places GROUP BY region_code
+      ), photo_stats AS (
+        SELECT COALESCE(ph.region_code, pl.region_code) AS region_code, COUNT(*) AS photos
+        FROM photos ph LEFT JOIN places pl ON pl.id = ph.place_id
+        WHERE COALESCE(ph.region_code, pl.region_code) IS NOT NULL
+        GROUP BY 1
+      ), visited AS (${VISITED_REGIONS_SQL})
+      SELECT codes.region_code,
+        COALESCE(ps.places, 0) AS places,
+        COALESCE(ps.visited_places, 0) AS visited_places,
+        COALESCE(phs.photos, 0) AS photos,
+        (v.region_code IS NOT NULL) AS visited
+      FROM (SELECT region_code FROM place_stats UNION SELECT region_code FROM photo_stats UNION SELECT region_code FROM visited) codes
+      LEFT JOIN place_stats ps ON ps.region_code = codes.region_code
+      LEFT JOIN photo_stats phs ON phs.region_code = codes.region_code
+      LEFT JOIN visited v ON v.region_code = codes.region_code
+      ORDER BY codes.region_code`);
+    const stats: RegionVisitStat[] = rows.map((r) => ({
+      regionCode: String(r.region_code),
+      placeCount: Number(r.places),
+      visitedPlaceCount: Number(r.visited_places),
+      photoCount: Number(r.photos),
+      visited: Boolean(r.visited),
+    }));
+    res.json(stats);
   }),
 );

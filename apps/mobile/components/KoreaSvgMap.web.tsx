@@ -12,6 +12,8 @@ import {
   labelFontSize,
   labelPillSize,
   labelText,
+  readableLabel,
+  readableLabelColors,
   regionFill,
   regionStroke,
   regionStrokeWidth,
@@ -67,22 +69,32 @@ function renderVisualRegion(
   selectedCode: string | null | undefined,
   showLabels: boolean,
   regionProgress?: Record<string, number>,
+  fillByCode?: Record<string, string>,
+  labelPx?: number,
+  mapWidth = 1000,
 ) {
   const region = REGION_BY_CODE[code];
   if (!region) return null;
 
-  const fill = regionFill(code, visited, selectedCode, region);
-  const stroke = regionStroke(selectedCode, code);
-  const strokeWidth = regionStrokeWidth(selectedCode, code);
-  const isVisited = visited.has(code);
+  const outline = Boolean(fillByCode);
+  const fill = regionFill(code, visited, selectedCode, region, 'default', fillByCode);
+  const stroke = regionStroke(selectedCode, code, 'default', outline);
+  const strokeWidth = regionStrokeWidth(selectedCode, code, 'default', outline);
+  const isVisited = fillByCode ? code in fillByCode : visited.has(code);
   const text = labelText(region);
-  const fontSize = labelFontSize(code, selectedCode);
+  const pos = labelPx
+    ? readableLabel(code, label, mapWidth, labelPx, METRO_CODES.has(code))
+    : { ...label, fontSize: labelFontSize(code, selectedCode) };
+  const { fontSize } = pos;
   const progressPct = regionProgress?.[code];
   const hasProgress = progressPct !== undefined && progressPct > 0;
   const progressText = hasProgress ? `${Math.round(progressPct)}%` : '';
   const combinedText = hasProgress ? text : text;
   const { w, h } = labelPillSize(combinedText, fontSize);
   const pillH = hasProgress ? h + fontSize * 0.7 : h;
+  const colors = labelPx
+    ? readableLabelColors(isVisited, selectedCode === code)
+    : { bg: theme.colors.mapLabelBg, fg: theme.colors.mapLabel, stroke: 'rgba(255,255,255,0.35)' };
 
   return createElement(
     'g',
@@ -101,21 +113,21 @@ function renderVisualRegion(
           'g',
           { pointerEvents: 'none' },
           createElement('rect', {
-            x: label.cx - w / 2,
-            y: label.cy - pillH / 2 + 1,
+            x: pos.cx - w / 2,
+            y: pos.cy - pillH / 2 + 1,
             width: w,
             height: pillH,
             rx: pillH / 2,
-            fill: theme.colors.mapLabelBg,
-            stroke: 'rgba(255,255,255,0.35)',
-            strokeWidth: 0.6,
+            fill: colors.bg,
+            stroke: colors.stroke,
+            strokeWidth: labelPx ? 1.5 : 0.6,
           }),
           createElement(
             'text',
             {
-              x: label.cx,
-              y: hasProgress ? label.cy + fontSize * 0.1 : label.cy + fontSize * 0.34,
-              fill: theme.colors.mapLabel,
+              x: pos.cx,
+              y: hasProgress ? pos.cy + fontSize * 0.1 : pos.cy + fontSize * 0.34,
+              fill: colors.fg,
               fontSize,
               fontWeight: 700,
               textAnchor: 'middle',
@@ -126,8 +138,8 @@ function renderVisualRegion(
             ? createElement(
                 'text',
                 {
-                  x: label.cx,
-                  y: label.cy + fontSize * 0.8,
+                  x: pos.cx,
+                  y: pos.cy + fontSize * 0.8,
                   fill: theme.colors.primaryLight,
                   fontSize: fontSize * 0.72,
                   fontWeight: 800,
@@ -152,6 +164,10 @@ interface Props {
   frameless?: boolean;
   pins?: MapPin[];
   regionProgress?: Record<string, number>;
+  /** Explicit fill per region (e.g. visit heat); others use the unvisited color and the selection gets an outline. */
+  fillByCode?: Record<string, string>;
+  /** Render labels at this on-screen size (px) instead of fixed map units */
+  labelPx?: number;
 }
 
 export function KoreaSvgMap({
@@ -165,11 +181,14 @@ export function KoreaSvgMap({
   frameless = false,
   pins = [],
   regionProgress,
+  fillByCode,
+  labelPx,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const mapWidth = width ?? Math.min(windowWidth - 32, 360);
   const mapHeight = height ?? mapWidth;
   const visited = new Set(visitedRegionCodes);
+  const selectedPath = fillByCode && selectedCode ? getMapRegionsForRender().find((r) => r.code === selectedCode) : undefined;
 
   return (
     <View style={[frameless ? styles.frameless : styles.wrap, { width: mapWidth, height: mapHeight }]} pointerEvents={interactive ? 'auto' : 'none'}>
@@ -196,8 +215,19 @@ export function KoreaSvgMap({
           ),
           createElement('rect', { key: 'bg', x: '0', y: '0', width: '1000', height: '1000', fill: 'url(#mapSea)' }),
           ...getMapRegionsForRender()
-            .map((entry) => renderVisualRegion(entry, visited, selectedCode, showLabels, regionProgress))
+            .map((entry) => renderVisualRegion(entry, visited, selectedCode, showLabels, regionProgress, fillByCode, labelPx, mapWidth))
             .filter(Boolean),
+          selectedPath
+            ? createElement('path', {
+                key: 'selected-outline',
+                d: selectedPath.d,
+                fill: 'none',
+                stroke: theme.colors.mapSelectedOutline,
+                strokeWidth: 4,
+                strokeLinejoin: 'round',
+                pointerEvents: 'none',
+              })
+            : null,
           ...pins.map((pin, i) => renderMapPin(pin, `pin-${i}`)),
           ...(interactive && onRegionPress
             ? [

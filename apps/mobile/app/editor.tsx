@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { PhotoEditor } from '@/components/editor/PhotoEditor';
 import { api } from '@/lib/api';
+import { decodeLook } from '@/lib/editor/look';
 import { safeBack } from '@/lib/navigation';
 import { saveEditedPhoto, saveNewPhoto } from '@/lib/photo-flow';
 
@@ -13,6 +14,7 @@ export default function EditorRoute() {
     placeId?: string;
     beauty?: string;
     filter?: string;
+    look?: string;
   }>();
   const router = useRouter();
   const sourceUri = String(params.uri ?? '');
@@ -63,6 +65,7 @@ export default function EditorRoute() {
       doneLabel={photoId ? '저장' : '앨범에 저장'}
       initialBeauty={params.beauty ? String(params.beauty) : null}
       initialFilter={params.filter ? String(params.filter) : null}
+      initialLook={decodeLook(params.look ? String(params.look) : null)}
       caption={placeName}
       onCancel={() => safeBack(router)}
       onDone={done}

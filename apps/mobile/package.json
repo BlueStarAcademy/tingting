@@ -14,6 +14,7 @@
     "expo-constants": "~56.0.18",
     "expo-file-system": "~56.0.0",
     "expo-font": "~56.0.7",
+    "expo-gl": "~56.0.6",
     "expo-image-manipulator": "~56.0.19",
     "expo-image-picker": "~56.0.18",
     "expo-linear-gradient": "~56.0.4",

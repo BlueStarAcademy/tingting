@@ -1,70 +1,157 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { useCameraPermissions, type CameraType } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/constants/theme';
-import { BEAUTY_PRESETS } from '@/lib/editor/types';
+import { EditorSlider } from '@/components/editor/EditorSlider';
+import { ChipRow, ItemRow } from '@/components/editor/panels';
+import {
+  CAMERA_FILTERS,
+  DEFAULT_CAMERA_LOOK,
+  loadCameraLook,
+  matchingPreset,
+  presetLook,
+  saveCameraLook,
+  type CameraLook,
+} from '@/lib/editor/look';
+import { BEAUTY_ITEMS, BEAUTY_PRESETS, EMPTY_BEAUTY, FACE_ONLY_BEAUTY, type BeautyKey } from '@/lib/editor/types';
 import { pickGalleryPhoto } from '@/lib/pick-photo';
-
-export type CaptureLook = { beauty: string; filter: string | null };
+import { LiveBeautyView, type LiveBeautyHandle, type LiveMode, type TrackingStatus } from './LiveBeautyView';
 
 type Props = {
-  onCapture: (uri: string, look: CaptureLook) => void;
+  onCapture: (uri: string, look: CameraLook) => void;
   onClose: () => void;
 };
 
-const QUICK_FILTERS: { id: string | null; label: string; color: string }[] = [
-  { id: null, label: '원본', color: '#9CA3AF' },
-  { id: 'ai_bbosyap', label: '뽀샵', color: '#FBCFE8' },
-  { id: 'filter_peach_skin', label: '피치', color: '#FDBA74' },
-  { id: 'filter_rosy', label: '로지', color: '#FB7185' },
-  { id: 'filter_soft_clean', label: '소프트', color: '#FCE7F3' },
-  { id: 'filter_kodak_gold', label: '코닥', color: '#FBBF24' },
-  { id: 'filter_film', label: '필름', color: '#78716C' },
-  { id: 'filter_jeju_sea', label: '바다', color: '#0EA5E9' },
-  { id: 'filter_mono', label: '흑백', color: '#64748B' },
+type Aspect = '3:4' | '1:1' | '9:16';
+type FlashSetting = 'off' | 'auto' | 'on';
+type Panel = 'beauty' | 'filter' | null;
+type ItemKey = BeautyKey | 'lip' | 'blush';
+
+const TIMERS = [0, 3, 5, 10] as const;
+const ASPECTS: Aspect[] = ['3:4', '1:1', '9:16'];
+const ZOOMS = [
+  { value: 0, label: '1x' },
+  { value: 0.12, label: '2x' },
 ];
 
-const TIMERS = [0, 3, 10] as const;
-const FLASH_ORDER: FlashMode[] = ['off', 'auto', 'on'];
+const ITEMS: { key: ItemKey; label: string; icon: string; bipolar?: boolean }[] = [
+  ...BEAUTY_ITEMS,
+  { key: 'lip', label: '립 틴트', icon: '💋' },
+  { key: 'blush', label: '블러셔', icon: '🌸' },
+];
+const FACE_ITEMS: ItemKey[] = [...FACE_ONLY_BEAUTY, 'lip', 'blush'];
+
+const NO_LOOK: CameraLook = { beauty: EMPTY_BEAUTY, lip: 0, blush: 0, filterId: null, filterIntensity: 0 };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function itemValue(look: CameraLook, key: ItemKey): number {
+  if (key === 'lip') return look.lip;
+  if (key === 'blush') return look.blush;
+  return look.beauty[key];
+}
+
+function withItem(look: CameraLook, key: ItemKey, v: number): CameraLook {
+  if (key === 'lip') return { ...look, lip: v };
+  if (key === 'blush') return { ...look, blush: v };
+  return { ...look, beauty: { ...look.beauty, [key]: v } };
+}
+
+/** Center-crops the shot to the chosen frame so the result matches what the preview showed. */
+async function cropToAspect(photo: { uri: string; width: number; height: number }, aspect: Aspect): Promise<string> {
+  const target = aspect === '1:1' ? 1 : aspect === '3:4' ? 3 / 4 : 9 / 16;
+  const { width, height } = photo;
+  if (!width || !height) return photo.uri;
+  const current = width / height;
+  if (Math.abs(current - target) / target < 0.015) return photo.uri;
+  const cropW = current > target ? Math.round(height * target) : width;
+  const cropH = current > target ? height : Math.round(width / target);
+  const out = await ImageManipulator.manipulateAsync(
+    photo.uri,
+    [{ crop: { originX: Math.round((width - cropW) / 2), originY: Math.round((height - cropH) / 2), width: cropW, height: cropH } }],
+    { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG },
+  );
+  return out.uri;
+}
 
 export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView | null>(null);
+  const liveRef = useRef<LiveBeautyHandle | null>(null);
+
   const [facing, setFacing] = useState<CameraType>('front');
-  const [flash, setFlash] = useState<FlashMode>('off');
+  const [flash, setFlash] = useState<FlashSetting>('off');
   const [timer, setTimer] = useState<(typeof TIMERS)[number]>(0);
+  const [aspect, setAspect] = useState<Aspect>('3:4');
   const [grid, setGrid] = useState(false);
   const [zoom, setZoom] = useState(0);
-  const [beauty, setBeauty] = useState('natural');
-  const [filter, setFilter] = useState<string | null>(null);
+  const [look, setLook] = useState<CameraLook>(DEFAULT_CAMERA_LOOK);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [item, setItem] = useState<ItemKey>('smooth');
+  const [comparing, setComparing] = useState(false);
+  const [mode, setMode] = useState<LiveMode>('starting');
+  const [tracking, setTracking] = useState<TrackingStatus>('off');
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [screenFlash, setScreenFlash] = useState(false);
+  const blink = useRef(new Animated.Value(0)).current;
   const alive = useRef(true);
+  const lookRef = useRef(look);
+  lookRef.current = look;
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    loadCameraLook().then((saved) => alive.current && setLook(saved));
+    return () => {
       alive.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
-  const look = (): CaptureLook => ({ beauty, filter });
+  const persist = useCallback(() => saveCameraLook(lookRef.current), []);
+  const changeLook = (next: CameraLook, save = true) => {
+    setLook(next);
+    if (save) saveCameraLook(next);
+  };
 
   const shoot = async () => {
-    const camera = cameraRef.current;
+    const camera = liveRef.current;
     if (!camera) return;
     setBusy(true);
+    const useScreenFlash = facing === 'front' && flash === 'on';
     try {
-      const photo = await camera.takePictureAsync({ quality: 0.95 });
-      if (photo?.uri) onCapture(photo.uri, look());
+      if (useScreenFlash) {
+        setScreenFlash(true);
+        await sleep(350);
+      }
+      const photo = await camera.takePicture();
+      setScreenFlash(false);
+      blink.setValue(1);
+      Animated.timing(blink, { toValue: 0, duration: 220, useNativeDriver: true }).start();
+      if (!photo) throw new Error('사진을 만들지 못했어요');
+      const uri = await cropToAspect(photo, aspect);
+      onCapture(uri, lookRef.current);
     } catch (e) {
       Alert.alert('촬영 실패', e instanceof Error ? e.message : '다시 시도해 주세요');
     } finally {
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        setScreenFlash(false);
+        setBusy(false);
+      }
     }
   };
 
@@ -95,8 +182,16 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
       permissionTitle: '사진 접근 권한',
       permissionMessage: '설정에서 사진 접근을 허용해 주세요.',
     });
-    if (uri) onCapture(uri, look());
+    if (uri) onCapture(uri, lookRef.current);
   };
+
+  const box = useMemo(() => {
+    const w = screenW;
+    const h = aspect === '9:16' ? (w * 16) / 9 : (w * 4) / 3;
+    const top = aspect === '9:16' ? Math.max(0, Math.min(insets.top, screenH - h)) : insets.top + 56;
+    const band = aspect === '1:1' ? (h - w) / 2 : 0;
+    return { w, h, top, band };
+  }, [aspect, screenW, screenH, insets.top]);
 
   if (Platform.OS === 'web') {
     return (
@@ -136,27 +231,121 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   }
 
   const flashIcon = flash === 'on' ? 'flash' : flash === 'auto' ? 'flash-outline' : 'flash-off-outline';
+  const flashOrder: FlashSetting[] = facing === 'front' ? ['off', 'on'] : ['off', 'auto', 'on'];
+  const cameraFlash = facing === 'front' ? 'off' : flash;
+  const activePreset = matchingPreset(look);
+  const currentItem = ITEMS.find((i) => i.key === item) ?? ITEMS[0];
+
+  const status = (() => {
+    if (mode === 'starting') return { text: '카메라 준비 중…', live: false };
+    if (mode === 'fallback') return { text: '미리보기는 원본 · 찍으면 뷰티가 적용돼요', live: false };
+    if (tracking === 'tracking') return { text: '실시간 뷰티 · 얼굴 인식됨', live: true };
+    if (tracking === 'searching') return { text: '실시간 뷰티 · 얼굴 찾는 중', live: true };
+    if (tracking === 'unavailable') return { text: '실시간 피부·필터 · 얼굴형은 찍은 뒤 적용', live: true };
+    return { text: '실시간 뷰티', live: true };
+  })();
+  const faceHint =
+    FACE_ITEMS.includes(item) && (mode !== 'live' || tracking === 'unavailable')
+      ? '이 항목은 찍은 뒤 결과 화면에서 적용돼요'
+      : FACE_ITEMS.includes(item) && tracking !== 'tracking'
+        ? '얼굴이 화면에 잘 보이게 해 주세요'
+        : null;
+
+  const renderPanel = () => {
+    if (panel === 'beauty') {
+      return (
+        <View style={styles.panel}>
+          <ChipRow
+            options={BEAUTY_PRESETS.map((p) => ({ key: p.id, label: p.id === 'none' ? '초기화' : p.label }))}
+            value={activePreset}
+            onChange={(id) => changeLook(presetLook(id, look))}
+          />
+          <EditorSlider
+            value={itemValue(look, item)}
+            bipolar={currentItem.bipolar}
+            label={currentItem.label}
+            onChange={(v) => changeLook(withItem(look, item, v), false)}
+            onComplete={persist}
+          />
+          {faceHint ? <Text style={styles.panelHint}>{faceHint}</Text> : null}
+          <ItemRow
+            items={ITEMS.map((i) => ({ key: i.key, label: i.label, icon: i.icon, active: Math.abs(itemValue(look, i.key)) > 0.001 }))}
+            selected={item}
+            onSelect={(k) => setItem(k as ItemKey)}
+          />
+        </View>
+      );
+    }
+    if (panel === 'filter') {
+      return (
+        <View style={styles.panel}>
+          {look.filterId ? (
+            <EditorSlider
+              value={look.filterIntensity}
+              label="강도"
+              onChange={(v) => changeLook({ ...look, filterIntensity: v }, false)}
+              onComplete={persist}
+            />
+          ) : (
+            <View style={{ height: 44 }} />
+          )}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            <FilterChip label="원본" color="#9CA3AF" on={!look.filterId} onPress={() => changeLook({ ...look, filterId: null })} />
+            {CAMERA_FILTERS.map((f) => (
+              <FilterChip
+                key={f.id}
+                label={f.label}
+                color={f.color}
+                on={look.filterId === f.id}
+                onPress={() =>
+                  changeLook({ ...look, filterId: f.id, filterIntensity: look.filterId === f.id ? look.filterIntensity : 0.8 })
+                }
+              />
+            ))}
+          </ScrollView>
+        </View>
+      );
+    }
+    return null;
+  };
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing={facing}
-        flash={flash}
-        zoom={zoom}
-        mirror={facing === 'front'}
-        animateShutter
-      />
-      {grid ? (
-        <View pointerEvents="none" style={styles.grid}>
-          <View style={[styles.gridV, { left: '33.33%' }]} />
-          <View style={[styles.gridV, { left: '66.66%' }]} />
-          <View style={[styles.gridH, { top: '33.33%' }]} />
-          <View style={[styles.gridH, { top: '66.66%' }]} />
-        </View>
-      ) : null}
+      <View style={[styles.previewBox, { top: box.top, width: box.w, height: box.h }]}>
+        <LiveBeautyView
+          ref={liveRef}
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          flash={cameraFlash}
+          zoom={zoom}
+          ratio={aspect === '9:16' ? '16:9' : '4:3'}
+          look={comparing ? NO_LOOK : look}
+          onModeChange={(m) => setMode(m)}
+          onTrackingChange={setTracking}
+        />
+        {box.band > 0 ? (
+          <>
+            <View pointerEvents="none" style={[styles.band, { top: 0, height: box.band }]} />
+            <View pointerEvents="none" style={[styles.band, { bottom: 0, height: box.band }]} />
+          </>
+        ) : null}
+        {grid ? (
+          <View pointerEvents="none" style={[styles.grid, { top: box.band, bottom: box.band }]}>
+            <View style={[styles.gridV, { left: '33.33%' }]} />
+            <View style={[styles.gridV, { left: '66.66%' }]} />
+            <View style={[styles.gridH, { top: '33.33%' }]} />
+            <View style={[styles.gridH, { top: '66.66%' }]} />
+          </View>
+        ) : null}
+        {comparing ? (
+          <View pointerEvents="none" style={[styles.compareBadge, { top: box.band + 12 }]}>
+            <Text style={styles.compareBadgeText}>원본</Text>
+          </View>
+        ) : null}
+        <Animated.View pointerEvents="none" style={[styles.blink, { opacity: blink }]} />
+      </View>
+
       {countdown > 0 ? (
         <View pointerEvents="none" style={styles.countdown}>
           <Text style={styles.countdownText}>{countdown}</Text>
@@ -166,53 +355,68 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
       <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <RoundIcon icon="close" onPress={onClose} />
         <View style={styles.topTools}>
-          <RoundIcon icon={flashIcon} onPress={() => setFlash((f) => FLASH_ORDER[(FLASH_ORDER.indexOf(f) + 1) % FLASH_ORDER.length])} />
+          <RoundIcon
+            icon={flashIcon}
+            onPress={() => setFlash((f) => flashOrder[(Math.max(0, flashOrder.indexOf(f)) + 1) % flashOrder.length])}
+          />
           <Pressable onPress={() => setTimer((t) => TIMERS[(TIMERS.indexOf(t) + 1) % TIMERS.length])} style={styles.roundBtn}>
             <Ionicons name="timer-outline" size={20} color="#fff" />
             {timer > 0 ? <Text style={styles.timerBadge}>{timer}</Text> : null}
           </Pressable>
+          <Pressable onPress={() => setAspect((a) => ASPECTS[(ASPECTS.indexOf(a) + 1) % ASPECTS.length])} style={styles.aspectBtn}>
+            <Text style={styles.aspectText}>{aspect}</Text>
+          </Pressable>
           <RoundIcon icon={grid ? 'grid' : 'grid-outline'} onPress={() => setGrid((g) => !g)} />
         </View>
       </View>
+      <View pointerEvents="none" style={[styles.statusRow, { top: insets.top + 58 }]}>
+        <View style={[styles.statusChip, status.live && styles.statusChipLive]}>
+          <View style={[styles.statusDot, status.live && styles.statusDotLive]} />
+          <Text style={styles.statusText}>{status.text}</Text>
+        </View>
+      </View>
 
-      <View style={[styles.bottom, { paddingBottom: insets.bottom + 18 }]}>
-        <View style={styles.zoomRow}>
-          {[0, 0.15, 0.35].map((z, i) => (
-            <Pressable key={z} onPress={() => setZoom(z)} style={[styles.zoomChip, zoom === z && styles.zoomChipOn]}>
-              <Text style={[styles.zoomText, zoom === z && styles.zoomTextOn]}>{['1x', '2x', '3x'][i]}</Text>
-            </Pressable>
-          ))}
+      <View style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
+        {renderPanel()}
+        <View style={styles.modeRow}>
+          <View style={styles.zoomRow}>
+            {ZOOMS.map((z) => (
+              <Pressable key={z.label} onPress={() => setZoom(z.value)} style={[styles.zoomChip, zoom === z.value && styles.zoomChipOn]}>
+                <Text style={[styles.zoomText, zoom === z.value && styles.zoomTextOn]}>{z.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            onPressIn={() => setComparing(true)}
+            onPressOut={() => setComparing(false)}
+            style={[styles.compareBtn, comparing && styles.compareBtnOn]}
+          >
+            <Ionicons name="git-compare-outline" size={16} color="#fff" />
+            <Text style={styles.compareText}>비교</Text>
+          </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-          {BEAUTY_PRESETS.map((p) => (
-            <Pressable key={p.id} onPress={() => setBeauty(p.id)} style={[styles.chip, beauty === p.id && styles.chipOn]}>
-              <Text style={[styles.chipText, beauty === p.id && styles.chipTextOn]}>{p.id === 'none' ? '뷰티 끔' : p.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-          {QUICK_FILTERS.map((f) => (
-            <Pressable key={f.label} onPress={() => setFilter(f.id)} style={styles.filterItem}>
-              <View style={[styles.filterDot, { backgroundColor: f.color }, filter === f.id && styles.filterDotOn]} />
-              <Text style={[styles.filterText, filter === f.id && styles.chipTextOn]}>{f.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        <Text style={styles.note}>뷰티·필터는 찍은 뒤 편집 화면에서 바로 적용돼요</Text>
-
         <View style={styles.shutterRow}>
+          <SideButton icon="happy-outline" label="뷰티" on={panel === 'beauty'} onPress={() => setPanel((p) => (p === 'beauty' ? null : 'beauty'))} />
           <Pressable onPress={() => void fromGallery()} style={styles.sideBtn}>
-            <Ionicons name="images-outline" size={24} color="#fff" />
+            <Ionicons name="images-outline" size={22} color="#fff" />
           </Pressable>
           <Pressable style={[styles.shutter, busy && { opacity: 0.6 }]} onPress={onShutter} disabled={busy}>
             {busy ? <ActivityIndicator color={theme.colors.primary} /> : <View style={styles.shutterInner} />}
           </Pressable>
           <Pressable onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))} style={styles.sideBtn}>
-            <Ionicons name="camera-reverse-outline" size={26} color="#fff" />
+            <Ionicons name="camera-reverse-outline" size={24} color="#fff" />
           </Pressable>
+          <SideButton
+            icon="color-filter-outline"
+            label="필터"
+            on={panel === 'filter'}
+            onPress={() => setPanel((p) => (p === 'filter' ? null : 'filter'))}
+          />
         </View>
       </View>
+
+      {screenFlash ? <View pointerEvents="none" style={styles.screenFlash} /> : null}
     </View>
   );
 }
@@ -225,9 +429,38 @@ function RoundIcon({ icon, onPress }: { icon: keyof typeof Ionicons.glyphMap; on
   );
 }
 
+function SideButton({
+  icon,
+  label,
+  on,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.modeBtn} hitSlop={6}>
+      <Ionicons name={icon} size={24} color={on ? theme.colors.primaryLight : '#fff'} />
+      <Text style={[styles.modeText, on && styles.modeTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function FilterChip({ label, color, on, onPress }: { label: string; color: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.filterItem}>
+      <View style={[styles.filterDot, { backgroundColor: color }, on && styles.filterDotOn]} />
+      <Text style={[styles.filterText, on && styles.filterTextOn]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
-  camera: { flex: 1 },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -246,9 +479,22 @@ const styles = StyleSheet.create({
   primaryBtnText: { color: '#fff', fontWeight: '800' },
   linkBtn: { padding: 8 },
   linkText: { color: theme.colors.textMuted, fontWeight: '600' },
-  grid: { ...StyleSheet.absoluteFill },
+  previewBox: { position: 'absolute', left: 0, overflow: 'hidden', backgroundColor: '#000' },
+  band: { position: 'absolute', left: 0, right: 0, backgroundColor: '#000' },
+  grid: { position: 'absolute', left: 0, right: 0 },
   gridV: { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.5)' },
   gridH: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.5)' },
+  blink: { ...StyleSheet.absoluteFill, backgroundColor: '#fff' },
+  screenFlash: { ...StyleSheet.absoluteFill, backgroundColor: '#FFF8F0' },
+  compareBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  compareBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   countdown: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   countdownText: {
     color: '#fff',
@@ -274,6 +520,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  aspectBtn: {
+    minWidth: 44,
+    height: 40,
+    paddingHorizontal: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aspectText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   timerBadge: {
     position: 'absolute',
     bottom: 2,
@@ -282,60 +538,87 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
   },
+  statusRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  statusChipLive: { backgroundColor: 'rgba(224,96,126,0.55)' },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.6)' },
+  statusDotLive: { backgroundColor: '#7CFFB2' },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   bottom: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    paddingTop: 10,
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingTop: 8,
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  zoomRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  zoomChip: {
-    width: 38,
-    height: 30,
-    borderRadius: 15,
+  panel: { gap: 2, paddingBottom: 2 },
+  panelHint: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  filterRow: { paddingHorizontal: 12, gap: 6, alignItems: 'flex-start' },
+  filterItem: { alignItems: 'center', gap: 4, width: 54 },
+  filterDot: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
+  filterDotOn: { borderColor: '#fff', borderWidth: 3 },
+  filterText: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600' },
+  filterTextOn: { color: '#fff', fontWeight: '800' },
+  modeRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    gap: 14,
+  },
+  zoomRow: { flexDirection: 'row', gap: 6 },
+  zoomChip: {
+    width: 36,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   zoomChipOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
   zoomText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   zoomTextOn: { color: '#111' },
-  chipRow: { paddingHorizontal: 14, gap: 8, alignItems: 'center' },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+  compareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 28,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  chipOn: { backgroundColor: theme.colors.primary },
-  chipText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700' },
-  chipTextOn: { color: '#fff', fontWeight: '800' },
-  filterItem: { alignItems: 'center', gap: 4, width: 48 },
-  filterDot: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)' },
-  filterDotOn: { borderColor: '#fff', transform: [{ scale: 1.1 }] },
-  filterText: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600' },
-  note: { color: 'rgba(255,255,255,0.6)', fontSize: 11, textAlign: 'center' },
-  shutterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingTop: 4 },
+  compareBtnOn: { backgroundColor: theme.colors.primary },
+  compareText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  shutterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingTop: 2 },
+  modeBtn: { width: 52, alignItems: 'center', gap: 2 },
+  modeText: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '700' },
+  modeTextOn: { color: theme.colors.primaryLight, fontWeight: '800' },
   sideBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   shutter: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     borderWidth: 5,
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: theme.colors.primaryLight },
+  shutterInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.primaryLight },
 });

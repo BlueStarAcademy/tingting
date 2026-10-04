@@ -27,6 +27,7 @@ import { detectFaces, type FaceDetectResult } from '@/lib/editor/faces';
 import { FRAMES } from '@/lib/editor/frames';
 import { useEditHistory } from '@/lib/editor/history';
 import { prepareBaseImage, transformBase, writeJpegBase64, type CropBox } from '@/lib/editor/image';
+import type { CameraLook } from '@/lib/editor/look';
 import { buildSceneModel, hitTestItem } from '@/lib/editor/scene';
 import { getEditorEffect } from '@/lib/editor/shader';
 import {
@@ -57,6 +58,8 @@ type Props = {
   doneLabel?: string;
   initialBeauty?: string | null;
   initialFilter?: string | null;
+  /** full look from the beauty camera; wins over initialBeauty / initialFilter */
+  initialLook?: CameraLook | null;
   caption?: string;
 };
 
@@ -157,11 +160,39 @@ function useSkImage(uri: string, cache: Map<string, SkImage>): SkImage | null {
   return loaded && loaded.uri === uri ? loaded.image : null;
 }
 
-function initialState(original: BaseImage, beautyId?: string | null, filterId?: string | null): EditState {
+function initialState(
+  original: BaseImage,
+  beautyId?: string | null,
+  filterId?: string | null,
+  look?: CameraLook | null,
+): EditState {
   const state = createEditState(original);
+  if (look) {
+    state.beauty = { ...look.beauty };
+    state.makeup = {
+      ...state.makeup,
+      lip: { ...state.makeup.lip, amount: look.lip },
+      blush: { ...state.makeup.blush, amount: look.blush },
+    };
+    if (look.filterId && FILTERS.some((f) => f.id === look.filterId)) {
+      state.filterId = look.filterId;
+      state.filterIntensity = look.filterIntensity;
+    }
+    return state;
+  }
   const preset = BEAUTY_PRESETS.find((p) => p.id === beautyId);
-  if (preset) state.beauty = { ...preset.values };
+  if (preset) applyPreset(state, preset);
   if (filterId && FILTERS.some((f) => f.id === filterId)) state.filterId = filterId;
+  return state;
+}
+
+function applyPreset(state: EditState, preset: (typeof BEAUTY_PRESETS)[number]): EditState {
+  state.beauty = { ...preset.values };
+  state.makeup = {
+    ...state.makeup,
+    lip: { ...state.makeup.lip, amount: preset.makeup?.lip ?? 0 },
+    blush: { ...state.makeup.blush, amount: preset.makeup?.blush ?? 0 },
+  };
   return state;
 }
 
@@ -172,10 +203,11 @@ function EditorBody({
   doneLabel = '저장',
   initialBeauty,
   initialFilter,
+  initialLook,
   caption,
 }: Props & { original: BaseImage }) {
   const insets = useSafeAreaInsets();
-  const history = useEditHistory<EditState>(initialState(original, initialBeauty, initialFilter));
+  const history = useEditHistory<EditState>(initialState(original, initialBeauty, initialFilter, initialLook));
   const { state, update, commit, apply } = history;
 
   const imageCache = useRef(new Map<string, SkImage>()).current;
@@ -187,7 +219,7 @@ function EditorBody({
     const uri = state.base.uri;
     if (faceResults[uri]) return;
     setFaceResults((prev) => ({ ...prev, [uri]: 'loading' }));
-    detectFaces(uri).then((result) => setFaceResults((prev) => ({ ...prev, [uri]: result })));
+    detectFaces(uri, { contours: true }).then((result) => setFaceResults((prev) => ({ ...prev, [uri]: result })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.base.uri]);
   const faceResult = faceResults[state.base.uri];
@@ -446,6 +478,7 @@ function EditorBody({
     if (!faceResult || faceResult === 'loading') return '얼굴 찾는 중…';
     if (faceResult.status === 'ok') return `얼굴 ${faceResult.faces.length}명 인식 · 얼굴형/눈/코/메이크업 적용`;
     if (faceResult.status === 'none') return '얼굴을 찾지 못했어요 · 피부 보정만 적용돼요';
+    if (faceResult.status === 'error') return `얼굴 인식 오류 · 피부 보정만 적용돼요 (${faceResult.error ?? '알 수 없음'})`;
     return '이 앱 버전에서는 얼굴 인식을 쓸 수 없어요 · 새 APK로 업데이트해 주세요';
   })();
   const hasFaces = faces.length > 0;
@@ -454,27 +487,29 @@ function EditorBody({
     switch (tool) {
       case 'beauty': {
         const faceOnly = FACE_ONLY_BEAUTY.includes(beautyKey);
+        const beautyItem = BEAUTY_ITEMS.find((b) => b.key === beautyKey) ?? BEAUTY_ITEMS[0];
         return (
           <View style={styles.panelInner}>
             <Text style={styles.hint} numberOfLines={1}>
               {faceStatus}
             </Text>
             <ChipRow
-              options={BEAUTY_PRESETS.map((p) => ({ key: p.id, label: p.label }))}
+              options={BEAUTY_PRESETS.map((p) => ({ key: p.id, label: p.id === 'none' ? '초기화' : p.label }))}
               value={BEAUTY_PRESETS.find((p) => BEAUTY_ITEMS.every((b) => Math.abs(p.values[b.key] - state.beauty[b.key]) < 0.005))?.id ?? null}
               onChange={(id) => {
                 const preset = BEAUTY_PRESETS.find((p) => p.id === id);
-                if (preset) apply((s) => ({ ...s, beauty: { ...preset.values } }));
+                if (preset) apply((s) => applyPreset({ ...s }, preset));
               }}
             />
             <EditorSlider
               value={state.beauty[beautyKey]}
+              bipolar={beautyItem.bipolar}
               onChange={(v) => update((s) => ({ ...s, beauty: { ...s.beauty, [beautyKey]: v } }))}
               onComplete={commit}
               label={faceOnly && !hasFaces ? '얼굴 필요' : undefined}
             />
             <ItemRow
-              items={BEAUTY_ITEMS.map((b) => ({ key: b.key, label: b.label, icon: b.icon, active: state.beauty[b.key] > 0.001 }))}
+              items={BEAUTY_ITEMS.map((b) => ({ key: b.key, label: b.label, icon: b.icon, active: Math.abs(state.beauty[b.key]) > 0.001 }))}
               selected={beautyKey}
               onSelect={(k) => setBeautyKey(k as BeautyKey)}
             />
@@ -661,9 +696,10 @@ function EditorBody({
             onPressIn={() => setShowOriginal(true)}
             onPressOut={() => setShowOriginal(false)}
             hitSlop={8}
-            style={styles.topBtn}
+            style={[styles.compareBtn, showOriginal && styles.compareBtnOn]}
           >
-            <Ionicons name="git-compare-outline" size={22} color="#fff" />
+            <Ionicons name="git-compare-outline" size={18} color="#fff" />
+            <Text style={styles.compareText}>비교</Text>
           </Pressable>
         </View>
         <Pressable onPress={finish} disabled={saving || !image} style={styles.doneBtn}>
@@ -791,6 +827,18 @@ const styles = StyleSheet.create({
   topBar: { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
   topCenter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   topBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  compareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 32,
+    paddingHorizontal: 10,
+    marginLeft: 4,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  compareBtnOn: { backgroundColor: theme.colors.primary },
+  compareText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   doneBtn: {
     minWidth: 76,
     height: 36,

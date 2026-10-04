@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FBF4F3"
+      "backgroundColor": "#FDC1BF"
     },
     "ios": {
       "supportsTablet": true,
@@ -27,9 +27,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0a1628",
+        "backgroundColor": "#FDC1BF",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.bluestaracademy.tingting",

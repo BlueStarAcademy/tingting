@@ -5,6 +5,7 @@ import {
   type SkParagraph,
   type SkTextShadow,
 } from '@shopify/react-native-skia';
+import { STILL_TIME, layoutArEffect, type ArOp } from '@/lib/ar/effects';
 import { buildColorMatrix, getFilterLook, type ColorMatrix } from './color';
 import type { FaceGeom, Vec } from './faces';
 import { frameLayout, type FrameLayout } from './frames';
@@ -40,6 +41,8 @@ export type SceneModel = {
   matrix: ColorMatrix;
   items: ItemDraw[];
   lens: LensPart[];
+  /** AR effect sprites in content (image pixel) space */
+  ar: ArOp[];
   caption: Caption;
 };
 
@@ -336,6 +339,12 @@ export function buildSceneModel(state: EditState, faces: FaceGeom[], caption?: s
     matrix: buildColorMatrix(state.filterId, state.filterIntensity, state.adjust),
     items: buildItems(state, layout),
     lens: buildLens(state, faces),
+    ar: layoutArEffect(state.arId, {
+      width: state.base.width,
+      height: state.base.height,
+      time: STILL_TIME,
+      faces: faces.map((face) => ({ face, presence: 1 })),
+    }),
     caption: buildCaption(layout, caption),
   };
 }

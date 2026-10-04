@@ -10,6 +10,7 @@ import {
   CAMERA_VERTEX_SOURCE,
 } from '@/lib/editor/camera-shader-source';
 import { buildCameraUniforms } from '@/lib/editor/camera-uniforms';
+import { arNeedsClassification } from '@/lib/ar/effects';
 import { blendFace, detectFaces, scaleFace, type FaceGeom } from '@/lib/editor/faces';
 import type { CameraLook } from '@/lib/editor/look';
 import { FACE_ONLY_BEAUTY } from '@/lib/editor/types';
@@ -33,6 +34,8 @@ type Props = {
   look: CameraLook;
   onModeChange?: (mode: LiveMode, reason?: string) => void;
   onTrackingChange?: (status: TrackingStatus) => void;
+  /** tracked faces in drawing-buffer pixels (same orientation as the preview) */
+  onFaces?: (faces: FaceGeom[], bufferWidth: number) => void;
 };
 
 const TRACK_WIDTH = 360;
@@ -82,7 +85,12 @@ function setUniforms(gl: ExpoWebGLRenderingContext, prog: Program, values: Recor
 }
 
 function needsFaces(look: CameraLook): boolean {
-  return look.lip > 0.001 || look.blush > 0.001 || FACE_ONLY_BEAUTY.some((k) => Math.abs(look.beauty[k]) > 0.001);
+  return (
+    !!look.effectId ||
+    look.lip > 0.001 ||
+    look.blush > 0.001 ||
+    FACE_ONLY_BEAUTY.some((k) => Math.abs(look.beauty[k]) > 0.001)
+  );
 }
 
 /** Pairs each new face with the closest previous one and eases toward it to hide detector jitter. */
@@ -111,7 +119,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Falls back to the plain CameraView when the GL path is unavailable or stays black.
  */
 export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveBeautyView(
-  { style, facing, flash, zoom, ratio, look, onModeChange, onTrackingChange },
+  { style, facing, flash, zoom, ratio, look, onModeChange, onTrackingChange, onFaces },
   ref,
 ) {
   const cameraRef = useRef<CameraView | null>(null);
@@ -124,8 +132,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
   const lookRef = useRef(look);
   lookRef.current = look;
   const facesRef = useRef<FaceGeom[]>([]);
-  const callbacks = useRef({ onModeChange, onTrackingChange });
-  callbacks.current = { onModeChange, onTrackingChange };
+  const callbacks = useRef({ onModeChange, onTrackingChange, onFaces });
+  callbacks.current = { onModeChange, onTrackingChange, onFaces };
 
   const changeMode = useCallback((next: LiveMode, reason?: string) => {
     setMode(next);
@@ -278,9 +286,13 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           callbacks.current.onTrackingChange?.(s);
         }
       };
+      const publish = () => callbacks.current.onFaces?.(facesRef.current, gl.drawingBufferWidth);
       while (alive) {
         if (!needsFaces(lookRef.current)) {
-          facesRef.current = [];
+          if (facesRef.current.length) {
+            facesRef.current = [];
+            publish();
+          }
           report('off');
           await sleep(300);
           continue;
@@ -297,21 +309,28 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           });
           if (!alive) return;
           file = typeof snap.uri === 'string' ? snap.uri : snap.localUri;
-          const result = await detectFaces(file, { fast: true, maxFaces: CAMERA_MAX_FACES });
+          const result = await detectFaces(file, {
+            fast: true,
+            maxFaces: CAMERA_MAX_FACES,
+            classify: arNeedsClassification(lookRef.current.effectId),
+          });
           if (!alive) return;
           if (result.status === 'unavailable' || result.status === 'error') {
             facesRef.current = [];
+            publish();
             report('unavailable');
             await sleep(2000);
           } else if (result.faces.length > 0) {
             misses = 0;
             const scale = gl.drawingBufferWidth / trackW;
             facesRef.current = smoothFaces(facesRef.current, result.faces.map((f) => scaleFace(f, scale)));
+            publish();
             report('tracking');
           } else {
             misses += 1;
             if (misses >= 3) {
               facesRef.current = [];
+              publish();
               report('searching');
             }
           }

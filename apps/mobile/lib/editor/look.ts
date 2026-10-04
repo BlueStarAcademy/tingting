@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getArEffect } from '@/lib/ar/effects';
 import { getFilter } from './color';
 import { AUTO_PRESET_ID, BEAUTY_PRESETS, EMPTY_BEAUTY, type BeautyKey, type BeautyValues } from './types';
 
@@ -9,6 +10,8 @@ export type CameraLook = {
   blush: number;
   filterId: string | null;
   filterIntensity: number;
+  /** AR face effect (stickers that follow the face) */
+  effectId: string | null;
 };
 
 export function presetLook(presetId: string, base?: CameraLook): CameraLook {
@@ -19,6 +22,7 @@ export function presetLook(presetId: string, base?: CameraLook): CameraLook {
     blush: preset.makeup?.blush ?? 0,
     filterId: base?.filterId ?? null,
     filterIntensity: base?.filterIntensity ?? 0.8,
+    effectId: base?.effectId ?? null,
   };
 }
 
@@ -42,13 +46,27 @@ const num = (v: unknown, min: number, max: number, fallback: number) =>
 export function encodeLook(look: CameraLook): string {
   const b: Record<string, number> = {};
   for (const k of Object.keys(EMPTY_BEAUTY) as BeautyKey[]) if (Math.abs(look.beauty[k]) > 0.001) b[k] = round(look.beauty[k]);
-  return JSON.stringify({ b, l: round(look.lip), u: round(look.blush), f: look.filterId, i: round(look.filterIntensity) });
+  return JSON.stringify({
+    b,
+    l: round(look.lip),
+    u: round(look.blush),
+    f: look.filterId,
+    i: round(look.filterIntensity),
+    e: look.effectId,
+  });
 }
 
 export function decodeLook(raw: string | null | undefined): CameraLook | null {
   if (!raw) return null;
   try {
-    const o = JSON.parse(raw) as { b?: Record<string, unknown>; l?: unknown; u?: unknown; f?: unknown; i?: unknown };
+    const o = JSON.parse(raw) as {
+      b?: Record<string, unknown>;
+      l?: unknown;
+      u?: unknown;
+      f?: unknown;
+      i?: unknown;
+      e?: unknown;
+    };
     const beauty = { ...EMPTY_BEAUTY };
     for (const k of Object.keys(EMPTY_BEAUTY) as BeautyKey[]) beauty[k] = num(o.b?.[k], -1, 1, 0);
     const filterId = typeof o.f === 'string' && getFilter(o.f) ? o.f : null;
@@ -58,6 +76,7 @@ export function decodeLook(raw: string | null | undefined): CameraLook | null {
       blush: num(o.u, 0, 1, 0),
       filterId,
       filterIntensity: num(o.i, 0, 1, 1),
+      effectId: typeof o.e === 'string' && getArEffect(o.e) ? o.e : null,
     };
   } catch {
     return null;

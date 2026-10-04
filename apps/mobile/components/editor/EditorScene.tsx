@@ -22,6 +22,7 @@ import {
   type SkImage,
   type SkRuntimeEffect,
 } from '@shopify/react-native-skia';
+import { ArLayer, type ArImages } from '@/components/ar/ArLayer';
 import type { FrameLayout } from '@/lib/editor/frames';
 import type { Caption, Glyph, ItemDraw, LensPart, SceneModel } from '@/lib/editor/scene';
 
@@ -29,6 +30,7 @@ type Props = {
   image: SkImage;
   model: SceneModel;
   effect: SkRuntimeEffect | null;
+  arImages?: ArImages;
   /** layout units → canvas units */
   scale: number;
   original?: boolean;
@@ -269,7 +271,7 @@ function FrameForeground({ layout }: { layout: FrameLayout }) {
   return null;
 }
 
-export function EditorScene({ image, model, effect, scale, original, hideItemId }: Props) {
+export function EditorScene({ image, model, effect, arImages, scale, original, hideItemId }: Props) {
   const { layout } = model;
   const { content } = layout;
   const clip = rrect(rect(0, 0, content.width, content.height), layout.radius, layout.radius);
@@ -293,6 +295,7 @@ export function EditorScene({ image, model, effect, scale, original, hideItemId 
           </Image>
         )}
         {!original ? model.lens.map((part, i) => <LensShape key={i} part={part} />) : null}
+        {!original && arImages && model.ar.length ? <ArLayer ops={model.ar} images={arImages} /> : null}
       </Group>
       <FrameForeground layout={layout} />
       {!original

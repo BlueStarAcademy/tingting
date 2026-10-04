@@ -71,6 +71,8 @@ export type EditState = {
   makeup: MakeupValues;
   effects: EffectValues;
   lensId: string | null;
+  /** AR face effect from lib/ar/effects */
+  arId: string | null;
   frameId: string | null;
   items: OverlayItem[];
 };
@@ -212,6 +214,7 @@ export function createEditState(base: BaseImage): EditState {
     makeup: emptyMakeup(),
     effects: { ...EMPTY_EFFECTS },
     lensId: null,
+    arId: null,
     frameId: null,
     items: [],
   };
@@ -229,6 +232,7 @@ export function hasEdits(state: EditState, originalBase: BaseImage): boolean {
     Object.values(state.makeup).some((layer) => layer.amount > 0.001) ||
     anyNonZero(state.effects) ||
     state.lensId !== null ||
+    state.arId !== null ||
     state.frameId !== null ||
     state.items.length > 0
   );

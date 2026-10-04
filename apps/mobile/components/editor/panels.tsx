@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { Canvas, ColorMatrix, Image as SkiaImage, type SkImage } from '@shopify/react-native-skia';
 import { theme } from '@/constants/theme';
 import { filterPreviewMatrix, type FilterOption } from '@/lib/editor/color';
@@ -137,7 +137,7 @@ export function TileRow({
   selected,
   onSelect,
 }: {
-  tiles: { key: string; label: string; icon?: string; swatch?: string; disabled?: boolean }[];
+  tiles: { key: string; label: string; icon?: string; image?: ImageSourcePropType; swatch?: string; disabled?: boolean }[];
   selected: string | null;
   onSelect: (key: string) => void;
 }) {
@@ -152,7 +152,8 @@ export function TileRow({
             style={[styles.thumbItem, tile.disabled && { opacity: 0.4 }]}
           >
             <View style={[styles.thumbFrame, on && styles.thumbFrameOn, styles.tile, tile.swatch ? { backgroundColor: tile.swatch } : null]}>
-              {tile.icon ? <Text style={styles.tileIcon}>{tile.icon}</Text> : null}
+              {tile.image ? <Image source={tile.image} style={styles.tileImage} resizeMode="contain" /> : null}
+              {tile.icon && !tile.image ? <Text style={styles.tileIcon}>{tile.icon}</Text> : null}
             </View>
             <Text style={[styles.thumbLabel, on && styles.itemLabelOn]} numberOfLines={1}>
               {tile.label}
@@ -217,6 +218,7 @@ const styles = StyleSheet.create({
   noneText: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '700' },
   tile: { backgroundColor: 'rgba(255,255,255,0.08)' },
   tileIcon: { fontSize: 28 },
+  tileImage: { width: '74%', height: '74%' },
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, paddingBottom: 8 },
   emojiCell: { width: '12.5%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 28 },

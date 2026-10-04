@@ -16,7 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Canvas, ImageFormat, Skia, drawAsImage, type SkImage } from '@shopify/react-native-skia';
 import { EDITOR_FEATURES } from '@tingting/shared';
+import { loadArImages, useArImages } from '@/components/ar/ArLayer';
 import { theme } from '@/constants/theme';
+import { AR_EFFECTS } from '@/lib/ar/effects';
+import { AR_SPRITES } from '@/lib/ar/sprites';
+import { translate } from '@/lib/i18n/translations';
 import { EditorScene } from './EditorScene';
 import { EditorSlider } from './EditorSlider';
 import { CropView } from './CropView';
@@ -74,7 +78,7 @@ const TOOLS: { id: Tool; label: string; icon: keyof typeof Ionicons.glyphMap }[]
   { id: 'crop', label: '자르기', icon: 'crop-outline' },
   { id: 'text', label: '텍스트', icon: 'text-outline' },
   { id: 'sticker', label: '스티커', icon: 'heart-outline' },
-  { id: 'lens', label: '렌즈', icon: 'glasses-outline' },
+  { id: 'lens', label: 'AR 스티커', icon: 'glasses-outline' },
   { id: 'frame', label: '프레임', icon: 'albums-outline' },
 ];
 
@@ -85,11 +89,8 @@ const STICKERS = EDITOR_FEATURES.filter((f) => f.category === 'sticker' && f.emo
 }));
 const STICKER_GROUPS = Array.from(new Set(STICKERS.map((s) => s.group)));
 
-const LENSES = EDITOR_FEATURES.filter((f) => f.category === 'lens').map((f) => ({
-  key: f.id,
-  label: f.name.ko,
-  icon: f.icon ?? '✨',
-}));
+const TRAVEL_STAMP = 'lens_travel_stamp';
+const STAMP_ICON = EDITOR_FEATURES.find((f) => f.id === TRAVEL_STAMP)?.icon ?? '✈️';
 
 const PANEL_HEIGHT = 196;
 
@@ -178,6 +179,7 @@ function initialState(
       state.filterId = look.filterId;
       state.filterIntensity = look.filterIntensity;
     }
+    state.arId = look.effectId;
     return state;
   }
   const preset = BEAUTY_PRESETS.find((p) => p.id === beautyId);
@@ -213,13 +215,16 @@ function EditorBody({
   const imageCache = useRef(new Map<string, SkImage>()).current;
   const image = useSkImage(state.base.uri, imageCache);
   const effect = useMemo(() => getEditorEffect(), []);
+  const arImages = useArImages();
 
   const [faceResults, setFaceResults] = useState<Record<string, FaceDetectResult | 'loading'>>({});
   useEffect(() => {
     const uri = state.base.uri;
     if (faceResults[uri]) return;
     setFaceResults((prev) => ({ ...prev, [uri]: 'loading' }));
-    detectFaces(uri, { contours: true }).then((result) => setFaceResults((prev) => ({ ...prev, [uri]: result })));
+    detectFaces(uri, { contours: true, classify: true }).then((result) =>
+      setFaceResults((prev) => ({ ...prev, [uri]: result })),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.base.uri]);
   const faceResult = faceResults[state.base.uri];
@@ -457,8 +462,9 @@ function EditorBody({
     if (!image) return;
     setSaving(true);
     try {
+      const sprites = state.arId ? await loadArImages() : arImages;
       const snapshot = await drawAsImage(
-        <EditorScene image={image} model={model} effect={effect} scale={1} />,
+        <EditorScene image={image} model={model} effect={effect} arImages={sprites} scale={1} />,
         { width: Math.round(layout.width), height: Math.round(layout.height) },
       );
       if (!snapshot) throw new Error('export failed');
@@ -634,12 +640,24 @@ function EditorBody({
               {faceStatus}
             </Text>
             <TileRow
-              tiles={LENSES.map((l) => ({
-                ...l,
-                disabled: !hasFaces && l.key !== 'lens_none' && l.key !== 'lens_travel_stamp',
-              }))}
-              selected={state.lensId ?? 'lens_none'}
-              onSelect={(key) => apply((s) => ({ ...s, lensId: key === 'lens_none' ? null : key }))}
+              tiles={[
+                { key: 'none', label: translate('ar.none'), icon: '🚫' },
+                ...AR_EFFECTS.map((e) => ({
+                  key: e.id,
+                  label: translate(e.labelKey),
+                  image: AR_SPRITES[e.thumb].src,
+                  disabled: !hasFaces && !e.ambient,
+                })),
+                { key: TRAVEL_STAMP, label: translate('ar.travelStamp'), icon: STAMP_ICON },
+              ]}
+              selected={state.arId ?? state.lensId ?? 'none'}
+              onSelect={(key) =>
+                apply((s) => ({
+                  ...s,
+                  arId: key === 'none' || key === TRAVEL_STAMP ? null : key,
+                  lensId: key === TRAVEL_STAMP ? key : null,
+                }))
+              }
             />
           </View>
         );
@@ -712,7 +730,14 @@ function EditorBody({
           <GestureDetector gesture={gesture}>
             <View style={{ width: canvasW, height: canvasH }} collapsable={false}>
               <Canvas style={{ width: canvasW, height: canvasH }}>
-                <EditorScene image={image} model={model} effect={effect} scale={scale} original={showOriginal} />
+                <EditorScene
+                  image={image}
+                  model={model}
+                  effect={effect}
+                  arImages={arImages}
+                  scale={scale}
+                  original={showOriginal}
+                />
               </Canvas>
               {selectedDraw && !showOriginal ? (
                 <View

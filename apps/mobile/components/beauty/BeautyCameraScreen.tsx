@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -17,8 +18,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/constants/theme';
+import { ArLiveOverlay, createArFeed } from '@/components/ar/ArLiveOverlay';
 import { EditorSlider } from '@/components/editor/EditorSlider';
 import { ChipRow, ItemRow } from '@/components/editor/panels';
+import { AR_EFFECTS, getArEffect } from '@/lib/ar/effects';
+import { AR_SPRITES } from '@/lib/ar/sprites';
+import { translate as t } from '@/lib/i18n/translations';
 import {
   CAMERA_FILTERS,
   DEFAULT_CAMERA_LOOK,
@@ -39,7 +44,7 @@ type Props = {
 
 type Aspect = '3:4' | '1:1' | '9:16';
 type FlashSetting = 'off' | 'auto' | 'on';
-type Panel = 'beauty' | 'filter' | null;
+type Panel = 'beauty' | 'filter' | 'sticker' | null;
 type ItemKey = BeautyKey | 'lip' | 'blush';
 
 const TIMERS = [0, 3, 5, 10] as const;
@@ -56,7 +61,7 @@ const ITEMS: { key: ItemKey; label: string; icon: string; bipolar?: boolean }[] 
 ];
 const FACE_ITEMS: ItemKey[] = [...FACE_ONLY_BEAUTY, 'lip', 'blush'];
 
-const NO_LOOK: CameraLook = { beauty: EMPTY_BEAUTY, lip: 0, blush: 0, filterId: null, filterIntensity: 0 };
+const NO_LOOK: CameraLook = { beauty: EMPTY_BEAUTY, lip: 0, blush: 0, filterId: null, filterIntensity: 0, effectId: null };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -111,6 +116,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
   const blink = useRef(new Animated.Value(0)).current;
+  const arFeed = useRef(createArFeed());
   const alive = useRef(true);
   const lookRef = useRef(look);
   lookRef.current = look;
@@ -235,6 +241,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const cameraFlash = facing === 'front' ? 'off' : flash;
   const activePreset = matchingPreset(look);
   const currentItem = ITEMS.find((i) => i.key === item) ?? ITEMS[0];
+  const arEffect = getArEffect(look.effectId);
 
   const status = (() => {
     if (mode === 'starting') return { text: '카메라 준비 중…', live: false };
@@ -250,6 +257,14 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
       : FACE_ITEMS.includes(item) && tracking !== 'tracking'
         ? '얼굴이 화면에 잘 보이게 해 주세요'
         : null;
+  const arHint = (() => {
+    if (!arEffect) return t('ar.pickHint');
+    if (!arEffect.ambient || arEffect.trigger) {
+      if (mode === 'fallback' || tracking === 'unavailable') return t('ar.afterShot');
+      if (tracking !== 'tracking') return t('ar.showFace');
+    }
+    return arEffect.trigger ? t(`ar.trigger.${arEffect.trigger}`) : t('ar.multiFace');
+  })();
 
   const renderPanel = () => {
     if (panel === 'beauty') {
@@ -306,6 +321,28 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
         </View>
       );
     }
+    if (panel === 'sticker') {
+      return (
+        <View style={styles.panel}>
+          <Text style={styles.panelHint} numberOfLines={1}>
+            {arHint}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.arRow}>
+            <ArThumb label={t('ar.none')} on={!look.effectId} onPress={() => changeLook({ ...look, effectId: null })} />
+            {AR_EFFECTS.map((e) => (
+              <ArThumb
+                key={e.id}
+                label={t(e.labelKey)}
+                image={AR_SPRITES[e.thumb].src}
+                badge={!!e.trigger}
+                on={look.effectId === e.id}
+                onPress={() => changeLook({ ...look, effectId: e.id })}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      );
+    }
     return null;
   };
 
@@ -323,7 +360,13 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
           look={comparing ? NO_LOOK : look}
           onModeChange={(m) => setMode(m)}
           onTrackingChange={setTracking}
+          onFaces={(faces, bufferWidth) => {
+            arFeed.current = { faces, bufferWidth, at: Date.now() };
+          }}
         />
+        {look.effectId && !comparing ? (
+          <ArLiveOverlay effectId={look.effectId} feed={arFeed} width={box.w} height={box.h} />
+        ) : null}
         {box.band > 0 ? (
           <>
             <View pointerEvents="none" style={[styles.band, { top: 0, height: box.band }]} />
@@ -379,6 +422,9 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
         {renderPanel()}
         <View style={styles.modeRow}>
+          <Pressable onPress={() => void fromGallery()} style={styles.galleryChip} hitSlop={6}>
+            <Ionicons name="images-outline" size={16} color="#fff" />
+          </Pressable>
           <View style={styles.zoomRow}>
             {ZOOMS.map((z) => (
               <Pressable key={z.label} onPress={() => setZoom(z.value)} style={[styles.zoomChip, zoom === z.value && styles.zoomChipOn]}>
@@ -398,14 +444,14 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
 
         <View style={styles.shutterRow}>
           <SideButton icon="happy-outline" label="뷰티" on={panel === 'beauty'} onPress={() => setPanel((p) => (p === 'beauty' ? null : 'beauty'))} />
-          <Pressable onPress={() => void fromGallery()} style={styles.sideBtn}>
-            <Ionicons name="images-outline" size={22} color="#fff" />
-          </Pressable>
+          <SideButton
+            icon={look.effectId ? 'sparkles' : 'sparkles-outline'}
+            label={t('ar.button')}
+            on={panel === 'sticker'}
+            onPress={() => setPanel((p) => (p === 'sticker' ? null : 'sticker'))}
+          />
           <Pressable style={[styles.shutter, busy && { opacity: 0.6 }]} onPress={onShutter} disabled={busy}>
             {busy ? <ActivityIndicator color={theme.colors.primary} /> : <View style={styles.shutterInner} />}
-          </Pressable>
-          <Pressable onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))} style={styles.sideBtn}>
-            <Ionicons name="camera-reverse-outline" size={24} color="#fff" />
           </Pressable>
           <SideButton
             icon="color-filter-outline"
@@ -413,6 +459,9 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
             on={panel === 'filter'}
             onPress={() => setPanel((p) => (p === 'filter' ? null : 'filter'))}
           />
+          <Pressable onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))} style={styles.sideBtn}>
+            <Ionicons name="camera-reverse-outline" size={24} color="#fff" />
+          </Pressable>
         </View>
       </View>
 
@@ -444,6 +493,36 @@ function SideButton({
     <Pressable onPress={onPress} style={styles.modeBtn} hitSlop={6}>
       <Ionicons name={icon} size={24} color={on ? theme.colors.primaryLight : '#fff'} />
       <Text style={[styles.modeText, on && styles.modeTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function ArThumb({
+  label,
+  image,
+  badge,
+  on,
+  onPress,
+}: {
+  label: string;
+  image?: number;
+  badge?: boolean;
+  on: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.arItem}>
+      <View style={[styles.arFrame, on && styles.arFrameOn]}>
+        {image ? (
+          <Image source={image} style={styles.arImage} resizeMode="contain" />
+        ) : (
+          <Ionicons name="ban-outline" size={24} color="rgba(255,255,255,0.75)" />
+        )}
+        {badge ? <View style={styles.arBadge} /> : null}
+      </View>
+      <Text style={[styles.filterText, on && styles.filterTextOn]} numberOfLines={1}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -569,6 +648,37 @@ const styles = StyleSheet.create({
   filterDotOn: { borderColor: '#fff', borderWidth: 3 },
   filterText: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600' },
   filterTextOn: { color: '#fff', fontWeight: '800' },
+  arRow: { paddingHorizontal: 12, gap: 6, alignItems: 'flex-start', paddingTop: 4 },
+  arItem: { alignItems: 'center', gap: 4, width: 60 },
+  arFrame: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arFrameOn: { borderColor: theme.colors.primaryLight, backgroundColor: 'rgba(224,96,126,0.3)' },
+  arImage: { width: 40, height: 40 },
+  arBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFD36E',
+  },
+  galleryChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
   modeRow: {
     flexDirection: 'row',
     alignItems: 'center',

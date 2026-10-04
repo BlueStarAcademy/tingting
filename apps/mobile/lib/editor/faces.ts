@@ -22,6 +22,14 @@ export type FaceGeom = {
   ax: Vec;
   up: Vec;
   angle: number;
+  /** head turn in radians; positive when the nose points toward +ax */
+  yaw: number;
+  /** 0 closed .. 1 clearly open */
+  mouthOpen: number;
+  /** ML Kit classification, -1 when not requested */
+  smile: number;
+  /** lower of the two eye-open probabilities, -1 when not requested */
+  eyesOpen: number;
   /** true when ML Kit contours (face oval, lips, eyes) shaped the geometry */
   contoured: boolean;
 };
@@ -37,6 +45,8 @@ export type DetectOptions = {
   fast?: boolean;
   /** also run contour detection (most prominent face) for precise jaw, lips and eyes */
   contours?: boolean;
+  /** smile / eyes-open probabilities (used by AR effect triggers) */
+  classify?: boolean;
   maxFaces?: number;
 };
 
@@ -46,6 +56,10 @@ type MlFace = {
   frame: MlFrame;
   landmarks?: Partial<Record<string, { position: MlPoint }>>;
   contours?: Partial<Record<string, { points: MlPoint[] }>>;
+  rotationY?: number;
+  smilingProbability?: number;
+  leftEyeOpenProbability?: number;
+  rightEyeOpenProbability?: number;
 };
 
 const add = (a: Vec, b: Vec): Vec => ({ x: a.x + b.x, y: a.y + b.y });
@@ -133,6 +147,32 @@ function toGeom(face: MlFace): FaceGeom {
   }
   const noseToMouth = Math.max(len(sub(mouth, nose)), eyeDist * 0.3);
 
+  const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+  let mouthOpen = 0;
+  const innerTop = contour(face, 'upperLipBottom', 3);
+  const innerBottom = contour(face, 'lowerLipTop', 3);
+  const lowerLip = lm('mouthBottom');
+  if (innerTop && innerBottom) {
+    const mx = local(mouth).x;
+    const centerY = (pts: Vec[]) => {
+      const loc = pts.map(local);
+      const near = loc.filter((p) => Math.abs(p.x - mx) < mouthHalfWidth * 0.4);
+      return mean(near.length ? near : loc).y;
+    };
+    mouthOpen = clamp01((centerY(innerTop) - centerY(innerBottom) - eyeDist * 0.05) / (eyeDist * 0.12));
+  } else if (mouthL && mouthR && lowerLip) {
+    const drop = dot(sub(mid(mouthL, mouthR), lowerLip), up) / eyeDist;
+    mouthOpen = clamp01((drop - 0.24) / 0.18);
+  }
+
+  const noseOffset = local(nose).x / eyeDist;
+  const yaw = Number.isFinite(face.rotationY)
+    ? (Math.abs(face.rotationY as number) * Math.PI) / 180 * (noseOffset < 0 ? -1 : 1)
+    : Math.asin(Math.min(0.9, Math.max(-0.9, noseOffset * 1.6)));
+  const prob = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : -1);
+  const eyeL = prob(face.leftEyeOpenProbability);
+  const eyeR = prob(face.rightEyeOpenProbability);
+
   const oval = contour(face, 'face', 12);
   let center: Vec;
   let halfWidth: number;
@@ -198,6 +238,10 @@ function toGeom(face: MlFace): FaceGeom {
     ax,
     up,
     angle: Math.atan2(ax.y, ax.x),
+    yaw,
+    mouthOpen,
+    smile: prob(face.smilingProbability),
+    eyesOpen: eyeL >= 0 && eyeR >= 0 ? Math.min(eyeL, eyeR) : Math.max(eyeL, eyeR),
     contoured: !!oval,
   };
 }
@@ -250,7 +294,7 @@ export async function detectFaces(localUri: string, options: DetectOptions = {})
       performanceMode,
       landmarkMode: 'all',
       contourMode: 'none',
-      classificationMode: 'none',
+      classificationMode: options.classify ? 'all' : 'none',
       minFaceSize: options.fast ? 0.12 : 0.06,
     });
     const faces = (found ?? [])
@@ -333,6 +377,10 @@ export function blendFace(prev: FaceGeom, next: FaceGeom, t: number): FaceGeom {
     ax,
     up: { x: ax.y, y: -ax.x },
     angle: Math.atan2(ax.y, ax.x),
+    yaw: lerp(prev.yaw, next.yaw, t),
+    mouthOpen: lerp(prev.mouthOpen, next.mouthOpen, t),
+    smile: prev.smile < 0 || next.smile < 0 ? next.smile : lerp(prev.smile, next.smile, t),
+    eyesOpen: prev.eyesOpen < 0 || next.eyesOpen < 0 ? next.eyesOpen : lerp(prev.eyesOpen, next.eyesOpen, t),
     contoured: next.contoured,
   };
 }

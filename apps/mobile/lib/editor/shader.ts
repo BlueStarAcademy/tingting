@@ -1,7 +1,7 @@
 ﻿import { Skia, type SkRuntimeEffect } from '@shopify/react-native-skia';
-import type { FaceGeom } from './faces';
+import { faceUniforms, type FaceGeom } from './faces';
 import type { FilterLook } from './color';
-import { EDITOR_SHADER_SOURCE, FACE_PARTS, MAX_FACES } from './shader-source';
+import { EDITOR_SHADER_SOURCE, MAX_FACES } from './shader-source';
 import type { EditState } from './types';
 
 let compiled: SkRuntimeEffect | null | undefined;
@@ -41,6 +41,7 @@ export function buildUniforms(
     uFaceCount: Math.min(faces.length, MAX_FACES),
     uBeauty1: [beauty.smooth, beauty.whiten, beauty.clarity, beauty.slim],
     uBeauty2: [beauty.jaw, beauty.eyes, beauty.nose, beauty.cheek],
+    uBeauty3: [beauty.chin, beauty.tone, 0, 0],
     uMk1: [makeup.blush.amount, makeup.lip.amount, makeup.eyeshadow.amount, makeup.eyeliner.amount],
     uMk2: [makeup.concealer.amount, makeup.highlight.amount, 0, 0],
     uBlushCol: hexToRgb(makeup.blush.color),
@@ -64,18 +65,5 @@ export function buildUniforms(
     uFx1: [effects.light_leak, effects.prism, effects.dust, effects.spotlight],
     uFx2: [effects.sunflare, 0, 0, 0],
   };
-  for (let i = 0; i < MAX_FACES; i += 1) {
-    const f = faces[i];
-    if (!f) {
-      for (const part of FACE_PARTS) u[`uF${i}${part}`] = [0, 0, 1, 1];
-      continue;
-    }
-    u[`uF${i}A`] = [f.center.x, f.center.y, f.radius.x, f.radius.y];
-    u[`uF${i}B`] = [f.leftEye.x, f.leftEye.y, f.rightEye.x, f.rightEye.y];
-    u[`uF${i}C`] = [f.nose.x, f.nose.y, f.mouth.x, f.mouth.y];
-    u[`uF${i}D`] = [f.chin.x, f.chin.y, f.mouthHalfWidth, f.eyeRadius];
-    u[`uF${i}E`] = [f.leftJaw.x, f.leftJaw.y, f.rightJaw.x, f.rightJaw.y];
-    u[`uF${i}F`] = [f.leftCheek.x, f.leftCheek.y, f.rightCheek.x, f.rightCheek.y];
-  }
-  return u;
+  return { ...u, ...faceUniforms(faces, MAX_FACES) };
 }

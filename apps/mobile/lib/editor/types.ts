@@ -1,4 +1,14 @@
-export type BeautyKey = 'smooth' | 'whiten' | 'clarity' | 'slim' | 'jaw' | 'eyes' | 'nose' | 'cheek';
+export type BeautyKey =
+  | 'smooth'
+  | 'whiten'
+  | 'tone'
+  | 'clarity'
+  | 'slim'
+  | 'jaw'
+  | 'chin'
+  | 'eyes'
+  | 'nose'
+  | 'cheek';
 export type BeautyValues = Record<BeautyKey, number>;
 
 export type MakeupKey = 'blush' | 'lip' | 'eyeshadow' | 'eyeliner' | 'concealer' | 'highlight';
@@ -65,19 +75,21 @@ export type EditState = {
   items: OverlayItem[];
 };
 
-export const BEAUTY_ITEMS: { key: BeautyKey; label: string; icon: string }[] = [
+export const BEAUTY_ITEMS: { key: BeautyKey; label: string; icon: string; bipolar?: boolean }[] = [
   { key: 'smooth', label: '피부 보정', icon: '🧴' },
   { key: 'whiten', label: '미백', icon: '🤍' },
+  { key: 'tone', label: '피부톤', icon: '🌡️', bipolar: true },
   { key: 'clarity', label: '피부 선명', icon: '✨' },
   { key: 'slim', label: '얼굴 슬림', icon: '🪞' },
-  { key: 'jaw', label: '턱선', icon: '📐' },
+  { key: 'jaw', label: 'V라인', icon: '📐' },
+  { key: 'chin', label: '턱 길이', icon: '↕️', bipolar: true },
   { key: 'eyes', label: '눈 확대', icon: '👀' },
   { key: 'nose', label: '코 슬림', icon: '👃' },
   { key: 'cheek', label: '광대', icon: '😊' },
 ];
 
 /** Beauty keys that need a detected face (skin tools also work without one). */
-export const FACE_ONLY_BEAUTY: BeautyKey[] = ['slim', 'jaw', 'eyes', 'nose', 'cheek'];
+export const FACE_ONLY_BEAUTY: BeautyKey[] = ['slim', 'jaw', 'chin', 'eyes', 'nose', 'cheek'];
 
 export const MAKEUP_ITEMS: { key: MakeupKey; label: string; icon: string; palette: string[] }[] = [
   { key: 'blush', label: '블러셔', icon: '🌸', palette: ['#F58BA0', '#FF9E80', '#E86A92', '#F7A1C4', '#D9776B'] },
@@ -114,22 +126,52 @@ export const EFFECT_ITEMS: { key: EffectKey; label: string; icon: string }[] = [
 export const EMPTY_BEAUTY: BeautyValues = {
   smooth: 0,
   whiten: 0,
+  tone: 0,
   clarity: 0,
   slim: 0,
   jaw: 0,
+  chin: 0,
   eyes: 0,
   nose: 0,
   cheek: 0,
 };
 
-export const BEAUTY_PRESETS: { id: string; label: string; values: BeautyValues }[] = [
+const beauty = (v: Partial<BeautyValues>): BeautyValues => ({ ...EMPTY_BEAUTY, ...v });
+
+/** Lip tint / blush amounts that go with a preset (colors stay the first palette entry). */
+export type PresetMakeup = { lip: number; blush: number };
+
+export const BEAUTY_PRESETS: { id: string; label: string; values: BeautyValues; makeup?: PresetMakeup }[] = [
   { id: 'none', label: '원본', values: EMPTY_BEAUTY },
-  { id: 'natural', label: '내추럴', values: { smooth: 0.35, whiten: 0.15, clarity: 0.15, slim: 0.15, jaw: 0.1, eyes: 0.12, nose: 0.08, cheek: 0.05 } },
-  { id: 'bright', label: '화사', values: { smooth: 0.5, whiten: 0.4, clarity: 0.1, slim: 0.22, jaw: 0.18, eyes: 0.18, nose: 0.12, cheek: 0.1 } },
-  { id: 'pure', label: '청순', values: { smooth: 0.6, whiten: 0.3, clarity: 0.05, slim: 0.3, jaw: 0.25, eyes: 0.28, nose: 0.15, cheek: 0.15 } },
-  { id: 'doll', label: '인형', values: { smooth: 0.75, whiten: 0.35, clarity: 0.1, slim: 0.45, jaw: 0.4, eyes: 0.45, nose: 0.3, cheek: 0.25 } },
-  { id: 'boy', label: '남친', values: { smooth: 0.3, whiten: 0.05, clarity: 0.35, slim: 0.15, jaw: 0.2, eyes: 0.05, nose: 0.1, cheek: 0.1 } },
+  {
+    id: 'auto',
+    label: '자동',
+    values: beauty({ smooth: 0.55, whiten: 0.3, tone: 0.1, slim: 0.25, jaw: 0.2, eyes: 0.22, nose: 0.15, cheek: 0.1 }),
+    makeup: { lip: 0.2, blush: 0.15 },
+  },
+  { id: 'natural', label: '내추럴', values: beauty({ smooth: 0.4, whiten: 0.18, clarity: 0.12, slim: 0.15, jaw: 0.1, eyes: 0.12, nose: 0.08, cheek: 0.05 }) },
+  {
+    id: 'bright',
+    label: '화사',
+    values: beauty({ smooth: 0.55, whiten: 0.45, tone: -0.1, slim: 0.22, jaw: 0.18, eyes: 0.18, nose: 0.12, cheek: 0.1 }),
+    makeup: { lip: 0.15, blush: 0.2 },
+  },
+  {
+    id: 'pure',
+    label: '청순',
+    values: beauty({ smooth: 0.65, whiten: 0.35, tone: -0.15, slim: 0.3, jaw: 0.25, chin: 0.1, eyes: 0.28, nose: 0.15, cheek: 0.15 }),
+    makeup: { lip: 0.2, blush: 0.25 },
+  },
+  {
+    id: 'doll',
+    label: '인형',
+    values: beauty({ smooth: 0.8, whiten: 0.4, tone: 0.05, slim: 0.45, jaw: 0.4, chin: 0.15, eyes: 0.45, nose: 0.3, cheek: 0.25 }),
+    makeup: { lip: 0.35, blush: 0.35 },
+  },
+  { id: 'boy', label: '남친', values: beauty({ smooth: 0.3, whiten: 0.05, tone: 0.1, clarity: 0.35, slim: 0.15, jaw: 0.2, eyes: 0.05, nose: 0.1, cheek: 0.1 }) },
 ];
+
+export const AUTO_PRESET_ID = 'auto';
 
 function emptyMakeup(): MakeupValues {
   const out = {} as MakeupValues;

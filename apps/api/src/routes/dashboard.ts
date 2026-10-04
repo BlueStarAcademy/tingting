@@ -15,7 +15,9 @@ dashboardRouter.get(
       pool.query(`
         SELECT DISTINCT region_code FROM places WHERE status = 'visited'
         UNION
-        SELECT DISTINCT pl.region_code FROM photos ph JOIN places pl ON pl.id = ph.place_id`),
+        SELECT DISTINCT pl.region_code FROM photos ph JOIN places pl ON pl.id = ph.place_id
+        UNION
+        SELECT DISTINCT region_code FROM photos WHERE region_code IS NOT NULL`),
       pool.query(`SELECT
         (SELECT COUNT(*) FROM places) AS places,
         (SELECT COUNT(*) FROM places WHERE status = 'visited') AS visited,

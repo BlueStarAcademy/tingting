@@ -78,8 +78,9 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "편집한 사진을 휴대폰 갤러리에 저장하기 위해 접근이 필요해요.",
-          "savePhotosPermission": "편집한 사진을 휴대폰 갤러리에 저장하기 위해 접근이 필요해요."
+          "photosPermission": "휴대폰 앨범의 사진을 보고 편집·정리하고 팅팅에 올리기 위해 사진 접근이 필요해요.",
+          "savePhotosPermission": "편집한 사진을 휴대폰 갤러리에 저장하기 위해 접근이 필요해요.",
+          "granularPermissions": ["photo"]
         }
       ],
       [

@@ -92,7 +92,12 @@ export interface Photo {
   id: string;
   placeId?: string;
   visitId?: string;
+  /** Album region if set, otherwise the linked place's region */
   regionCode?: string;
+  /** Region album this photo is filed under ("지역별 앨범") */
+  albumRegionCode?: string;
+  /** General album folder ("일반 앨범"); exclusive with albumRegionCode */
+  folderId?: string;
   placeName?: string;
   originalUri: string;
   editedUri?: string;
@@ -100,6 +105,52 @@ export interface Photo {
   createdBy: string;
   createdAt: string;
 }
+
+/** Shared by both partners; `createdBy` records who made it. */
+export interface AlbumFolder {
+  id: string;
+  name: string;
+  sortOrder: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  photoCount: number;
+  coverPhotoUri?: string;
+}
+
+export interface RegionAlbumSummary {
+  regionCode: string;
+  photoCount: number;
+  coverPhotoUri?: string;
+}
+
+export interface AlbumSummary {
+  regions: RegionAlbumSummary[];
+  folders: AlbumFolder[];
+  /** Photos filed under neither a region nor a folder */
+  unsortedCount: number;
+  totalCount: number;
+}
+
+export type AlbumTarget =
+  | { kind: 'region'; regionCode: string }
+  | { kind: 'folder'; folderId: string }
+  | { kind: 'none' };
+
+export type AlbumScope =
+  | { kind: 'region'; regionCode: string }
+  | { kind: 'folder'; folderId: string }
+  | { kind: 'unsorted' }
+  | { kind: 'all' };
+
+export interface PhotoPage {
+  items: Photo[];
+  /** Pass back as `cursor` for the next page; absent on the last page */
+  nextCursor?: string;
+}
+
+/** What to do with a folder's photos when the folder is deleted. */
+export type FolderDeleteMode = 'delete' | 'move';
 
 export interface TripPlan {
   id: string;

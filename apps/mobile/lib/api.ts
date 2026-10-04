@@ -2,12 +2,17 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import type {
+  AlbumFolder,
+  AlbumScope,
+  AlbumSummary,
+  AlbumTarget,
   AuthSession,
   BackupStatus,
   CoupleUser,
   HomeDashboard,
   KakaoPlaceResult,
   Photo,
+  PhotoPage,
   Place,
   PlaceCategory,
   PlaceDetail,
@@ -173,7 +178,15 @@ export const api = {
     return request(`/photos/${id}`);
   },
 
-  createPhoto(input: { originalUri: string; editedUri?: string; placeId?: string; visitId?: string; takenAt?: string }): Promise<Photo> {
+  createPhoto(input: {
+    originalUri: string;
+    editedUri?: string;
+    placeId?: string;
+    visitId?: string;
+    takenAt?: string;
+    regionCode?: string;
+    folderId?: string;
+  }): Promise<Photo> {
     return request('/photos', { method: 'POST', body: json(input) });
   },
 
@@ -183,6 +196,68 @@ export const api = {
 
   deletePhoto(id: string): Promise<void> {
     return request(`/photos/${id}`, { method: 'DELETE' });
+  },
+
+  getAlbumSummary(): Promise<AlbumSummary> {
+    return request('/albums/summary');
+  },
+
+  listAlbumPhotos(scope: AlbumScope, page: { cursor?: string; limit?: number } = {}): Promise<PhotoPage> {
+    return request(
+      `/albums/photos${query({
+        scope: scope.kind,
+        regionCode: scope.kind === 'region' ? scope.regionCode : undefined,
+        folderId: scope.kind === 'folder' ? scope.folderId : undefined,
+        cursor: page.cursor,
+        limit: page.limit ? String(page.limit) : undefined,
+      })}`,
+    );
+  },
+
+  movePhotos(photoIds: string[], target: AlbumTarget): Promise<{ updated: number }> {
+    return request('/albums/photos/move', { method: 'POST', body: json({ photoIds, target }) });
+  },
+
+  copyPhotos(photoIds: string[], target: AlbumTarget): Promise<{ items: Photo[] }> {
+    return request('/albums/photos/copy', { method: 'POST', body: json({ photoIds, target }) });
+  },
+
+  deletePhotos(photoIds: string[]): Promise<{ deleted: number }> {
+    return request('/albums/photos/delete', { method: 'POST', body: json({ photoIds }) });
+  },
+
+  listFolders(): Promise<AlbumFolder[]> {
+    return request('/albums/folders');
+  },
+
+  createFolder(name: string): Promise<AlbumFolder> {
+    return request('/albums/folders', { method: 'POST', body: json({ name }) });
+  },
+
+  renameFolder(id: string, name: string): Promise<AlbumFolder> {
+    return request(`/albums/folders/${id}`, { method: 'PATCH', body: json({ name }) });
+  },
+
+  reorderFolders(ids: string[]): Promise<AlbumFolder[]> {
+    return request('/albums/folders/reorder', { method: 'POST', body: json({ ids }) });
+  },
+
+  /** Non-empty folders need `photos`: delete them too, or move them to `target`. */
+  deleteFolder(id: string, photos?: { mode: 'delete' } | { mode: 'move'; target: AlbumTarget }): Promise<void> {
+    const target = photos?.mode === 'move' ? photos.target : undefined;
+    return request(
+      `/albums/folders/${id}${query({
+        photos: photos?.mode,
+        target: !target
+          ? undefined
+          : target.kind === 'region'
+            ? `region:${target.regionCode}`
+            : target.kind === 'folder'
+              ? `folder:${target.folderId}`
+              : 'none',
+      })}`,
+      { method: 'DELETE' },
+    );
   },
 
   listPlans(): Promise<TripPlan[]> {

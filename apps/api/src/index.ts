@@ -7,6 +7,7 @@ import { handle, HttpError, publicBaseUrl } from './http';
 import { getUploadsDir, persistMediaUpload } from './media-upload';
 import { placesRouter, visitsRouter } from './routes/places';
 import { photosRouter } from './routes/photos';
+import { albumsRouter } from './routes/albums';
 import { plansRouter } from './routes/plans';
 import { dashboardRouter } from './routes/dashboard';
 import { myboxBackupStatus, requestMyboxBackup, startMyboxBackup } from './mybox';
@@ -78,6 +79,7 @@ app.use('/dashboard', authMiddleware, dashboardRouter);
 app.use('/places', authMiddleware, placesRouter);
 app.use('/visits', authMiddleware, visitsRouter);
 app.use('/photos', authMiddleware, photosRouter);
+app.use('/albums', authMiddleware, albumsRouter);
 app.use('/plans', authMiddleware, plansRouter);
 
 app.use((_req, res) => {

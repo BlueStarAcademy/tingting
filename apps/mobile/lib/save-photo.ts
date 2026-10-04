@@ -43,15 +43,17 @@ async function downloadPhotoOnWeb(uri: string, filename: string): Promise<void> 
   URL.revokeObjectURL(objectUrl);
 }
 
+/** A `file://` copy named `filename`; MediaLibrary uses the file name as the gallery display name. */
 async function materializeLocalFile(uri: string, filename: string): Promise<string> {
-  if (uri.startsWith('file://') || uri.startsWith('content://')) {
-    return uri;
-  }
-
   const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
   if (!cacheDir) return uri;
 
   const target = `${cacheDir}${filename}`;
+  await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+  if (uri.startsWith('file://') || uri.startsWith('content://')) {
+    await FileSystem.copyAsync({ from: uri, to: target });
+    return target;
+  }
   if (uri.startsWith('data:')) {
     const base64 = uri.split(',')[1] ?? '';
     await FileSystem.writeAsStringAsync(target, base64, {
@@ -89,32 +91,63 @@ export async function savePhotoWithFilename(
     }
   }
 
-  const MediaLibrary = await import('expo-media-library');
-
-  const perm = await MediaLibrary.requestPermissionsAsync(true);
-  if (!perm.granted) {
-    Alert.alert(labels.permissionTitle, labels.permissionMessage);
-    return false;
-  }
-
   try {
-    const localUri = await materializeLocalFile(uri, safeName);
-    const asset = await MediaLibrary.createAssetAsync(localUri);
-    try {
-      const albums = await MediaLibrary.getAlbumsAsync();
-      const existing = albums.find((album) => album.title === ALBUM_NAME);
-      if (existing) {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], existing, false);
-      } else {
-        await MediaLibrary.createAlbumAsync(ALBUM_NAME, asset, false);
-      }
-    } catch {
-      // Album helpers can fail on some OEMs; asset is already in the library.
-    }
+    await saveToDeviceAlbum(uri, safeName);
     Alert.alert(labels.savedTitle, successMessage);
     return true;
-  } catch {
-    Alert.alert(labels.failed);
+  } catch (e) {
+    if (e instanceof DevicePermissionError) Alert.alert(labels.permissionTitle, labels.permissionMessage);
+    else Alert.alert(labels.failed);
     return false;
   }
+}
+
+export class DevicePermissionError extends Error {}
+
+/**
+ * Save an image into the phone's "TingTing" album (native only). Throws `DevicePermissionError`
+ * when photo access is denied. Uses the SDK 56 object API; the old `*Async` helpers throw there.
+ */
+export async function saveToDeviceAlbum(uri: string, filename = defaultPhotoFilename()): Promise<void> {
+  const { Album, Asset, requestPermissionsAsync } = await import('expo-media-library');
+  const perm = await requestPermissionsAsync(false, ['photo']);
+  if (!perm.granted) throw new DevicePermissionError('permission');
+
+  const localUri = await materializeLocalFile(uri, sanitizePhotoFilename(filename));
+  let album = null;
+  try {
+    album = await Album.get(ALBUM_NAME);
+  } catch {
+    // limited access can hide the album; fall back to creating a new one
+  }
+  if (album) {
+    await Asset.create(localUri, album);
+    return;
+  }
+  try {
+    await Album.create(ALBUM_NAME, [localUri], false);
+  } catch {
+    // Album creation can fail on some OEMs; the photo still belongs in the library.
+    await Asset.create(localUri);
+  }
+}
+
+/** Save several images to the TingTing album; returns how many were saved. */
+export async function savePhotosToDevice(
+  uris: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
+  let ok = 0;
+  for (let i = 0; i < uris.length; i += 1) {
+    try {
+      const name = defaultPhotoFilename().replace(/\.jpg$/, `_${i + 1}.jpg`);
+      if (Platform.OS === 'web') await downloadPhotoOnWeb(uris[i], name);
+      else await saveToDeviceAlbum(uris[i], name);
+      ok += 1;
+    } catch (e) {
+      if (e instanceof DevicePermissionError) throw e;
+    }
+    onProgress?.(i + 1, uris.length);
+  }
+  return ok;
 }

@@ -1,4 +1,4 @@
-import type { CoupleUser, Photo, Place, PlaceCategory, PlaceReview, PlaceStatus, TripPlan, Visit } from '@tingting/shared';
+import type { AlbumFolder, CoupleUser, Photo, Place, PlaceCategory, PlaceReview, PlaceStatus, TripPlan, Visit } from '@tingting/shared';
 import { toPublicUri } from './http';
 
 type Row = Record<string, unknown>;
@@ -66,7 +66,9 @@ export function mapPhoto(row: Row, base: string): Photo {
     id: String(row.id),
     placeId: str(row.place_id),
     visitId: str(row.visit_id),
-    regionCode: str(row.region_code),
+    regionCode: str(row.effective_region_code ?? row.region_code),
+    albumRegionCode: str(row.region_code),
+    folderId: str(row.folder_id),
     placeName: str(row.place_name),
     originalUri: toPublicUri(String(row.original_uri), base)!,
     editedUri: toPublicUri(str(row.edited_uri), base),
@@ -99,10 +101,31 @@ export const PLACE_SELECT = `
     (SELECT COUNT(*) FROM photos ph WHERE ph.place_id = p.id) AS photo_count
   FROM places p`;
 
+export function mapFolder(row: Row, base: string): AlbumFolder {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    sortOrder: Number(row.sort_order ?? 0),
+    createdBy: String(row.created_by ?? ''),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    photoCount: Number(row.photo_count ?? 0),
+    coverPhotoUri: toPublicUri(str(row.cover_photo_uri), base),
+  };
+}
+
+/** `ph.region_code` is the album region; `effective_region_code` falls back to the place's region. */
 export const PHOTO_SELECT = `
-  SELECT ph.*, pl.region_code, pl.name AS place_name
+  SELECT ph.*, COALESCE(ph.region_code, pl.region_code) AS effective_region_code, pl.name AS place_name
   FROM photos ph
   LEFT JOIN places pl ON pl.id = ph.place_id`;
+
+export const FOLDER_SELECT = `
+  SELECT f.*,
+    (SELECT COUNT(*) FROM photos ph WHERE ph.folder_id = f.id) AS photo_count,
+    (SELECT COALESCE(ph.edited_uri, ph.original_uri) FROM photos ph
+      WHERE ph.folder_id = f.id ORDER BY ph.taken_at DESC, ph.id DESC LIMIT 1) AS cover_photo_uri
+  FROM album_folders f`;
 
 export const PLAN_SELECT = `
   SELECT pn.*, pl.name AS place_name, pl.region_code AS place_region_code

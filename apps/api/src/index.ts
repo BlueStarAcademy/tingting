@@ -11,6 +11,7 @@ import { albumsRouter } from './routes/albums';
 import { plansRouter } from './routes/plans';
 import { dashboardRouter } from './routes/dashboard';
 import { nearbyRouter, recommendationsRouter } from './routes/recommendations';
+import { coursesRouter } from './routes/courses';
 import { rateLimit } from './rate-limit';
 import { myboxBackupStatus, requestMyboxBackup, startMyboxBackup } from './mybox';
 
@@ -87,6 +88,7 @@ app.use('/plans', authMiddleware, plansRouter);
 const searchLimit = rateLimit(60, 60_000);
 app.use('/recommendations', authMiddleware, searchLimit, recommendationsRouter);
 app.use('/nearby', authMiddleware, searchLimit, nearbyRouter);
+app.use('/courses', authMiddleware, coursesRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

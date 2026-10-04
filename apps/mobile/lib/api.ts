@@ -9,6 +9,11 @@ import type {
   AuthSession,
   BackupStatus,
   CoupleUser,
+  CourseDay,
+  CourseDraft,
+  CoursePoint,
+  CourseRequest,
+  CourseTransport,
   HomeDashboard,
   KakaoPlaceResult,
   Photo,
@@ -16,6 +21,7 @@ import type {
   Place,
   PlaceCategory,
   PlaceDetail,
+  PlaceExtraInfo,
   PlaceInput,
   PlaceReview,
   PlaceStatus,
@@ -23,6 +29,10 @@ import type {
   RecommendationPage,
   RecommendationSource,
   RegionVisitStat,
+  RouteLeg,
+  RouteSource,
+  TripCourse,
+  TripCourseSummary,
   TripPlan,
   Visit,
 } from '@tingting/shared';
@@ -324,5 +334,35 @@ export const api = {
 
   deletePlan(id: string): Promise<void> {
     return request(`/plans/${id}`, { method: 'DELETE' });
+  },
+
+  generateCourse(input: CourseRequest): Promise<CourseDraft> {
+    return request('/courses/generate', { method: 'POST', body: json(input) });
+  },
+
+  /** Road legs between consecutive points (after reordering or swapping a stop). */
+  routeCourse(points: CoursePoint[], transport: CourseTransport): Promise<{ legs: RouteLeg[]; source: RouteSource }> {
+    return request('/courses/route', { method: 'POST', body: json({ points, transport }) });
+  },
+
+  listCourses(regionCode?: string): Promise<TripCourseSummary[]> {
+    return request(`/courses${query({ regionCode })}`);
+  },
+
+  getCourse(id: string): Promise<TripCourse> {
+    return request(`/courses/${id}`);
+  },
+
+  saveCourse(input: { request: CourseRequest; title: string; days: CourseDay[]; routeSource: RouteSource; sources: string[] }): Promise<TripCourse> {
+    return request('/courses', { method: 'POST', body: json(input) });
+  },
+
+  deleteCourse(id: string): Promise<void> {
+    return request(`/courses/${id}`, { method: 'DELETE' });
+  },
+
+  /** Opening hours, overview etc. (TourAPI places only; `{}` otherwise). */
+  getPlaceInfo(id: string, typeId?: string): Promise<PlaceExtraInfo> {
+    return request(`/courses/place-info${query({ id, typeId })}`);
   },
 };

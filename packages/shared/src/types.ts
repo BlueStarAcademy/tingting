@@ -162,6 +162,8 @@ export interface TripPlan {
   placeRegionCode?: string;
   memo?: string;
   done: boolean;
+  /** Set on the per-day entries of a saved travel course */
+  courseId?: string;
   createdBy: string;
   createdAt: string;
 }
@@ -229,6 +231,126 @@ export interface RecommendedPlace {
   eventEnd?: string;
   /** Already saved as one of our places */
   savedPlaceId?: string;
+  /** TourAPI content type, needed for its detail lookup */
+  tourContentTypeId?: string;
+  /** OpenStreetMap `opening_hours`, as written by mappers */
+  openingHours?: string;
+}
+
+export type CourseFocus = 'food' | 'sight' | 'event' | 'cafe' | 'activity';
+export type CourseTransport = 'car' | 'transit';
+/** 0 = 당일, 1 = 1박 2일, 2 = 2박 3일 */
+export type CourseNights = 0 | 1 | 2;
+
+export interface CoursePoint {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+export interface CourseRequest {
+  regionCode: string;
+  focus: CourseFocus[];
+  nights: CourseNights;
+  transport: CourseTransport;
+  /** YYYY-MM-DD, first day of the trip */
+  startDate: string;
+  /** Where day 1 begins; the region's travel hub when omitted */
+  start?: CoursePoint;
+  /** Different seeds give different picks for "다시 추천" */
+  seed?: number;
+}
+
+/** kakao = 카카오모빌리티 길찾기, osrm = OpenStreetMap road routing, estimate = straight line × road factor */
+export type RouteSource = 'kakao' | 'osrm' | 'estimate';
+
+export interface RouteLeg {
+  distanceM: number;
+  durationMin: number;
+  source: RouteSource;
+  /** [lat, lng] pairs along the road; draw a straight line when missing */
+  path?: [number, number][];
+}
+
+export type CourseSlot = 'morning' | 'lunch' | 'afternoon' | 'cafe' | 'event' | 'activity' | 'dinner' | 'stay';
+
+export interface CourseStop {
+  /** Stable within a course, survives swaps */
+  key: string;
+  slot: CourseSlot;
+  /** HH:MM planned arrival */
+  arrive: string;
+  dwellMin: number;
+  place: RecommendedPlace;
+  /** From the previous stop, or from the day's start point for the first stop */
+  leg?: RouteLeg;
+}
+
+export interface CourseDay {
+  /** 1-based */
+  day: number;
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:MM the day starts at `start` */
+  startTime: string;
+  /** Trip start on day 1, last night's stay afterwards */
+  start: CoursePoint;
+  stops: CourseStop[];
+}
+
+export type CourseNoticeCode = 'tour_key_required' | 'no_events' | 'few_places' | 'estimated_routes' | 'provider_error';
+
+export interface CourseNotice {
+  code: CourseNoticeCode;
+  message: string;
+}
+
+export interface CourseDraft {
+  request: CourseRequest;
+  title: string;
+  days: CourseDay[];
+  /** Unused candidates per category, offered when swapping a stop */
+  alternatives: Partial<Record<RecommendationCategory, RecommendedPlace[]>>;
+  notices: CourseNotice[];
+  routeSource: RouteSource;
+  /** Place providers the stops came from */
+  sources: RecommendationSource[];
+}
+
+export interface TripCourse {
+  id: string;
+  request: CourseRequest;
+  title: string;
+  days: CourseDay[];
+  routeSource: RouteSource;
+  sources: RecommendationSource[];
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface TripCourseSummary {
+  id: string;
+  regionCode: string;
+  title: string;
+  startDate: string;
+  nights: CourseNights;
+  transport: CourseTransport;
+  stopCount: number;
+  createdAt: string;
+}
+
+/** Extra details for a recommended place (TourAPI detail lookups) */
+export interface PlaceExtraInfo {
+  overview?: string;
+  homepage?: string;
+  phone?: string;
+  hours?: string;
+  restDays?: string;
+  fee?: string;
+  parking?: string;
+  menu?: string;
+  checkIn?: string;
+  checkOut?: string;
 }
 
 export type RecommendationNoticeCode = 'tour_key_required' | 'no_provider' | 'provider_error';

@@ -3,6 +3,7 @@ import {
   nearestRegionCode,
   REGION_LDONG_CODES,
   resolveRegionCode,
+  type PlaceExtraInfo,
   type RecommendationCategory,
   type RecommendedPlace,
 } from '@tingting/shared';
@@ -112,6 +113,7 @@ function toPlace(item: TourItem, category: RecommendationCategory): RecommendedP
     regionCode: resolveRegionCode(item.addr1, lat, lng),
     eventStart: ymd(item.eventstartdate),
     eventEnd: ymd(item.eventenddate),
+    tourContentTypeId: item.contenttypeid,
   };
 }
 
@@ -177,6 +179,72 @@ export async function tourRegion(regionCode: string, category: RecommendationCat
       category,
     ),
   );
+}
+
+/** Festivals in the region running on at least one day of [from, to] (YYYY-MM-DD), soonest first. */
+export async function tourFestivalsBetween(regionCode: string, from: string, to: string): Promise<RecommendedPlace[]> {
+  const festivals = await regionFestivals(regionCode);
+  return festivals.filter((p) => (p.eventStart ?? '') <= to && (p.eventEnd ?? p.eventStart ?? '') >= from);
+}
+
+const DETAIL_TTL = 7 * 24 * 3600_000;
+
+/** detailIntro2 field names differ per content type (`usetimefestival` is the festival fee). */
+const INTRO_FIELDS: Record<string, Partial<Record<keyof PlaceExtraInfo, string[]>>> = {
+  '12': { hours: ['usetime'], restDays: ['restdate'], parking: ['parking'], phone: ['infocenter'] },
+  '14': { hours: ['usetimeculture'], restDays: ['restdateculture'], fee: ['usefee'], parking: ['parkingculture'], phone: ['infocenterculture'] },
+  '15': { hours: ['playtime'], fee: ['usetimefestival'], phone: ['sponsor1tel'] },
+  '28': { hours: ['usetimeleports'], restDays: ['restdateleports'], fee: ['usefeeleports'], parking: ['parkingleports'], phone: ['infocenterleports'] },
+  '32': { checkIn: ['checkintime'], checkOut: ['checkouttime'], parking: ['parkinglodging'], phone: ['infocenterlodging'] },
+  '38': { hours: ['opentime'], restDays: ['restdateshopping'], parking: ['parkingshopping'], phone: ['infocentershopping'] },
+  '39': { hours: ['opentimefood'], restDays: ['restdatefood'], menu: ['firstmenu', 'treatmenu'], parking: ['parkingfood'], phone: ['infocenterfood'] },
+};
+
+/** TourAPI fields carry `<br>` tags and HTML entities. */
+function plain(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text || undefined;
+}
+
+function homepageUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return /href="([^"]+)"/i.exec(value)?.[1] ?? /(https?:\/\/[^\s"<]+)/i.exec(value)?.[1];
+}
+
+/** Overview, hours and other details of one TourAPI entry. */
+export async function tourPlaceInfo(contentId: string, contentTypeId: string | undefined): Promise<PlaceExtraInfo> {
+  return cached(`tour:info:${contentId}:${contentTypeId ?? ''}`, DETAIL_TTL, async () => {
+    const [common, intro] = await Promise.all([
+      tourGet('detailCommon2', { contentId }),
+      contentTypeId && INTRO_FIELDS[contentTypeId] ? tourGet('detailIntro2', { contentId, contentTypeId }) : null,
+    ]);
+    const c = common.items[0] as unknown as Record<string, unknown> | undefined;
+    const info: PlaceExtraInfo = {
+      overview: plain(c?.overview),
+      homepage: homepageUrl(c?.homepage),
+      phone: plain(c?.tel),
+    };
+    const row = intro?.items[0] as unknown as Record<string, unknown> | undefined;
+    const fields = contentTypeId ? INTRO_FIELDS[contentTypeId] : undefined;
+    if (row && fields) {
+      for (const [key, names] of Object.entries(fields) as [keyof PlaceExtraInfo, string[]][]) {
+        const value = names.map((n) => plain(row[n])).filter(Boolean).join(' · ');
+        if (value && !(key === 'phone' && info.phone)) info[key] = value;
+      }
+    }
+    return info;
+  });
 }
 
 export async function tourNearby(point: SearchPoint, category: RecommendationCategory, page: number): Promise<ProviderPage> {

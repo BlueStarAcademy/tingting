@@ -74,24 +74,24 @@ export const REGION_LDONG_CODES: Record<string, string[]> = {
  * Travel hub per region with a search radius (m), for providers that can only search around a
  * point. Metros use city hall; provinces use their best-known tourist city.
  */
-export const REGION_HUBS: Record<string, { lat: number; lng: number; radius: number }> = {
-  SEO: { lat: 37.5665, lng: 126.978, radius: 12000 },
-  BUS: { lat: 35.1631, lng: 129.0636, radius: 14000 },
-  DAE: { lat: 35.8714, lng: 128.6014, radius: 12000 },
-  ICN: { lat: 37.4563, lng: 126.7052, radius: 15000 },
-  GWJ: { lat: 35.1595, lng: 126.8526, radius: 10000 },
-  DJN: { lat: 36.3504, lng: 127.3845, radius: 10000 },
-  ULS: { lat: 35.5384, lng: 129.3114, radius: 14000 },
-  SJG: { lat: 36.48, lng: 127.289, radius: 10000 },
-  GGD: { lat: 37.2636, lng: 127.0286, radius: 20000 },
-  GWN: { lat: 37.7519, lng: 128.8761, radius: 25000 },
-  NCB: { lat: 36.6424, lng: 127.489, radius: 20000 },
-  SCB: { lat: 36.4465, lng: 127.119, radius: 25000 },
-  NJB: { lat: 35.8155, lng: 127.1532, radius: 20000 },
-  SJB: { lat: 34.7604, lng: 127.6622, radius: 25000 },
-  NGB: { lat: 35.8562, lng: 129.2247, radius: 20000 },
-  SGB: { lat: 34.8544, lng: 128.4331, radius: 25000 },
-  JEJ: { lat: 33.4996, lng: 126.5312, radius: 30000 },
+export const REGION_HUBS: Record<string, { lat: number; lng: number; radius: number; name: string }> = {
+  SEO: { lat: 37.5665, lng: 126.978, radius: 12000, name: '서울 시내' },
+  BUS: { lat: 35.1631, lng: 129.0636, radius: 14000, name: '부산 시내' },
+  DAE: { lat: 35.8714, lng: 128.6014, radius: 12000, name: '대구 시내' },
+  ICN: { lat: 37.4563, lng: 126.7052, radius: 15000, name: '인천 시내' },
+  GWJ: { lat: 35.1595, lng: 126.8526, radius: 10000, name: '광주 시내' },
+  DJN: { lat: 36.3504, lng: 127.3845, radius: 10000, name: '대전 시내' },
+  ULS: { lat: 35.5384, lng: 129.3114, radius: 14000, name: '울산 시내' },
+  SJG: { lat: 36.48, lng: 127.289, radius: 10000, name: '세종 시내' },
+  GGD: { lat: 37.2636, lng: 127.0286, radius: 20000, name: '수원 시내' },
+  GWN: { lat: 37.7519, lng: 128.8761, radius: 25000, name: '강릉 시내' },
+  NCB: { lat: 36.6424, lng: 127.489, radius: 20000, name: '청주 시내' },
+  SCB: { lat: 36.4465, lng: 127.119, radius: 25000, name: '공주 시내' },
+  NJB: { lat: 35.8155, lng: 127.1532, radius: 20000, name: '전주 시내' },
+  SJB: { lat: 34.7604, lng: 127.6622, radius: 25000, name: '여수 시내' },
+  NGB: { lat: 35.8562, lng: 129.2247, radius: 20000, name: '경주 시내' },
+  SGB: { lat: 34.8544, lng: 128.4331, radius: 25000, name: '통영 시내' },
+  JEJ: { lat: 33.4996, lng: 126.5312, radius: 30000, name: '제주 시내' },
 };
 
 /** Great-circle distance in meters. */

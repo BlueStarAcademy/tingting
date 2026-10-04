@@ -146,17 +146,22 @@ function toPlace(el: OsmElement, category: RecommendationCategory | undefined, r
     imageUrl: image,
     thumbnailUrl: image,
     url: tags.website ?? `https://www.openstreetmap.org/${el.type}/${el.id}`,
+    openingHours: tags.opening_hours,
     regionCode: regionCode ?? resolveRegionCode(address, lat, lng),
   };
 }
 
 const MIRRORS = ['https://overpass.private.coffee/api/interpreter'];
 
+/** After every server failed, fail fast for a while instead of stacking more timeouts. */
+let busyUntil = 0;
+
 async function overpass(filters: string[], point: SearchPoint): Promise<OsmElement[]> {
+  if (Date.now() < busyUntil) throw new HttpError(502, 'OpenStreetMap 서버가 바빠요. 잠시 후 다시 시도해 주세요');
   const around = `(around:${Math.round(point.radius)},${point.lat},${point.lng})`;
   const query = `[out:json][timeout:10];(${filters.map((f) => `nwr${f}${around};`).join('')});out tags center ${MAX_ELEMENTS};`;
   let status = 0;
-  for (const url of [config.overpassUrl, ...MIRRORS.filter((m) => m !== config.overpassUrl)]) {
+  const attempt = async (url: string): Promise<OsmElement[] | null> => {
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -168,13 +173,25 @@ async function overpass(filters: string[], point: SearchPoint): Promise<OsmEleme
         signal: AbortSignal.timeout(12_000),
       });
       status = res.status;
-      if (!res.ok) continue;
+      if (!res.ok) return null;
       const data = (await res.json()) as { elements?: OsmElement[] };
       return data.elements ?? [];
     } catch (e) {
       console.warn('[osm] overpass failed', url, e instanceof Error ? e.message : e);
+      return null;
     }
+  };
+  for (const url of [config.overpassUrl, ...MIRRORS.filter((m) => m !== config.overpassUrl)]) {
+    const elements = await attempt(url);
+    if (elements) return elements;
   }
+  // Rate limiting clears quickly when a few queries arrived together; one slow retry.
+  if (status === 429 || status === 504) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const elements = await attempt(config.overpassUrl);
+    if (elements) return elements;
+  }
+  busyUntil = Date.now() + 60_000;
   throw new HttpError(502, `OpenStreetMap 서버가 바빠요${status ? ` (${status})` : ''}. 잠시 후 다시 시도해 주세요`);
 }
 

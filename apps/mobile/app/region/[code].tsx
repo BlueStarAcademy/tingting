@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { getRegion, PLACE_CATEGORIES, type PlaceCategory, type PlaceStatus } from '@tingting/shared';
 import { Screen } from '@/components/Screen';
 import { PlaceRow } from '@/components/PlaceRow';
@@ -10,6 +11,8 @@ import { ActionButton, Chip, EmptyState, Loading, Segment, SectionTitle, type Ic
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useFocusLoad } from '@/hooks/useFocusLoad';
 import { api } from '@/lib/api';
+import { dDayLabel, formatDateKey } from '@/lib/dates';
+import { cardSurface } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
 type CategoryFilter = 'all' | PlaceCategory;
@@ -25,12 +28,14 @@ export default function RegionScreen() {
   const [showRecommendations, setShowRecommendations] = useState(false);
 
   const { data, refreshing, refresh } = useFocusLoad(async () => {
-    const [places, photos] = await Promise.all([
+    const [places, photos, courses] = await Promise.all([
       api.listPlaces({ regionCode: String(code) }),
       api.listPhotos({ regionCode: String(code) }),
+      api.listCourses(String(code)).catch(() => []),
     ]);
-    return { places, photos };
+    return { places, photos, courses };
   });
+  const planTrip = () => router.push(`/course/new?region=${String(code)}` as Href);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data?.places.length ?? 0 };
@@ -95,9 +100,39 @@ export default function RegionScreen() {
       </View>
 
       <View style={styles.actions}>
+        <ActionButton icon="map" label="여행계획 세우기 (추천 코스 · 동선)" tone="primary" onPress={planTrip} />
         <ActionButton icon="sparkles" label="추천 장소 보기 (맛집 · 볼거리 · 행사)" onPress={() => setShowRecommendations(true)} />
-        <ActionButton icon="add-circle" label="장소 추가 (카카오 검색 · 직접 입력)" tone="primary" onPress={addPlace} />
+        <ActionButton icon="add-circle" label="장소 추가 (카카오 검색 · 직접 입력)" onPress={addPlace} />
       </View>
+
+      {data && data.courses.length > 0 ? (
+        <>
+          <SectionTitle title="우리 여행 코스" />
+          <View style={styles.courses}>
+            {data.courses.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => router.push(`/course/${c.id}` as Href)}
+                style={({ pressed }) => [styles.course, pressed && styles.pressed]}
+              >
+                <View style={styles.courseIcon}>
+                  <Ionicons name="trail-sign" size={18} color={theme.colors.primary} />
+                </View>
+                <View style={styles.courseBody}>
+                  <Text style={styles.courseTitle} numberOfLines={1}>
+                    {c.title}
+                  </Text>
+                  <Text style={styles.courseSub}>
+                    {formatDateKey(c.startDate)} · {c.stopCount}곳 · {c.transport === 'car' ? '자동차' : '대중교통'}
+                  </Text>
+                </View>
+                <Text style={styles.courseDday}>{dDayLabel(c.startDate)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.textSubtle} />
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : null}
 
       <SectionTitle title="장소" />
       {!data ? (
@@ -136,6 +171,10 @@ export default function RegionScreen() {
           setShowRecommendations(false);
           router.push(`/place/${id}` as Href);
         }}
+        onPlanTrip={() => {
+          setShowRecommendations(false);
+          planTrip();
+        }}
       />
     </Screen>
   );
@@ -155,4 +194,25 @@ const styles = StyleSheet.create({
   filters: { gap: 10, marginVertical: theme.spacing.md },
   statusRow: { flexDirection: 'row', gap: 6 },
   actions: { gap: 8 },
+  courses: { gap: 8 },
+  course: {
+    ...cardSurface(),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+  },
+  pressed: { opacity: 0.85 },
+  courseIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.tint.light,
+  },
+  courseBody: { flex: 1, gap: 2 },
+  courseTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '800' },
+  courseSub: { color: theme.colors.textMuted, fontSize: 12 },
+  courseDday: { color: theme.colors.primaryDark, fontSize: 12, fontWeight: '900' },
 });

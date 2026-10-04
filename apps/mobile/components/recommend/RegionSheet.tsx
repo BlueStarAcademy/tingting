@@ -20,6 +20,7 @@ export function RegionSheet({
   onClose,
   onOpenRegion,
   onOpenPlace,
+  onPlanTrip,
 }: {
   regionCode: string | null;
   stat?: RegionVisitStat;
@@ -28,6 +29,8 @@ export function RegionSheet({
   onClose: () => void;
   onOpenRegion?: (code: string) => void;
   onOpenPlace: (placeId: string) => void;
+  /** Opens the trip-planning questions for this region */
+  onPlanTrip?: (code: string) => void;
 }) {
   // Keep showing the last region while the sheet slides away.
   const lastCode = useRef(regionCode);
@@ -67,6 +70,18 @@ export function RegionSheet({
               </View>
             ) : null}
           </Pressable>
+          {onPlanTrip ? (
+            <Pressable onPress={() => onPlanTrip(region.code)} style={({ pressed }) => [styles.plan, pressed && styles.pressed]}>
+              <View style={styles.planIcon}>
+                <Ionicons name="map" size={18} color="#fff" />
+              </View>
+              <View style={styles.recordBody}>
+                <Text style={styles.planTitle}>여행계획 세우기</Text>
+                <Text style={styles.planSub}>질문 몇 개로 맛집 · 볼거리 · 행사 코스를 짜 드려요</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#fff" />
+            </Pressable>
+          ) : null}
           <View style={styles.chips}>
             <CategoryChips value={category} onChange={setCategory} inset={theme.spacing.lg} />
           </View>
@@ -108,6 +123,27 @@ const styles = StyleSheet.create({
   recordSub: { color: theme.colors.textMuted, fontSize: 12 },
   recordLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   recordLinkText: { color: theme.colors.primary, fontSize: 13, fontWeight: '800' },
+  plan: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.primary,
+  },
+  planIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  planTitle: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  planSub: { color: 'rgba(255,255,255,0.88)', fontSize: 12, fontWeight: '600' },
   chips: { paddingHorizontal: theme.spacing.lg, marginBottom: 10 },
   list: { paddingHorizontal: theme.spacing.lg, paddingTop: 4, paddingBottom: theme.spacing.lg },
 });

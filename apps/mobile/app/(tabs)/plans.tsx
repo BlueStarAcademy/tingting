@@ -152,7 +152,13 @@ export default function PlansScreen() {
         </Card>
       ) : null}
       {dayPlans.map((plan) => (
-        <PlanRow key={plan.id} plan={plan} onToggle={() => toggleDone(plan)} onPress={() => openEdit(plan)} onOpenPlace={(id) => router.push(`/place/${id}` as Href)} />
+        <PlanRow
+          key={plan.id}
+          plan={plan}
+          onToggle={() => toggleDone(plan)}
+          onPress={() => (plan.courseId ? router.push(`/course/${plan.courseId}` as Href) : openEdit(plan))}
+          onOpenPlace={(id) => router.push(`/place/${id}` as Href)}
+        />
       ))}
       {dayEvents.map((event) => (
         <EventRow key={event.id} event={event} onPress={() => router.push(`/place/${event.id}` as Href)} />
@@ -250,6 +256,12 @@ function PlanRow({
             {plan.placeName ?? '장소'}
           </Text>
         </Pressable>
+      ) : null}
+      {plan.courseId ? (
+        <View style={styles.placeTag}>
+          <Ionicons name="trail-sign" size={12} color={theme.colors.primaryDark} />
+          <Text style={styles.placeTagText}>코스</Text>
+        </View>
       ) : null}
     </Pressable>
   );

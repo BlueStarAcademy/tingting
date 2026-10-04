@@ -88,6 +88,7 @@ export function mapPlan(row: Row): TripPlan {
     placeRegionCode: str(row.place_region_code),
     memo: str(row.memo),
     done: Boolean(row.done),
+    courseId: str(row.course_id),
     createdBy: String(row.created_by ?? ''),
     createdAt: iso(row.created_at),
   };

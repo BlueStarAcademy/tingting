@@ -95,7 +95,13 @@ export default function HomeScreen() {
           <Pressable
             key={plan.id}
             style={styles.planRow}
-            onPress={() => (plan.placeId ? router.push(`/place/${plan.placeId}` as Href) : router.push('/plans'))}
+            onPress={() =>
+              plan.courseId
+                ? router.push(`/course/${plan.courseId}` as Href)
+                : plan.placeId
+                  ? router.push(`/place/${plan.placeId}` as Href)
+                  : router.push('/plans')
+            }
           >
             <View style={styles.dday}>
               <Text style={styles.ddayText}>{dDayLabel(plan.date)}</Text>

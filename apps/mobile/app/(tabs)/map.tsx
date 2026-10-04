@@ -208,6 +208,7 @@ export default function MapScreen() {
         onClose={closeSheet}
         onOpenRegion={(code) => leaveSheetTo(`/region/${code}` as Href)}
         onOpenPlace={(id) => leaveSheetTo(`/place/${id}` as Href)}
+        onPlanTrip={(code) => leaveSheetTo(`/course/new?region=${code}` as Href)}
       />
     </Screen>
   );

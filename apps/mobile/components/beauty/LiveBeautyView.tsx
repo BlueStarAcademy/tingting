@@ -10,7 +10,7 @@ import {
   CAMERA_VERTEX_SOURCE,
   type CameraShaderTier,
 } from '@/lib/editor/camera-shader-source';
-import { cameraFaceUniformNames, cameraLookUniforms, writeFaceUniform } from '@/lib/editor/camera-uniforms';
+import { cameraFaceUniformNames, cameraLookUniforms, uniformsHash, writeFaceUniform } from '@/lib/editor/camera-uniforms';
 import { arNeedsClassification } from '@/lib/ar/effects';
 import { loadShaderTierStart, markLiveSession, saveShaderTierStart } from '@/lib/camera-safe-mode';
 import { breadcrumb, checkpoint, logError, logEvent } from '@/lib/diagnostics';
@@ -52,10 +52,19 @@ export type LiveBeautyProps = {
   onFrame?: (faces: readonly FaceGeom[], bufferWidth: number, at: number) => void;
 };
 
-const TRACK_WIDTH = 360;
-/** target spacing of detection rounds; slower rounds get a proportional rest so JS stays free */
+/** ML Kit fast mode finds selfie-sized faces reliably at this width; smaller = faster encode + detect */
+const TRACK_WIDTH = 288;
+const TRACK_JPEG_QUALITY = 0.7;
+/** Spacing of detection round starts (~15 Hz); doubled while the renderer is behind. */
 const TRACK_PERIOD_MS = 66;
-const TRACK_MIN_GAP_MS = 16;
+/**
+ * Rounds that may overlap: the next frame is captured and snapshotted while ML Kit still works on
+ * the previous one. Captures themselves never overlap (one tracking framebuffer).
+ */
+const TRACK_IN_FLIGHT = 2;
+/** a face that stays undetected this long (and for 3 rounds) is dropped */
+const TRACK_LOST_MS = 400;
+const TRACK_RETRY_MS = 2000;
 /** Per-step startup budgets. The plain preview stays visible until a GL frame is verified. */
 const CONTEXT_TIMEOUT_MS = 3000;
 const COMPILE_TIMEOUT_MS = 2500;
@@ -515,14 +524,23 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
       let sentW = 0;
       let sentH = 0;
       let sentNoFaces = false;
-      const drawMain = (faces: readonly FaceGeom[], w: number, h: number) => {
+      let lookHash = '';
+      let lookLoggedAt = 0;
+      const drawMain = (faces: readonly FaceGeom[], w: number, h: number, t: number) => {
         bindQuad(main);
         const look = lookRef.current;
         if (look !== sentLook || w !== sentW || h !== sentH) {
-          setUniforms(gl, main, cameraLookUniforms(look, [w, h]));
+          const values = cameraLookUniforms(look, [w, h]);
+          setUniforms(gl, main, values);
           sentLook = look;
           sentW = w;
           sentH = h;
+          lookHash = uniformsHash(values);
+          perf.looks += 1;
+          if (t - lookLoggedAt > 1000) {
+            lookLoggedAt = t;
+            breadcrumb('camera_look', { h: lookHash, filter: look.filterId, fx: look.effectId });
+          }
         }
         const count = Math.min(faces.length, CAMERA_MAX_FACES);
         if (count > 0 || !sentNoFaces) {
@@ -551,30 +569,55 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           captureWanted = resolve;
         });
 
+      // Tracking breakdown per window: wait = request -> captured frame, snap = framebuffer -> JPEG
+      // file, det = ML Kit call (file decode + detect + bridge), track = capture -> faces applied.
+      // idle / off = % of the window with no round in flight / with tracking not needed.
+      // looks = look uniform uploads, look = hash of the last uploaded set.
       const perf = {
         since: now(),
         frames: 0,
         stalls: 0,
         rounds: 0,
+        stale: 0,
+        errors: 0,
+        idleMs: 0,
+        offMs: 0,
+        looks: 0,
         interval: new Samples(1024),
         pace: new Samples(256),
         track: new Samples(256),
+        wait: new Samples(256),
         snap: new Samples(256),
+        det: new Samples(256),
       };
       const reportPerf = (t: number) => {
-        const secs = (t - perf.since) / 1000;
+        const ms = t - perf.since;
+        const secs = ms / 1000;
+        const activeSecs = Math.max(0.001, (ms - perf.offMs) / 1000);
+        const pct = (v: number) => Math.round((v / ms) * 100);
         logEvent('camera_perf', {
           tier: shaders.tier,
           target: Math.round(1000 / FRAME_LEVELS_MS[level]),
           fps: Math.round((perf.frames / secs) * 10) / 10,
           p50: perf.interval.percentile(50),
           p95: perf.interval.percentile(95),
-          trackHz: Math.round((perf.rounds / secs) * 10) / 10,
+          trackHz: Math.round((perf.rounds / activeSecs) * 10) / 10,
+          trackP50: perf.track.percentile(50),
           trackP95: perf.track.percentile(95),
+          waitP95: perf.wait.percentile(95),
+          snapP50: perf.snap.percentile(50),
           snapP95: perf.snap.percentile(95),
+          detP50: perf.det.percentile(50),
+          detP95: perf.det.percentile(95),
+          idle: pct(perf.idleMs),
+          off: pct(perf.offMs),
+          stale: perf.stale,
+          err: perf.errors,
           paceP95: perf.pace.percentile(95),
           stalls: perf.stalls,
           faces: motion.count,
+          looks: perf.looks,
+          look: lookHash,
         });
         resetPerf(t);
       };
@@ -583,10 +626,17 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
         perf.frames = 0;
         perf.stalls = 0;
         perf.rounds = 0;
+        perf.stale = 0;
+        perf.errors = 0;
+        perf.idleMs = 0;
+        perf.offMs = 0;
+        perf.looks = 0;
         perf.interval.reset();
         perf.pace.reset();
         perf.track.reset();
+        perf.wait.reset();
         perf.snap.reset();
+        perf.det.reset();
       };
 
       let level = 0;
@@ -653,7 +703,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, w, h);
         const faces = motion.sample(t);
-        drawMain(faces, w, h);
+        drawMain(faces, w, h, t);
         gl.endFrameEXP();
         captured?.(t);
         callbacks.current.onFrame?.(faces, w, t);
@@ -698,9 +748,9 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
       resetPerf(now());
 
       // Face tracking: snapshot the small raw copy, run ML Kit, map back to drawing-buffer pixels and
-      // feed the motion filter, which the render loop samples every frame.
-      // Strictly one snapshot / detection in flight; a call that hangs pauses tracking, never stacks.
-      let misses = 0;
+      // feed the motion filter, which the render loop samples every frame. A round starts every
+      // TRACK_PERIOD_MS; capture + snapshot are exclusive, while ML Kit may still be working on the
+      // previous round. A call that hangs keeps its slot until it settles, so work never stacks up.
       let lastStatus: TrackingStatus | null = null;
       const report = (s: TrackingStatus) => {
         if (s !== lastStatus) {
@@ -708,19 +758,45 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           callbacks.current.onTrackingChange?.(s);
         }
       };
-      const clearFaces = () => motion.clear();
-      while (alive) {
-        if (!needsFaces(lookRef.current)) {
-          clearFaces();
-          report('off');
-          await sleep(300);
-          continue;
-        }
+      let inFlight = 0;
+      let capturing = false;
+      let lastStart = 0;
+      let newestApplied = 0;
+      let lastSeen = 0;
+      let misses = 0;
+      let pausedUntil = 0;
+      let firstDetect = true;
+      let wake: (() => void) | null = null;
+      const nudge = () => wake?.();
+      const idle = (ms: number) =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            wake = null;
+            resolve();
+          }, ms);
+          wake = () => {
+            clearTimeout(timer);
+            wake = null;
+            resolve();
+          };
+        });
+      const lose = (status: TrackingStatus) => {
+        motion.clear();
+        misses = 0;
+        report(status);
+      };
+      const pause = (ms: number, status: TrackingStatus) => {
+        pausedUntil = now() + ms;
+        lose(status);
+      };
+
+      const round = async () => {
         let file: string | null = null;
-        const stepStart = now();
         try {
+          const requested = now();
           const capturedAt = await requestCapture();
           if (!alive) return;
+          perf.wait.push(capturedAt - requested);
           const snapStart = now();
           const snap = await within(
             glView.takeSnapshotAsync({
@@ -728,20 +804,22 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
               rect: { x: 0, y: 0, width: trackW, height: trackH },
               flip: false,
               format: 'jpeg',
-              compress: 0.8,
+              compress: TRACK_JPEG_QUALITY,
             }),
             SNAPSHOT_TIMEOUT_MS,
           );
           if ('late' in snap) {
             logEvent('camera_snapshot_timeout', undefined, 'warn');
-            clearFaces();
-            report('unavailable');
+            pause(TRACK_RETRY_MS, 'unavailable');
             await snap.late;
-            continue;
+            return;
           }
+          capturing = false;
+          nudge();
           if (!alive) return;
           perf.snap.push(now() - snapStart);
           file = typeof snap.value.uri === 'string' ? snap.value.uri : snap.value.localUri;
+          const detStart = now();
           const detected = await within(
             detectFaces(file, {
               fast: true,
@@ -752,46 +830,81 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           );
           if ('late' in detected) {
             logEvent('camera_detect_timeout', undefined, 'warn');
-            clearFaces();
-            report('unavailable');
+            pause(TRACK_RETRY_MS, 'unavailable');
             await detected.late;
-            continue;
+            return;
           }
-          if (!alive) return;
+          if (!alive || !needsFaces(lookRef.current)) return;
+          const detMs = now() - detStart;
+          perf.det.push(detMs);
+          if (firstDetect) {
+            firstDetect = false;
+            breadcrumb('camera_track_first', { ms: Math.round(detMs) });
+          }
           const result = detected.value;
           if (result.status === 'unavailable' || result.status === 'error') {
-            clearFaces();
-            report('unavailable');
-            await sleep(2000);
+            perf.errors += 1;
+            pause(TRACK_RETRY_MS, 'unavailable');
+            return;
+          }
+          // overlapping rounds can finish out of order; an older frame would pull the face back
+          if (capturedAt <= newestApplied) {
+            perf.stale += 1;
+            return;
+          }
+          newestApplied = capturedAt;
+          perf.rounds += 1;
+          perf.track.push(now() - capturedAt);
+          const scale = gl.drawingBufferWidth / trackW;
+          motion.update(
+            capturedAt,
+            result.faces.map((f) => scaleFace(f, scale)),
+          );
+          if (result.faces.length > 0) {
+            misses = 0;
+            lastSeen = capturedAt;
+            report('tracking');
           } else {
-            perf.rounds += 1;
-            perf.track.push(now() - capturedAt);
-            const scale = gl.drawingBufferWidth / trackW;
-            motion.update(
-              capturedAt,
-              result.faces.map((f) => scaleFace(f, scale)),
-            );
-            if (result.faces.length > 0) {
-              misses = 0;
-              report('tracking');
-            } else {
-              misses += 1;
-              if (misses >= 3) {
-                clearFaces();
-                report('searching');
-              }
-            }
+            misses += 1;
+            if (misses >= 3 && capturedAt - lastSeen >= TRACK_LOST_MS) lose('searching');
           }
         } catch {
+          perf.errors += 1;
+          pausedUntil = now() + 500;
           report('searching');
-          await sleep(500);
         } finally {
+          capturing = false;
           if (file) FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
         }
-        // ~15 rounds/s when a round is fast; a slow round gets a proportional rest so the tracker
-        // never takes the JS/GL budget away from rendering on slower phones
-        const elapsed = now() - stepStart;
-        await sleep(Math.max(TRACK_MIN_GAP_MS, TRACK_PERIOD_MS - elapsed, elapsed - TRACK_PERIOD_MS));
+      };
+
+      while (alive) {
+        const t = now();
+        if (!needsFaces(lookRef.current)) {
+          if (motion.count > 0) lose('off');
+          report('off');
+          await sleep(300);
+          if (modeRef.current === 'live') perf.offMs += now() - t;
+          continue;
+        }
+        // keep the GL thread and JS free for drawing when the renderer has stepped down
+        const behind = level > 0;
+        const period = behind ? TRACK_PERIOD_MS * 2 : TRACK_PERIOD_MS;
+        const blocked = capturing || inFlight >= (behind ? 1 : TRACK_IN_FLIGHT);
+        const due = Math.max(pausedUntil, lastStart + period) - t;
+        if (blocked || due > 0) {
+          const wasIdle = inFlight === 0;
+          await idle(blocked ? 1000 : due);
+          if (wasIdle) perf.idleMs += now() - t;
+          continue;
+        }
+        lastStart = t;
+        inFlight += 1;
+        capturing = true;
+        void round().finally(() => {
+          inFlight -= 1;
+          nudge();
+        });
       }
     };
 

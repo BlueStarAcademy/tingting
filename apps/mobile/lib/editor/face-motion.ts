@@ -1,7 +1,7 @@
 import type { FaceGeom } from './faces';
 
 /**
- * Turns face detections that arrive a few times a second (and ~70 ms late) into continuous
+ * Turns face detections that arrive 5-15 times a second (and ~70-120 ms late) into continuous
  * per-frame face geometry for the live camera.
  *
  * - Each detection is filtered with a One Euro style low-pass whose cutoff rises with head speed:
@@ -29,16 +29,18 @@ const MIN_CUTOFF = 1.5;
 const BETA = 12;
 /** Hz, smoothing of the speed estimate itself */
 const SPEED_CUTOFF = 2;
-const VELOCITY_ALPHA = 0.85;
-const EXPRESSION_ALPHA = 0.6;
+/** Hz; time-based, so the filters behave the same at 5 or 15 detections a second */
+const VELOCITY_CUTOFF = 4;
+const EXPRESSION_CUTOFF = 3;
 /** s, how far past the last capture we extrapolate */
 const MAX_PREDICT_S = 0.15;
 /** s, time constant of the render-side follower */
 const FOLLOW_TAU_S = 0.05;
 /** prediction never moves the face more than this fraction of its width */
 const MAX_SHIFT = 0.35;
-/** detection rounds a track survives without being matched */
+/** a track is dropped after this many unmatched rounds spanning at least LOST_S */
 const MISS_LIMIT = 3;
+const LOST_S = 0.4;
 const MATCH_RADIUS = 1.2;
 
 type Track = {
@@ -201,15 +203,17 @@ export function createFaceMotion(maxFaces: number): FaceMotion {
     const rawSpeed = Math.hypot(m[I_CX] - x[I_CX], m[I_CY] - x[I_CY]) / dt / width;
     t.speed += (rawSpeed - t.speed) * lowpass(dt, SPEED_CUTOFF);
     const a = lowpass(dt, MIN_CUTOFF + BETA * t.speed);
+    const av = lowpass(dt, VELOCITY_CUTOFF);
+    const ae = lowpass(dt, EXPRESSION_CUTOFF);
     for (let i = 0; i < PREDICTED; i += 1) {
       const prev = x[i];
       x[i] = prev + (m[i] - prev) * a;
-      v[i] += ((x[i] - prev) / dt - v[i]) * VELOCITY_ALPHA;
+      v[i] += ((x[i] - prev) / dt - v[i]) * av;
     }
     for (let i = PREDICTED; i < CH; i += 1) {
       // smile / eyes-open are -1 when classification was not requested
       if ((i === I_SMILE || i === I_EYES) && (m[i] < 0 || x[i] < 0)) x[i] = m[i];
-      else x[i] += (m[i] - x[i]) * EXPRESSION_ALPHA;
+      else x[i] += (m[i] - x[i]) * ae;
       v[i] = 0;
     }
     t.tMeas = at;
@@ -243,7 +247,7 @@ export function createFaceMotion(maxFaces: number): FaceMotion {
         }
       }
       for (const t of tracks) if (!t.matched) t.missed += 1;
-      tracks = tracks.filter((t) => t.missed < MISS_LIMIT).concat(added);
+      tracks = tracks.filter((t) => t.missed < MISS_LIMIT || at - t.tMeas < LOST_S * 1000).concat(added);
     },
 
     sample(at) {

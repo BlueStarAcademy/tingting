@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,15 @@ import { theme } from '@/constants/theme';
 import { AR_EFFECTS } from '@/lib/ar/effects';
 import { AR_SPRITES } from '@/lib/ar/sprites';
 import { translate } from '@/lib/i18n/translations';
+import { breadcrumb, checkpoint, logEvent } from '@/lib/diagnostics';
+import {
+  loadEditorEffectsOff,
+  markEffectDrawPending,
+  saveEditorEffectsOff,
+  takeUnfinishedEffectDraw,
+  type EditorEffectsOff,
+} from '@/lib/editor/effect-guard';
+import { EFFECT_SLOW_MS, probeEditorEffect, resetEditorEffectProbe } from './effect-probe';
 import { EditorScene } from './EditorScene';
 import { EditorSlider } from './EditorSlider';
 import { CropView } from './CropView';
@@ -33,7 +43,7 @@ import { useEditHistory } from '@/lib/editor/history';
 import { prepareBaseImage, transformBase, writeJpegBase64, type CropBox } from '@/lib/editor/image';
 import type { CameraLook } from '@/lib/editor/look';
 import { buildSceneModel, hitTestItem } from '@/lib/editor/scene';
-import { getEditorEffect } from '@/lib/editor/shader';
+import { getEditorEffect, needsEditorShader } from '@/lib/editor/shader';
 import {
   ADJUST_ITEMS,
   BEAUTY_ITEMS,
@@ -94,33 +104,96 @@ const STAMP_ICON = EDITOR_FEATURES.find((f) => f.id === TRAVEL_STAMP)?.icon ?? '
 
 const PANEL_HEIGHT = 196;
 
+const PREPARE_TIMEOUT_MS = 20000;
+const SK_IMAGE_TIMEOUT_MS = 8000;
+const EFFECTS_OFF_NOTICE = '이 폰에서는 뷰티·효과 미리보기를 켤 수 없어 기본 보정만 적용돼요';
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 export function PhotoEditor(props: Props) {
   const [original, setOriginal] = useState<BaseImage | null>(null);
+  const [effectsOff, setEffectsOff] = useState<EditorEffectsOff | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([loadEditorEffectsOff(), takeUnfinishedEffectDraw()]).then(([saved, unfinished]) => {
+      if (!alive) return;
+      if (unfinished && !saved.off) {
+        const next = { off: true, reason: 'unfinished' };
+        logEvent('editor_effects_auto_off', { reason: next.reason }, 'warn');
+        saveEditorEffectsOff(next);
+        setEffectsOff(next);
+        setNotice('지난번에 편집 화면이 멈춘 것 같아 효과 미리보기를 껐어요');
+      } else {
+        setEffectsOff(saved);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
     setOriginal(null);
     setError(null);
-    prepareBaseImage(props.sourceUri)
-      .then((base) => alive && setOriginal(base))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : '사진을 열 수 없어요'));
+    const t0 = Date.now();
+    checkpoint('editor_prepare');
+    withTimeout(prepareBaseImage(props.sourceUri), PREPARE_TIMEOUT_MS, '사진을 준비하는 데 너무 오래 걸려요')
+      .then((base) => {
+        breadcrumb('editor_prepared', { ms: Date.now() - t0, w: base.width, h: base.height });
+        if (alive) setOriginal(base);
+      })
+      .catch((e) => {
+        logEvent('editor_prepare_failed', { ms: Date.now() - t0, message: errorText(e) }, 'warn');
+        if (alive) setError(e instanceof Error ? e.message : '사진을 열 수 없어요');
+      });
     return () => {
       alive = false;
     };
-  }, [props.sourceUri]);
+  }, [props.sourceUri, attempt]);
 
-  if (!original) {
+  if (!original || !effectsOff) {
     return (
       <View style={[styles.root, styles.center, { paddingTop: insets.top }]}>
         <StatusBar style="light" />
+        <Image
+          source={{ uri: props.sourceUri }}
+          style={[StyleSheet.absoluteFill, styles.previewDim]}
+          resizeMode="contain"
+          resizeMethod="resize"
+        />
         {error ? (
           <>
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable onPress={props.onCancel} style={styles.errorBtn}>
-              <Text style={styles.errorBtnText}>닫기</Text>
-            </Pressable>
+            <View style={styles.errorRow}>
+              <Pressable onPress={() => setAttempt((n) => n + 1)} style={styles.errorBtn}>
+                <Text style={styles.errorBtnText}>다시 시도</Text>
+              </Pressable>
+              <Pressable onPress={props.onCancel} style={[styles.errorBtn, styles.errorBtnGhost]}>
+                <Text style={styles.errorBtnText}>닫기</Text>
+              </Pressable>
+            </View>
           </>
         ) : (
           <>
@@ -131,11 +204,12 @@ export function PhotoEditor(props: Props) {
       </View>
     );
   }
-  return <EditorBody {...props} original={original} />;
+  return <EditorBody {...props} original={original} effectsOff={effectsOff} initialNotice={notice} />;
 }
 
-function useSkImage(uri: string, cache: Map<string, SkImage>): SkImage | null {
-  const [loaded, setLoaded] = useState<{ uri: string; image: SkImage } | null>(() => {
+/** Decoded Skia image for `uri`; `failed` once decoding errored or took too long. */
+function useSkImage(uri: string, cache: Map<string, SkImage>): { image: SkImage | null; failed: boolean } {
+  const [loaded, setLoaded] = useState<{ uri: string; image: SkImage | null } | null>(() => {
     const hit = cache.get(uri);
     return hit ? { uri, image: hit } : null;
   });
@@ -146,19 +220,36 @@ function useSkImage(uri: string, cache: Map<string, SkImage>): SkImage | null {
       setLoaded({ uri, image: hit });
       return;
     }
+    const t0 = Date.now();
+    const fail = (reason: string) => {
+      if (!alive) return;
+      alive = false;
+      clearTimeout(timer);
+      logEvent('editor_image_failed', { reason, ms: Date.now() - t0 }, 'warn');
+      setLoaded({ uri, image: null });
+    };
+    const timer = setTimeout(() => fail('timeout'), SK_IMAGE_TIMEOUT_MS);
     Skia.Data.fromURI(uri)
       .then((data) => {
         const image = Skia.Image.MakeImageFromEncoded(data);
-        if (!image) return;
+        if (!image) {
+          fail('MakeImageFromEncoded returned null');
+          return;
+        }
         cache.set(uri, image);
-        if (alive) setLoaded({ uri, image });
+        if (!alive) return;
+        clearTimeout(timer);
+        breadcrumb('editor_image', { ms: Date.now() - t0, w: image.width(), h: image.height() });
+        setLoaded({ uri, image });
       })
-      .catch(() => {});
+      .catch((e) => fail(errorText(e)));
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [uri, cache]);
-  return loaded && loaded.uri === uri ? loaded.image : null;
+  const current = loaded && loaded.uri === uri ? loaded : null;
+  return { image: current?.image ?? null, failed: !!current && !current.image };
 }
 
 function initialState(
@@ -207,15 +298,21 @@ function EditorBody({
   initialFilter,
   initialLook,
   caption,
-}: Props & { original: BaseImage }) {
+  effectsOff,
+  initialNotice,
+}: Props & { original: BaseImage; effectsOff: EditorEffectsOff; initialNotice: string | null }) {
   const insets = useSafeAreaInsets();
   const history = useEditHistory<EditState>(initialState(original, initialBeauty, initialFilter, initialLook));
   const { state, update, commit, apply } = history;
 
   const imageCache = useRef(new Map<string, SkImage>()).current;
-  const image = useSkImage(state.base.uri, imageCache);
-  const effect = useMemo(() => getEditorEffect(), []);
-  const arImages = useArImages();
+  const { image, failed: imageFailed } = useSkImage(state.base.uri, imageCache);
+  const [notice, setNotice] = useState<string | null>(initialNotice);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const [faceResults, setFaceResults] = useState<Record<string, FaceDetectResult | 'loading'>>({});
   useEffect(() => {
@@ -232,7 +329,64 @@ function EditorBody({
 
   const model = useMemo(() => buildSceneModel(state, faces, caption), [state, faces, caption]);
 
+  // The beauty/effect shader is only used once it rendered correctly offscreen, and only while an
+  // edit needs it; until then the photo shows through the plain image + color matrix path.
+  const [fxOff, setFxOff] = useState(effectsOff);
+  const [fxReady, setFxReady] = useState(false);
+  const wantsEffect = needsEditorShader(model.uniforms);
+  useEffect(() => {
+    if (!wantsEffect || fxReady || fxOff.off || !image) return;
+    let alive = true;
+    const turnOff = (reason: string) => {
+      const next = { off: true, reason };
+      logEvent('editor_effects_auto_off', { reason }, 'warn');
+      saveEditorEffectsOff(next);
+      setFxOff(next);
+      setNotice(EFFECTS_OFF_NOTICE);
+    };
+    // let the plain photo paint before the probe occupies the JS thread
+    const timer = setTimeout(() => {
+      const effect = getEditorEffect();
+      if (!effect) {
+        turnOff('compile failed');
+        return;
+      }
+      probeEditorEffect(effect).then((probe) => {
+        if (!alive) return;
+        if (!probe.ok) {
+          turnOff(probe.reason);
+          return;
+        }
+        markEffectDrawPending(true);
+        const t0 = Date.now();
+        setFxReady(true);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            markEffectDrawPending(false);
+            const ms = Date.now() - t0;
+            if (ms > EFFECT_SLOW_MS) logEvent('editor_effect_first_draw_slow', { ms }, 'warn');
+            else breadcrumb('editor_effect_on', { ms });
+          }),
+        );
+      });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [wantsEffect, fxReady, fxOff.off, image]);
+  const effect = wantsEffect && fxReady && !fxOff.off ? getEditorEffect() : null;
+
+  const retryEffects = () => {
+    breadcrumb('editor_effects_retry');
+    resetEditorEffectProbe();
+    saveEditorEffectsOff({ off: false });
+    setFxOff({ off: false });
+    setFxReady(false);
+  };
+
   const [tool, setTool] = useState<Tool>('beauty');
+  const arImages = useArImages(!!state.arId || tool === 'lens');
   const [beautyKey, setBeautyKey] = useState<BeautyKey>('smooth');
   const [makeupKey, setMakeupKey] = useState<MakeupKey>('blush');
   const [adjustKey, setAdjustKey] = useState<AdjustKey>('brightness');
@@ -463,8 +617,13 @@ function EditorBody({
     setSaving(true);
     try {
       const sprites = state.arId ? await loadArImages() : arImages;
+      let exportEffect = effect;
+      if (!exportEffect && wantsEffect && !fxOff.off) {
+        const fx = getEditorEffect();
+        if (fx && (await probeEditorEffect(fx)).ok) exportEffect = fx;
+      }
       const snapshot = await drawAsImage(
-        <EditorScene image={image} model={model} effect={effect} arImages={sprites} scale={1} />,
+        <EditorScene image={image} model={model} effect={exportEffect} arImages={sprites} scale={1} />,
         { width: Math.round(layout.width), height: Math.round(layout.height) },
       );
       if (!snapshot) throw new Error('export failed');
@@ -757,8 +916,36 @@ function EditorBody({
             </View>
           </GestureDetector>
         ) : (
-          <ActivityIndicator color="#fff" />
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Image
+              source={{ uri: state.base.uri }}
+              style={[StyleSheet.absoluteFill, imageFailed ? null : styles.previewDim]}
+              resizeMode="contain"
+              resizeMethod="resize"
+            />
+            <View style={[StyleSheet.absoluteFill, styles.center]}>
+              {imageFailed ? (
+                <Text style={styles.stageNotice}>이 사진은 편집 화면에서 열 수 없어요 · 닫고 다른 사진을 골라 주세요</Text>
+              ) : (
+                <ActivityIndicator color="#fff" />
+              )}
+            </View>
+          </View>
         )}
+        {notice ? (
+          <View style={styles.noticeBar} pointerEvents="none">
+            <Text style={styles.noticeText}>{notice}</Text>
+          </View>
+        ) : fxOff.off && wantsEffect && !showOriginal ? (
+          <View style={styles.noticeBar}>
+            <Text style={styles.noticeText} numberOfLines={2}>
+              뷰티·효과 미리보기가 꺼져 있어요
+            </Text>
+            <Pressable onPress={retryEffects} hitSlop={8} style={styles.noticeBtn}>
+              <Text style={styles.noticeBtnText}>다시 켜기</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {showOriginal ? (
           <View style={styles.badge} pointerEvents="none">
             <Text style={styles.badgeText}>원본</Text>
@@ -849,6 +1036,37 @@ const styles = StyleSheet.create({
   errorText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', textAlign: 'center', paddingHorizontal: 32 },
   errorBtn: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 999, backgroundColor: theme.colors.primary },
   errorBtnText: { color: '#FFFFFF', fontWeight: '800' },
+  errorBtnGhost: { backgroundColor: 'rgba(255,255,255,0.18)' },
+  errorRow: { flexDirection: 'row', gap: 10 },
+  previewDim: { opacity: 0.45 },
+  stageNotice: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  noticeBar: {
+    position: 'absolute',
+    top: 10,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  noticeText: { flexShrink: 1, color: '#FFFFFF', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  noticeBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: theme.colors.primary },
+  noticeBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   topBar: { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
   topCenter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   topBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

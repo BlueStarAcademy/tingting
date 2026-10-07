@@ -4,15 +4,16 @@ import { CameraView, type CameraType, type FlashMode } from 'expo-camera';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
-  CAMERA_FRAGMENT_SOURCE,
   CAMERA_MAX_FACES,
   CAMERA_RAW_FRAGMENT_SOURCE,
+  CAMERA_SHADER_TIERS,
   CAMERA_VERTEX_SOURCE,
+  type CameraShaderTier,
 } from '@/lib/editor/camera-shader-source';
 import { buildCameraUniforms } from '@/lib/editor/camera-uniforms';
 import { arNeedsClassification } from '@/lib/ar/effects';
-import { markLiveSession } from '@/lib/camera-safe-mode';
-import { breadcrumb, logEvent } from '@/lib/diagnostics';
+import { loadShaderTierStart, markLiveSession, saveShaderTierStart } from '@/lib/camera-safe-mode';
+import { breadcrumb, checkpoint, logError, logEvent } from '@/lib/diagnostics';
 import { blendFace, detectFaces, scaleFace, type FaceGeom } from '@/lib/editor/faces';
 import type { CameraLook } from '@/lib/editor/look';
 import { FACE_ONLY_BEAUTY } from '@/lib/editor/types';
@@ -36,7 +37,10 @@ type Props = {
   look: CameraLook;
   /** false = safe mode: plain CameraView only, no GL pipeline at all */
   live: boolean;
-  /** `reason` starting with "stall:" means the device could not keep up with the live pipeline */
+  /**
+   * `reason` starting with "stall:" means the device can't run the live pipeline (switch to safe
+   * mode); "gpu:" means this attempt was too slow and a lighter shader is tried on the next open.
+   */
   onModeChange?: (mode: LiveMode, reason?: string) => void;
   onTrackingChange?: (status: TrackingStatus) => void;
   /** tracked faces in drawing-buffer pixels (same orientation as the preview) */
@@ -45,8 +49,13 @@ type Props = {
 
 const TRACK_WIDTH = 360;
 const TRACK_INTERVAL_MS = 90;
-const BLACK_FRAME_TIMEOUT_MS = 5000;
-const STARTUP_TIMEOUT_MS = 10000;
+/** Per-step startup budgets. The plain preview stays visible until a GL frame is verified. */
+const CONTEXT_TIMEOUT_MS = 3000;
+const COMPILE_TIMEOUT_MS = 2500;
+const TEXTURE_TIMEOUT_MS = 2500;
+const FIRST_FRAME_TIMEOUT_MS = 2500;
+const FIRST_FRAME_POLL_MS = 150;
+const STARTUP_TIMEOUT_MS = 9000;
 /** The beauty shader runs per output pixel, so the drawing buffer is capped and scaled up on screen. */
 const MAX_GL_WIDTH = 720;
 const FRAME_MS = 33;
@@ -63,28 +72,71 @@ const SNAPSHOT_TIMEOUT_MS = 3000;
 const DETECT_TIMEOUT_MS = 4000;
 
 type Program = { program: WebGLProgram; position: number; locations: Map<string, WebGLUniformLocation | null> };
+type PendingProgram = { program: WebGLProgram; vs: WebGLShader; fs: WebGLShader };
+type Shaders = { gl: ExpoWebGLRenderingContext; tier: CameraShaderTier; main: Program; raw: Program };
 
-function buildProgram(gl: ExpoWebGLRenderingContext, fragmentSource: string): Program {
-  const compile = (type: number, source: string) => {
-    const shader = gl.createShader(type);
-    if (!shader) throw new Error('createShader failed');
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      throw new Error(gl.getShaderInfoLog(shader) || 'shader compile failed');
-    }
-    return shader;
-  };
+/**
+ * Queues compile + link only. expo-gl status queries block the JS thread until the driver is done,
+ * which can take seconds for the beauty shader on some GPUs, so they wait for `glFence`.
+ */
+function queueProgram(gl: ExpoWebGLRenderingContext, fragmentSource: string): PendingProgram {
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
   const program = gl.createProgram();
-  if (!program) throw new Error('createProgram failed');
-  gl.attachShader(program, compile(gl.VERTEX_SHADER, CAMERA_VERTEX_SOURCE));
-  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSource));
+  if (!vs || !fs || !program) throw new Error('createShader/createProgram failed');
+  gl.shaderSource(vs, CAMERA_VERTEX_SOURCE);
+  gl.compileShader(vs);
+  gl.shaderSource(fs, fragmentSource);
+  gl.compileShader(fs);
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(gl.getProgramInfoLog(program) || 'program link failed');
-  }
-  return { program, position: gl.getAttribLocation(program, 'position'), locations: new Map() };
+  return { program, vs, fs };
 }
+
+/** The driver's compile/link log, or null when the program is usable. Call after `glFence`. */
+function programError(gl: ExpoWebGLRenderingContext, p: PendingProgram): string | null {
+  if (!gl.getShaderParameter(p.vs, gl.COMPILE_STATUS)) return `vertex: ${gl.getShaderInfoLog(p.vs) || 'compile failed'}`;
+  if (!gl.getShaderParameter(p.fs, gl.COMPILE_STATUS)) return `fragment: ${gl.getShaderInfoLog(p.fs) || 'compile failed'}`;
+  if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) return `link: ${gl.getProgramInfoLog(p.program) || 'link failed'}`;
+  return null;
+}
+
+function toProgram(gl: ExpoWebGLRenderingContext, p: PendingProgram): Program {
+  return { program: p.program, position: gl.getAttribLocation(p.program, 'position'), locations: new Map() };
+}
+
+/**
+ * Resolves once every GL command queued so far has run on the GL thread, without blocking JS.
+ * expo-gl has no fence API; endFrameEXP hands the pending batch to the GL thread and a 1x1
+ * snapshot is queued behind it.
+ */
+async function glFence(gl: ExpoWebGLRenderingContext, glView: GLView): Promise<void> {
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.endFrameEXP();
+  const snap = await glView.takeSnapshotAsync({ rect: { x: 0, y: 0, width: 1, height: 1 }, format: 'png' });
+  const file = typeof snap.uri === 'string' ? snap.uri : snap.localUri;
+  if (file) FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
+}
+
+let glInfoLogged = false;
+
+function logGlInfo(gl: ExpoWebGLRenderingContext) {
+  if (glInfoLogged) return;
+  glInfoLogged = true;
+  try {
+    logEvent('camera_gl_info', {
+      renderer: String(gl.getParameter(gl.RENDERER)),
+      version: String(gl.getParameter(gl.VERSION)),
+      glsl: String(gl.getParameter(gl.SHADING_LANGUAGE_VERSION)),
+    });
+  } catch {
+    // informational only
+  }
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function setUniforms(gl: ExpoWebGLRenderingContext, prog: Program, values: Record<string, number | number[]>) {
   for (const name of Object.keys(values)) {
@@ -133,8 +185,10 @@ function smoothFaces(prev: FaceGeom[], next: FaceGeom[]): FaceGeom[] {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+type Settled<T> = { value: T } | { late: Promise<unknown> };
+
 /** Resolves with the value, or `late` (the still-running promise) once `ms` passes. */
-function within<T>(promise: Promise<T>, ms: number): Promise<{ value: T } | { late: Promise<unknown> }> {
+function within<T>(promise: Promise<T>, ms: number): Promise<Settled<T>> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => resolve({ late: promise.catch(() => undefined) }), ms);
     promise.then(
@@ -197,7 +251,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
     modeRef.current = next;
     setMode(next);
     callbacks.current.onModeChange?.(next, reason);
-    if (next === 'live') logEvent('camera_live');
+    if (next === 'live') logEvent('camera_live', { tier: reason });
     if (next === 'fallback') {
       if (reason !== 'safe mode') logEvent('camera_fallback', { reason }, 'warn');
       callbacks.current.onTrackingChange?.('off');
@@ -242,9 +296,20 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
   const useGl = live && mode !== 'fallback';
   const frame = size && size.w > 0 && size.h > 0 ? glFrame(size) : null;
   const gl = useGl && frame && glState?.key === frame.key ? glState.gl : null;
+  const [shaders, setShaders] = useState<Shaders | null>(null);
+
+  // Unmounting a GLView joins its GL thread on the UI thread, so a view whose GL work timed out
+  // stays mounted (hidden) until that work finishes instead of freezing the screen.
+  const [glHolds, setGlHolds] = useState(0);
+  const holdGl = useCallback((work: Promise<unknown>) => {
+    setGlHolds((n) => n + 1);
+    work.catch(() => undefined).then(() => setGlHolds((n) => n - 1));
+  }, []);
 
   useEffect(() => {
-    if (!useGl) setGlState(null);
+    if (useGl) return;
+    setGlState(null);
+    setShaders(null);
   }, [useGl]);
 
   useEffect(() => {
@@ -254,37 +319,139 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
   }, [mode, live, changeMode]);
 
   useEffect(() => {
-    if (!useGl || !gl || !cameraReady) return;
+    if (!useGl || gl || !cameraReady) return;
+    const timer = setTimeout(() => changeMode('fallback', 'stall: gl context timeout'), CONTEXT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [useGl, gl, cameraReady, changeMode]);
+
+  useEffect(() => {
+    if (!gl) return;
+    markLiveSession(true);
+    const appState = AppState.addEventListener('change', (s) => markLiveSession(s === 'active'));
+    return () => {
+      appState.remove();
+      markLiveSession(false);
+    };
+  }, [gl]);
+
+  // Shader setup runs as soon as the GL context exists, before the camera texture is attached, so
+  // the plain preview keeps showing while the driver compiles.
+  useEffect(() => {
+    if (!gl) return;
+    const glView = glViewRef.current;
+    if (!glView) return;
+    let alive = true;
+    const fail = (reason: string) => {
+      if (alive) changeMode('fallback', reason);
+    };
+
+    const run = async () => {
+      const start = Math.min(await loadShaderTierStart(), CAMERA_SHADER_TIERS.length - 1);
+      if (!alive) return;
+      let raw: PendingProgram | null = null;
+      for (let i = start; i < CAMERA_SHADER_TIERS.length; i += 1) {
+        const { tier, fragment } = CAMERA_SHADER_TIERS[i];
+        const last = i === CAMERA_SHADER_TIERS.length - 1;
+        const t0 = Date.now();
+        checkpoint('camera_shader_compile', { tier });
+        const firstRaw = !raw;
+        raw = raw ?? queueProgram(gl, CAMERA_RAW_FRAGMENT_SOURCE);
+        const main = queueProgram(gl, fragment);
+
+        const fence = glFence(gl, glView);
+        holdGl(fence);
+        let late: Promise<unknown> | null = null;
+        try {
+          const res = await within(fence, COMPILE_TIMEOUT_MS);
+          if ('late' in res) late = res.late;
+        } catch (e) {
+          // the snapshot runs after the queued compile, so the status checks below are still valid
+          breadcrumb('camera_fence_error', { message: errorText(e) });
+        }
+        if (!alive) return;
+        if (late) {
+          if (!last) saveShaderTierStart(i + 1);
+          logEvent('camera_shader_timeout', { tier, budgetMs: COMPILE_TIMEOUT_MS }, 'warn');
+          late.then(() => logEvent('camera_shader_slow', { tier, ms: Date.now() - t0 }, 'warn'));
+          fail(last ? `stall: shader compile timeout (${tier})` : `gpu: shader compile timeout (${tier})`);
+          return;
+        }
+        logGlInfo(gl);
+        const ms = Date.now() - t0;
+        if (firstRaw) {
+          const rawError = programError(gl, raw);
+          if (rawError) {
+            logEvent('camera_shader_failed', { tier: 'raw', log: rawError }, 'warn');
+            fail('stall: gpu shader unsupported');
+            return;
+          }
+        }
+        const error = programError(gl, main);
+        if (error) {
+          logEvent('camera_shader_failed', { tier, ms, log: error }, 'warn');
+          if (!last) saveShaderTierStart(i + 1);
+          continue;
+        }
+        breadcrumb('camera_shader_ready', { tier, ms });
+        setShaders({ gl, tier, main: toProgram(gl, main), raw: toProgram(gl, raw) });
+        return;
+      }
+      fail('stall: gpu shader unsupported');
+    };
+
+    run().catch((e) => {
+      logError('camera_gl_setup', e);
+      fail('stall: gl setup error');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [gl, holdGl, changeMode]);
+
+  useEffect(() => {
+    if (!useGl || !gl || !cameraReady || !shaders || shaders.gl !== gl) return;
     const glView = glViewRef.current;
     const camera = cameraRef.current;
     if (!glView || !camera) return;
+    const { main, raw } = shaders;
 
     let alive = true;
     let raf = 0;
     let cameraTexture: WebGLTexture | null = null;
-    markLiveSession(true);
-    const appState = AppState.addEventListener('change', (s) => markLiveSession(s === 'active'));
+    const destroyTexture = (t: unknown) => {
+      if (t) glView.destroyObjectAsync(t as WebGLTexture & { id: number }).catch(() => {});
+    };
     const stall = (reason: string, data: Record<string, unknown>) => {
       if (!alive) return;
       alive = false;
       cancelAnimationFrame(raf);
-      logEvent('camera_gl_stall', { reason, ...data }, 'warn');
+      logEvent('camera_gl_stall', { reason, tier: shaders.tier, ...data }, 'warn');
       changeMode('fallback', `stall: ${reason}`);
     };
 
     const run = async () => {
-      let main: Program;
-      let raw: Program;
       const started = Date.now();
+      checkpoint('camera_texture_create', { tier: shaders.tier });
+      const pending = glView.createCameraTextureAsync(camera);
+      holdGl(pending);
+      let res: Settled<WebGLTexture>;
       try {
-        main = buildProgram(gl, CAMERA_FRAGMENT_SOURCE);
-        raw = buildProgram(gl, CAMERA_RAW_FRAGMENT_SOURCE);
-        cameraTexture = await glView.createCameraTextureAsync(camera);
+        res = await within(pending, TEXTURE_TIMEOUT_MS);
       } catch (e) {
-        if (alive) changeMode('fallback', e instanceof Error ? e.message : String(e));
+        logEvent('camera_texture_failed', { message: errorText(e) }, 'warn');
+        if (alive) changeMode('fallback', `camera texture: ${errorText(e)}`);
         return;
       }
-      if (!alive) return;
+      if ('late' in res) {
+        pending.then(destroyTexture, () => undefined);
+        stall('camera texture timeout', { ms: Date.now() - started });
+        return;
+      }
+      if (!alive) {
+        destroyTexture(res.value);
+        return;
+      }
+      cameraTexture = res.value;
       breadcrumb('camera_texture', { ms: Date.now() - started, w: gl.drawingBufferWidth, h: gl.drawingBufferHeight });
 
       const vbo = gl.createBuffer();
@@ -354,7 +521,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         draw(main, buildCameraUniforms(lookRef.current, facesRef.current, [w, h]));
         gl.endFrameEXP();
         frames += 1;
-        if (frames === 1) breadcrumb('camera_first_frame', { ms: Date.now() - started });
+        if (frames === 1) breadcrumb('camera_first_draw', { ms: Date.now() - started });
         if (frames % PACE_EVERY !== 0) return;
         const t0 = Date.now();
         gl.flushEXP();
@@ -372,11 +539,13 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
       };
       frameLoop();
 
-      // The camera texture stays black if the device never delivers frames to the SurfaceTexture.
+      // The camera texture stays black if the device never delivers frames to the SurfaceTexture;
+      // the GL view is only revealed once a real camera pixel came through.
       const probe = new Uint8Array(4 * 16);
+      const probeStart = Date.now();
       let gotFrame = false;
-      while (alive && !gotFrame && Date.now() - started < BLACK_FRAME_TIMEOUT_MS) {
-        await sleep(400);
+      while (alive && !gotFrame && Date.now() - probeStart < FIRST_FRAME_TIMEOUT_MS) {
+        await sleep(FIRST_FRAME_POLL_MS);
         if (!alive) return;
         try {
           drawRaw();
@@ -392,10 +561,11 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
       }
       if (!alive) return;
       if (!gotFrame) {
-        changeMode('fallback', 'stall: no camera frames');
+        stall('no camera frames', { ms: Date.now() - probeStart, frames });
         return;
       }
-      changeMode('live');
+      breadcrumb('camera_first_frame', { ms: Date.now() - started });
+      changeMode('live', shaders.tier);
 
       // Face tracking: snapshot the small raw copy, run ML Kit, map back to drawing-buffer pixels.
       // Strictly one snapshot / detection in flight; a call that hangs pauses tracking, never stacks.
@@ -488,16 +658,17 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
       }
     };
 
-    void run();
+    run().catch((e) => {
+      logError('camera_gl_pipeline', e);
+      stall('pipeline error', { message: errorText(e) });
+    });
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
-      appState.remove();
-      markLiveSession(false);
       facesRef.current = [];
-      if (cameraTexture) glView.destroyObjectAsync(cameraTexture as WebGLTexture & { id: number }).catch(() => {});
+      destroyTexture(cameraTexture);
     };
-  }, [gl, cameraReady, useGl, changeMode]);
+  }, [gl, cameraReady, useGl, shaders, holdGl, changeMode]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -525,11 +696,13 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           else callbacks.current.onModeChange?.('fallback', e.message);
         }}
       />
-      {useGl && frame ? (
+      {(useGl || glHolds > 0) && frame ? (
         <GLView
           key={frame.key}
           ref={glViewRef}
-          style={frame.style}
+          // Kept barely visible rather than at 0 until the first verified frame: a fully transparent
+          // TextureView may not be composited, and then the GL thread can block on buffer swaps.
+          style={[frame.style, { opacity: mode === 'live' ? 1 : 0.01 }]}
           onContextCreate={(ctx) => {
             breadcrumb('gl_ready', { w: ctx.drawingBufferWidth, h: ctx.drawingBufferHeight });
             setGlState({ key: frame.key, gl: ctx });

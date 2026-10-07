@@ -155,7 +155,11 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
     logEvent('camera_safe_mode_auto', { reason }, 'warn');
     saveCameraSafeMode(next);
     setSafe(next);
-    setNotice('카메라가 버거워해서 안전 모드로 바꿨어요');
+    setNotice(
+      /shader|gl /.test(reason)
+        ? '이 폰에서는 실시간 뷰티를 켤 수 없어 안전 모드로 바꿨어요 · 찍으면 효과가 적용돼요'
+        : '카메라가 버거워해서 안전 모드로 바꿨어요',
+    );
   }, []);
 
   const toggleSafeMode = () => {
@@ -187,6 +191,9 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
     (m: LiveMode, reason?: string) => {
       setMode(m);
       if (m === 'fallback' && reason?.startsWith('stall:')) enableSafeMode(reason);
+      else if (m === 'fallback' && reason?.startsWith('gpu:')) {
+        setNotice('실시간 뷰티 준비가 늦어 이번엔 기본 화면으로 열었어요 · 찍으면 효과가 적용돼요');
+      }
     },
     [enableSafeMode],
   );

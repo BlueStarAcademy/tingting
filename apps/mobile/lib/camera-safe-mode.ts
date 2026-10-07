@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SAFE_KEY = 'tingting.camera.safe-mode';
 const SESSION_KEY = 'tingting.camera.live-session';
+const TIER_KEY = 'tingting.camera.shader-tier';
 
 export type CameraSafeMode = { on: boolean; reason?: string };
 
@@ -29,6 +30,20 @@ export async function saveCameraSafeMode(mode: CameraSafeMode): Promise<void> {
  */
 export function markLiveSession(active: boolean): void {
   (active ? AsyncStorage.setItem(SESSION_KEY, String(Date.now())) : AsyncStorage.removeItem(SESSION_KEY)).catch(() => {});
+}
+
+/** Index of the first live shader variant to try; raised after a variant fails or compiles too slowly. */
+export async function loadShaderTierStart(): Promise<number> {
+  try {
+    const n = Number(await AsyncStorage.getItem(TIER_KEY));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveShaderTierStart(index: number): void {
+  AsyncStorage.setItem(TIER_KEY, String(index)).catch(() => {});
 }
 
 /** True once if the previous live camera session never ended cleanly. */

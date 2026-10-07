@@ -97,6 +97,12 @@ export function breadcrumb(event: string, data?: Data) {
   persistSoon();
 }
 
+/** Breadcrumb persisted right away, for steps that may hang the app before the debounce fires. */
+export function checkpoint(event: string, data?: Data) {
+  breadcrumb(event, data);
+  persistNow();
+}
+
 /** Breadcrumb that is also reported to the server (key lifecycle moments). */
 export function logEvent(event: string, data?: Data, level: Level = 'info') {
   breadcrumb(event, data);

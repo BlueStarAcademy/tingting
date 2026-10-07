@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type ErrorBoundaryProps, type Href } from 'expo-router';
 import { getRegion } from '@tingting/shared';
 import { PhotoEditor } from '@/components/editor/PhotoEditor';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { api } from '@/lib/api';
+import { saveEditorEffectsOff } from '@/lib/editor/effect-guard';
 import { translate } from '@/lib/i18n/translations';
 import { decodeLook } from '@/lib/editor/look';
 import { safeBack } from '@/lib/navigation';
 import { saveEditedPhoto, saveNewPhoto } from '@/lib/photo-flow';
 import { DevicePermissionError, saveToDeviceAlbum } from '@/lib/save-photo';
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return (
+    <ScreenErrorBoundary
+      {...props}
+      screen="editor"
+      canGoBack
+      alternate={{ label: '효과 없이 다시 열기', onPress: () => saveEditorEffectsOff({ off: true, reason: 'error' }) }}
+    />
+  );
+}
 
 export default function EditorRoute() {
   const params = useLocalSearchParams<{

@@ -2,6 +2,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import type { BaseImage } from './types';
 
+/**
+ * Long edge of the editing base (and of the export). Every Galaxy-class GPU supports 4096+ px
+ * textures, and the framed export (base plus border) stays below that.
+ */
 export const EDIT_MAX_EDGE = 2560;
 
 const stamp = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -21,17 +25,22 @@ async function ensureLocal(uri: string): Promise<string> {
 /** Local JPEG with EXIF rotation baked in and a bounded size, so ML Kit and Skia see the same pixels. */
 export async function prepareBaseImage(uri: string): Promise<BaseImage> {
   const local = await ensureLocal(uri);
-  const probe = await ImageManipulator.manipulateAsync(local, []);
-  const longEdge = Math.max(probe.width, probe.height);
-  const actions: ImageManipulator.Action[] =
-    longEdge > EDIT_MAX_EDGE
-      ? [{ resize: probe.width >= probe.height ? { width: EDIT_MAX_EDGE } : { height: EDIT_MAX_EDGE } }]
-      : [];
-  const out = await ImageManipulator.manipulateAsync(local, actions, {
-    compress: 0.95,
-    format: ImageManipulator.SaveFormat.JPEG,
-  });
-  return { uri: out.uri, width: out.width, height: out.height };
+  // one decode: the context keeps the loaded bitmap, so the resize reuses it
+  const context = ImageManipulator.ImageManipulator.manipulate(local);
+  try {
+    let ref = await context.renderAsync();
+    if (Math.max(ref.width, ref.height) > EDIT_MAX_EDGE) {
+      const size = ref.width >= ref.height ? { width: EDIT_MAX_EDGE } : { height: EDIT_MAX_EDGE };
+      ref.release();
+      context.resize(size);
+      ref = await context.renderAsync();
+    }
+    const out = await ref.saveAsync({ compress: 0.95, format: ImageManipulator.SaveFormat.JPEG });
+    ref.release();
+    return { uri: out.uri, width: out.width, height: out.height };
+  } finally {
+    context.release();
+  }
 }
 
 export type CropBox = { x: number; y: number; width: number; height: number };

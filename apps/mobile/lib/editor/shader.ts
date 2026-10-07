@@ -1,4 +1,5 @@
 ﻿import { Skia, type SkRuntimeEffect } from '@shopify/react-native-skia';
+import { breadcrumb, logEvent } from '@/lib/diagnostics';
 import { faceUniforms, type FaceGeom } from './faces';
 import type { FilterLook } from './color';
 import { EDITOR_SHADER_SOURCE, MAX_FACES } from './shader-source';
@@ -8,14 +9,29 @@ let compiled: SkRuntimeEffect | null | undefined;
 
 export function getEditorEffect(): SkRuntimeEffect | null {
   if (compiled === undefined) {
+    const t0 = Date.now();
+    let error = 'RuntimeEffect.Make returned null';
     try {
       compiled = Skia.RuntimeEffect.Make(EDITOR_SHADER_SOURCE);
-    } catch {
+    } catch (e) {
       compiled = null;
+      error = e instanceof Error ? e.message : String(e);
     }
-    if (!compiled && __DEV__) console.warn('[editor] shader failed to compile');
+    if (compiled) breadcrumb('editor_effect_compiled', { ms: Date.now() - t0 });
+    else logEvent('editor_effect_compile_failed', { error: error.slice(0, 600) }, 'warn');
   }
   return compiled;
+}
+
+/** Uniforms that change pixels; with all of them at 0 the shader returns the source unchanged. */
+const ACTIVE_UNIFORMS = ['uBeauty1', 'uBeauty2', 'uBeauty3', 'uMk1', 'uMk2', 'uFinish1', 'uFinish2', 'uFx1', 'uFx2'];
+
+/** Whether the scene needs the shader at all; otherwise the plain image + color matrix is identical. */
+export function needsEditorShader(uniforms: EditorUniforms): boolean {
+  return ACTIVE_UNIFORMS.some((name) => {
+    const v = uniforms[name];
+    return Array.isArray(v) ? v.some((x) => Math.abs(x) > 0.001) : typeof v === 'number' && Math.abs(v) > 0.001;
+  });
 }
 
 function hexToRgb(hex: string): [number, number, number] {

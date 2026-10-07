@@ -16,7 +16,7 @@ const CanvasKitInit = require('canvaskit-wasm/bin/full/canvaskit.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const editorDir = join(here, '..', 'lib', 'editor');
-const SOURCES = ['beauty-core.ts', 'shader-source.ts', 'camera-shader-source.ts'].filter((f) =>
+const SOURCES = ['beauty-core.ts', 'fun-core.ts', 'shader-source.ts', 'camera-shader-source.ts'].filter((f) =>
   existsSync(join(editorDir, f)),
 );
 

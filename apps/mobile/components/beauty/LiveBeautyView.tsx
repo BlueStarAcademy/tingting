@@ -11,7 +11,8 @@ import {
   type CameraShaderTier,
 } from '@/lib/editor/camera-shader-source';
 import { cameraFaceUniformNames, cameraLookUniforms, uniformsHash, writeFaceUniform } from '@/lib/editor/camera-uniforms';
-import { arNeedsClassification } from '@/lib/ar/effects';
+import { arFunSpec, arNeedsClassification } from '@/lib/ar/effects';
+import type { FunSpec } from '@/lib/ar/effects-v3';
 import { loadShaderTierStart, markLiveSession, saveShaderTierStart } from '@/lib/camera-safe-mode';
 import { breadcrumb, checkpoint, logError, logEvent } from '@/lib/diagnostics';
 import { createFaceMotion } from '@/lib/editor/face-motion';
@@ -65,6 +66,17 @@ const TRACK_IN_FLIGHT = 2;
 /** a face that stays undetected this long (and for 3 rounds) is dropped */
 const TRACK_LOST_MS = 400;
 const TRACK_RETRY_MS = 2000;
+/**
+ * Single-face rounds ask ML Kit for contours only (real lip, eye and face outlines). Contours cover
+ * just the most prominent face, so every PROBE_MS a landmark pass on the same snapshot looks for
+ * more faces; with two or more in view, rounds use landmarks until MULTI_EXIT_ROUNDS rounds in a
+ * row see at most one face.
+ */
+const PROBE_MS = 1000;
+const MULTI_EXIT_ROUNDS = 4;
+/** two perf windows of contour tracking below this rate turn contours off for CONTOUR_BACKOFF_MS */
+const CONTOUR_MIN_HZ = 10.5;
+const CONTOUR_BACKOFF_MS = 30000;
 /** Per-step startup budgets. The plain preview stays visible until a GL frame is verified. */
 const CONTEXT_TIMEOUT_MS = 3000;
 const COMPILE_TIMEOUT_MS = 2500;
@@ -526,6 +538,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
       let sentNoFaces = false;
       let lookHash = '';
       let lookLoggedAt = 0;
+      let sentFun: FunSpec | null = null;
+      let funStart = 0;
       const drawMain = (faces: readonly FaceGeom[], w: number, h: number, t: number) => {
         bindQuad(main);
         const look = lookRef.current;
@@ -537,10 +551,18 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           sentH = h;
           lookHash = uniformsHash(values);
           perf.looks += 1;
+          const fun = arFunSpec(look.effectId);
+          if (fun?.mode !== sentFun?.mode) funStart = t;
+          sentFun = fun;
           if (t - lookLoggedAt > 1000) {
             lookLoggedAt = t;
             breadcrumb('camera_look', { h: lookHash, filter: look.filterId, fx: look.effectId });
           }
+        }
+        if (sentFun) {
+          const funLoc = uniformLocation(main, 'uFun');
+          // wrapped so the float keeps millisecond precision in long sessions
+          if (funLoc) gl.uniform4f(funLoc, sentFun.mode, sentFun.amount, ((t - funStart) / 1000) % 600, 0);
         }
         const count = Math.min(faces.length, CAMERA_MAX_FACES);
         if (count > 0 || !sentNoFaces) {
@@ -573,11 +595,16 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
       // file, det = ML Kit call (file decode + detect + bridge), track = capture -> faces applied.
       // idle / off = % of the window with no round in flight / with tracking not needed.
       // looks = look uniform uploads, look = hash of the last uploaded set.
+      // contour = % of applied rounds from contour passes; detC / detL = det of contour / landmark
+      // rounds (a probe runs alongside its contour pass, so it is in both det and detC); probes =
+      // landmark probes; multi = in multi-face landmark mode; cOff = contours backed off.
       const perf = {
         since: now(),
         frames: 0,
         stalls: 0,
         rounds: 0,
+        contourRounds: 0,
+        probes: 0,
         stale: 0,
         errors: 0,
         idleMs: 0,
@@ -589,19 +616,35 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
         wait: new Samples(256),
         snap: new Samples(256),
         det: new Samples(256),
+        detC: new Samples(256),
+        detL: new Samples(256),
       };
+      let multi = false;
+      let multiQuiet = 0;
+      let lastProbe = 0;
+      let contourOffUntil = 0;
+      let contourSlow = 0;
       const reportPerf = (t: number) => {
         const ms = t - perf.since;
         const secs = ms / 1000;
         const activeSecs = Math.max(0.001, (ms - perf.offMs) / 1000);
         const pct = (v: number) => Math.round((v / ms) * 100);
+        const trackHz = perf.rounds / activeSecs;
+        if (perf.contourRounds > perf.rounds * 0.5 && level === 0 && perf.offMs < ms * 0.5) {
+          contourSlow = trackHz < CONTOUR_MIN_HZ ? contourSlow + 1 : 0;
+          if (contourSlow >= 2) {
+            contourSlow = 0;
+            contourOffUntil = t + CONTOUR_BACKOFF_MS;
+            breadcrumb('camera_contour_off', { hz: Math.round(trackHz * 10) / 10 });
+          }
+        }
         logEvent('camera_perf', {
           tier: shaders.tier,
           target: Math.round(1000 / FRAME_LEVELS_MS[level]),
           fps: Math.round((perf.frames / secs) * 10) / 10,
           p50: perf.interval.percentile(50),
           p95: perf.interval.percentile(95),
-          trackHz: Math.round((perf.rounds / activeSecs) * 10) / 10,
+          trackHz: Math.round(trackHz * 10) / 10,
           trackP50: perf.track.percentile(50),
           trackP95: perf.track.percentile(95),
           waitP95: perf.wait.percentile(95),
@@ -609,6 +652,13 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           snapP95: perf.snap.percentile(95),
           detP50: perf.det.percentile(50),
           detP95: perf.det.percentile(95),
+          contour: perf.rounds ? Math.round((perf.contourRounds / perf.rounds) * 100) : 0,
+          detC50: perf.detC.percentile(50),
+          detC95: perf.detC.percentile(95),
+          detL50: perf.detL.percentile(50),
+          probes: perf.probes,
+          multi: multi ? 1 : 0,
+          cOff: contourOffUntil > t ? 1 : 0,
           idle: pct(perf.idleMs),
           off: pct(perf.offMs),
           stale: perf.stale,
@@ -626,6 +676,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
         perf.frames = 0;
         perf.stalls = 0;
         perf.rounds = 0;
+        perf.contourRounds = 0;
+        perf.probes = 0;
         perf.stale = 0;
         perf.errors = 0;
         perf.idleMs = 0;
@@ -637,6 +689,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
         perf.wait.reset();
         perf.snap.reset();
         perf.det.reset();
+        perf.detC.reset();
+        perf.detL.reset();
       };
 
       let level = 0;
@@ -792,6 +846,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
 
       const round = async () => {
         let file: string | null = null;
+        let probing: Promise<unknown> | null = null;
         try {
           const requested = now();
           const capturedAt = await requestCapture();
@@ -819,13 +874,18 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           if (!alive) return;
           perf.snap.push(now() - snapStart);
           file = typeof snap.value.uri === 'string' ? snap.value.uri : snap.value.localUri;
+          const classify = arNeedsClassification(lookRef.current.effectId);
+          const contour = !multi && capturedAt >= contourOffUntil;
           const detStart = now();
+          let probe: ReturnType<typeof detectFaces> | null = null;
+          if (contour && capturedAt - lastProbe >= PROBE_MS) {
+            lastProbe = capturedAt;
+            perf.probes += 1;
+            probe = detectFaces(file, { fast: true, maxFaces: CAMERA_MAX_FACES, classify });
+            probing = probe;
+          }
           const detected = await within(
-            detectFaces(file, {
-              fast: true,
-              maxFaces: CAMERA_MAX_FACES,
-              classify: arNeedsClassification(lookRef.current.effectId),
-            }),
+            detectFaces(file, { fast: true, maxFaces: CAMERA_MAX_FACES, classify, contoursOnly: contour }),
             DETECT_TIMEOUT_MS,
           );
           if ('late' in detected) {
@@ -834,14 +894,30 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
             await detected.late;
             return;
           }
+          const probed = probe ? await within(probe, DETECT_TIMEOUT_MS) : null;
           if (!alive || !needsFaces(lookRef.current)) return;
           const detMs = now() - detStart;
           perf.det.push(detMs);
+          (contour ? perf.detC : perf.detL).push(detMs);
           if (firstDetect) {
             firstDetect = false;
-            breadcrumb('camera_track_first', { ms: Math.round(detMs) });
+            breadcrumb('camera_track_first', { ms: Math.round(detMs), contour });
           }
-          const result = detected.value;
+          let result = detected.value;
+          let outlined = contour;
+          // the probe found faces the contour pass can't cover (a second person, or a face ML Kit
+          // couldn't outline): use its landmark faces from the same snapshot
+          if (probed && !('late' in probed) && probed.value.faces.length > result.faces.length) {
+            result = probed.value;
+            outlined = false;
+            if (result.faces.length >= 2) {
+              multi = true;
+              multiQuiet = 0;
+            }
+          } else if (!contour && multi) {
+            multiQuiet = result.faces.length >= 2 ? 0 : multiQuiet + 1;
+            if (multiQuiet >= MULTI_EXIT_ROUNDS) multi = false;
+          }
           if (result.status === 'unavailable' || result.status === 'error') {
             perf.errors += 1;
             pause(TRACK_RETRY_MS, 'unavailable');
@@ -854,6 +930,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           }
           newestApplied = capturedAt;
           perf.rounds += 1;
+          if (outlined) perf.contourRounds += 1;
           perf.track.push(now() - capturedAt);
           const scale = gl.drawingBufferWidth / trackW;
           motion.update(
@@ -874,6 +951,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(func
           report('searching');
         } finally {
           capturing = false;
+          // the probe may still be reading the snapshot
+          if (probing) await probing.catch(() => undefined);
           if (file) FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
         }
       };

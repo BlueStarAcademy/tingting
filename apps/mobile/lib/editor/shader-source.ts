@@ -1,4 +1,5 @@
 import { BEAUTY_CORE, FACE_PARTS, beautyPass, faceArgs, faceUniformDecl, perFace } from './beauty-core';
+import { FUN_CORE, funPost, funPre, funWarpPass } from './fun-core';
 
 export const MAX_FACES = 3;
 
@@ -23,6 +24,8 @@ uniform vec4 uFinish1;
 uniform vec4 uFinish2;
 uniform vec4 uFx1;
 uniform vec4 uFx2;
+uniform vec4 uFun;
+uniform vec4 uFun2;
 ${faceUniformDecl(MAX_FACES)}
 
 vec3 px(vec2 q) {
@@ -30,6 +33,8 @@ vec3 px(vec2 q) {
 }
 
 ${BEAUTY_CORE}
+
+${FUN_CORE}
 
 vec3 eyeMakeup(vec3 c, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D) {
   vec2 le = B.xy;
@@ -86,7 +91,8 @@ half4 main(float2 fragP) {
   float sharpen = uFinish1.w;
   float glow = uFinish2.z;
   bool needBox = clarity > 0.001 || sharpen > 0.001;
-${beautyPass(MAX_FACES)}
+${funPre(MAX_FACES)}
+${beautyPass(MAX_FACES, funWarpPass(MAX_FACES))}
   if (sharpen > 0.001) {
     c += (c0 - box) * sharpen * 1.6 * (1.0 - sm);
   }
@@ -94,6 +100,7 @@ ${beautyPass(MAX_FACES)}
   if (uMk1.z + uMk1.w + uMk2.x + uMk2.y > 0.001) {
     ${perFace(MAX_FACES, (i) => `c = eyeMakeup(c, q, ${faceArgs(i, ['A', 'B', 'C', 'D'])});`)}
   }
+${funPost(MAX_FACES)}
 
   if (uFx1.y > 0.001) {
     vec2 off = (p - uSize * 0.5) / maxSide * (uFx1.y * maxSide * 0.025);

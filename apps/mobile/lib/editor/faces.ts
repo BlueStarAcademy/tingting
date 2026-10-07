@@ -13,6 +13,15 @@ export type FaceGeom = {
   mouth: Vec;
   mouthHalfWidth: number;
   lipHalfHeight: number;
+  /**
+   * Lip outline along `up`, in pixels relative to `mouth` (the centre of the outer lip box): the
+   * level of the mouth corners and the inner edges of the upper and lower lip (equal when closed).
+   */
+  lipCorner: number;
+  lipInnerTop: number;
+  lipInnerBottom: number;
+  /** true when ML Kit lip contours shaped the lips; otherwise they are estimated from 3 landmarks */
+  lipShaped: boolean;
   chin: Vec;
   leftJaw: Vec;
   rightJaw: Vec;
@@ -45,6 +54,11 @@ export type DetectOptions = {
   fast?: boolean;
   /** also run contour detection (most prominent face) for precise jaw, lips and eyes */
   contours?: boolean;
+  /**
+   * one contour pass instead of landmarks: ML Kit then reports only the most prominent face, and
+   * every anchor comes from its contours (face oval, eyes, nose, lips)
+   */
+  contoursOnly?: boolean;
   /** smile / eyes-open probabilities (used by AR effect triggers) */
   classify?: boolean;
   maxFaces?: number;
@@ -52,7 +66,7 @@ export type DetectOptions = {
 
 type MlPoint = { x: number; y: number };
 type MlFrame = { left: number; top: number; width: number; height: number };
-type MlFace = {
+export type MlFace = {
   frame: MlFrame;
   landmarks?: Partial<Record<string, { position: MlPoint }>>;
   contours?: Partial<Record<string, { points: MlPoint[] }>>;
@@ -80,7 +94,8 @@ function contour(face: MlFace, key: string, min = 1): Vec[] | null {
   return pts && pts.length >= min ? pts.map((p) => ({ x: p.x, y: p.y })) : null;
 }
 
-function toGeom(face: MlFace): FaceGeom {
+/** FaceGeom from one ML Kit face (landmarks and/or contours), in the image's pixels. */
+export function toGeom(face: MlFace): FaceGeom {
   const { left, top, width, height } = face.frame;
   const lm = (key: string): Vec | null => {
     const p = face.landmarks?.[key]?.position;
@@ -122,47 +137,69 @@ function toGeom(face: MlFace): FaceGeom {
   let mouth: Vec;
   let mouthHalfWidth: number;
   let lipHalfHeight = 0;
+  let lipCorner = 0;
+  let lipInnerTop = 0;
+  let lipInnerBottom = 0;
   const lipTop = contour(face, 'upperLipTop', 3);
   const lipBottom = contour(face, 'lowerLipBottom', 3);
+  const innerTop = contour(face, 'upperLipBottom', 3);
+  const innerBottom = contour(face, 'lowerLipTop', 3);
   const mouthL = lm('mouthLeft');
   const mouthR = lm('mouthRight');
+  const lowerLip = lm('mouthBottom');
+  const lipShaped = !!(lipTop && lipBottom);
   if (lipTop && lipBottom) {
-    const pts = [...lipTop, ...lipBottom];
-    const loc = pts.map(local);
-    const minX = Math.min(...loc.map((p) => p.x));
-    const maxX = Math.max(...loc.map((p) => p.x));
+    const loc = [...lipTop, ...lipBottom].map(local);
+    const left = loc.reduce((a, b) => (b.x < a.x ? b : a));
+    const right = loc.reduce((a, b) => (b.x > a.x ? b : a));
     const minY = Math.min(...loc.map((p) => p.y));
     const maxY = Math.max(...loc.map((p) => p.y));
-    mouth = add(eyeMid, add(mul(ax, (minX + maxX) / 2), mul(up, (minY + maxY) / 2)));
-    mouthHalfWidth = (maxX - minX) / 2;
+    const cx = (left.x + right.x) / 2;
+    const cy = (minY + maxY) / 2;
+    mouth = add(eyeMid, add(mul(ax, cx), mul(up, cy)));
+    mouthHalfWidth = (right.x - left.x) / 2;
     lipHalfHeight = (maxY - minY) / 2;
+    lipCorner = (left.y + right.y) / 2 - cy;
+    // the inner edges near the middle of the mouth, where the opening is widest
+    const centerY = (pts: Vec[]) => {
+      const l = pts.map(local);
+      const near = l.filter((p) => Math.abs(p.x - cx) < mouthHalfWidth * 0.4);
+      return mean(near.length ? near : l).y - cy;
+    };
+    lipInnerTop = innerTop ? centerY(innerTop) : lipCorner;
+    lipInnerBottom = innerBottom ? Math.min(centerY(innerBottom), lipInnerTop) : lipInnerTop;
   } else if (mouthL && mouthR) {
-    mouth = mid(mouthL, mouthR);
-    const mouthBottom = lm('mouthBottom');
-    if (mouthBottom) mouth = mid(mouth, mouthBottom, 0.3);
+    const corners = mid(mouthL, mouthR);
     mouthHalfWidth = len(sub(mouthR, mouthL)) / 2;
+    const hw = mouthHalfWidth;
+    // Fitted to lip contours of closed and open mouths: mouthBottom is the middle of the lower lip
+    // (about 0.27 hw from either edge), the upper lip is about 0.4 hw thick, and an opening splits
+    // about 1:2 above / below the corner line.
+    const cornerY = local(corners).y;
+    const lowerMid = lowerLip ? local(lowerLip).y : cornerY - hw * 0.35;
+    const lowerInner = Math.min(cornerY, lowerMid + hw * 0.27);
+    const lowerGap = Math.max(0, cornerY - lowerInner - hw * 0.06);
+    const upperInner = cornerY + lowerGap * 0.5;
+    const top = upperInner + hw * 0.4;
+    const bottom = lowerMid - hw * 0.27;
+    const cy = (top + bottom) / 2;
+    const cx = local(lowerLip ? mid(corners, lowerLip, 0.3) : corners).x;
+    mouth = add(eyeMid, add(mul(ax, cx), mul(up, cy)));
+    lipHalfHeight = (top - bottom) / 2;
+    lipCorner = cornerY - cy;
+    lipInnerTop = upperInner - cy;
+    lipInnerBottom = cornerY - lowerGap - cy;
   } else {
     mouth = add(nose, mul(down, eyeDist * 0.45));
     mouthHalfWidth = eyeDist * 0.42;
+    lipHalfHeight = mouthHalfWidth * 0.4;
   }
   const noseToMouth = Math.max(len(sub(mouth, nose)), eyeDist * 0.3);
 
   const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
   let mouthOpen = 0;
-  const innerTop = contour(face, 'upperLipBottom', 3);
-  const innerBottom = contour(face, 'lowerLipTop', 3);
-  const lowerLip = lm('mouthBottom');
-  if (innerTop && innerBottom) {
-    const mx = local(mouth).x;
-    const centerY = (pts: Vec[]) => {
-      const loc = pts.map(local);
-      const near = loc.filter((p) => Math.abs(p.x - mx) < mouthHalfWidth * 0.4);
-      return mean(near.length ? near : loc).y;
-    };
-    mouthOpen = clamp01((centerY(innerTop) - centerY(innerBottom) - eyeDist * 0.05) / (eyeDist * 0.12));
-  } else if (mouthL && mouthR && lowerLip) {
-    const drop = dot(sub(mid(mouthL, mouthR), lowerLip), up) / eyeDist;
-    mouthOpen = clamp01((drop - 0.24) / 0.18);
+  if ((lipShaped && innerTop && innerBottom) || (!lipShaped && mouthL && mouthR && lowerLip)) {
+    mouthOpen = clamp01((lipInnerTop - lipInnerBottom - eyeDist * 0.05) / (eyeDist * 0.12));
   }
 
   const noseOffset = local(nose).x / eyeDist;
@@ -229,6 +266,10 @@ function toGeom(face: MlFace): FaceGeom {
     mouth,
     mouthHalfWidth,
     lipHalfHeight,
+    lipCorner,
+    lipInnerTop,
+    lipInnerBottom,
+    lipShaped,
     chin,
     leftJaw,
     rightJaw,
@@ -292,16 +333,16 @@ export async function detectFaces(localUri: string, options: DetectOptions = {})
   try {
     const found = await mlkit.detect(localUri, {
       performanceMode,
-      landmarkMode: 'all',
-      contourMode: 'none',
+      landmarkMode: options.contoursOnly ? 'none' : 'all',
+      contourMode: options.contoursOnly ? 'all' : 'none',
       classificationMode: options.classify ? 'all' : 'none',
       minFaceSize: options.fast ? 0.12 : 0.06,
     });
     const faces = (found ?? [])
-      .filter((f) => f?.frame && f.frame.width > 0)
+      .filter((f) => f?.frame && f.frame.width > 0 && (!options.contoursOnly || !!f.contours?.face))
       .sort((a, b) => b.frame.width * b.frame.height - a.frame.width * a.frame.height)
       .slice(0, options.maxFaces ?? 3);
-    if (faces.length > 0 && options.contours) {
+    if (faces.length > 0 && options.contours && !options.contoursOnly) {
       try {
         const outlined = await mlkit.detect(localUri, {
           performanceMode,
@@ -343,6 +384,9 @@ export function scaleFace(f: FaceGeom, s: number): FaceGeom {
     mouth: mapVec(f.mouth, s),
     mouthHalfWidth: f.mouthHalfWidth * s,
     lipHalfHeight: f.lipHalfHeight * s,
+    lipCorner: f.lipCorner * s,
+    lipInnerTop: f.lipInnerTop * s,
+    lipInnerBottom: f.lipInnerBottom * s,
     chin: mapVec(f.chin, s),
     leftJaw: mapVec(f.leftJaw, s),
     rightJaw: mapVec(f.rightJaw, s),
@@ -368,6 +412,10 @@ export function blendFace(prev: FaceGeom, next: FaceGeom, t: number): FaceGeom {
     mouth: lerpV(prev.mouth, next.mouth, t),
     mouthHalfWidth: lerp(prev.mouthHalfWidth, next.mouthHalfWidth, t),
     lipHalfHeight: lerp(prev.lipHalfHeight, next.lipHalfHeight, t),
+    lipCorner: lerp(prev.lipCorner, next.lipCorner, t),
+    lipInnerTop: lerp(prev.lipInnerTop, next.lipInnerTop, t),
+    lipInnerBottom: lerp(prev.lipInnerBottom, next.lipInnerBottom, t),
+    lipShaped: next.lipShaped,
     chin: lerpV(prev.chin, next.chin, t),
     leftJaw: lerpV(prev.leftJaw, next.leftJaw, t),
     rightJaw: lerpV(prev.rightJaw, next.rightJaw, t),
@@ -385,13 +433,13 @@ export function blendFace(prev: FaceGeom, next: FaceGeom, t: number): FaceGeom {
   };
 }
 
-/** Shader uniforms (uF{i}A..G) for up to `maxFaces` faces; empty slots get harmless values. */
+/** Shader uniforms (uF{i}A..H) for up to `maxFaces` faces; empty slots get harmless values. */
 export function faceUniforms(faces: FaceGeom[], maxFaces: number): Record<string, number[]> {
   const u: Record<string, number[]> = {};
   for (let i = 0; i < maxFaces; i += 1) {
     const f = faces[i];
     if (!f) {
-      for (const part of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) u[`uF${i}${part}`] = [0, 0, 1, 1];
+      for (const part of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) u[`uF${i}${part}`] = [0, 0, 1, 1];
       continue;
     }
     u[`uF${i}A`] = [f.center.x, f.center.y, Math.max(1, f.radius.x), Math.max(1, f.radius.y)];
@@ -400,7 +448,8 @@ export function faceUniforms(faces: FaceGeom[], maxFaces: number): Record<string
     u[`uF${i}D`] = [f.chin.x, f.chin.y, Math.max(1, f.mouthHalfWidth), Math.max(1, f.eyeRadius)];
     u[`uF${i}E`] = [f.leftJaw.x, f.leftJaw.y, f.rightJaw.x, f.rightJaw.y];
     u[`uF${i}F`] = [f.leftCheek.x, f.leftCheek.y, f.rightCheek.x, f.rightCheek.y];
-    u[`uF${i}G`] = [f.noseHalfWidth, f.lipHalfHeight, 0, 0];
+    u[`uF${i}G`] = [f.noseHalfWidth, f.lipHalfHeight, f.lipShaped ? 1 : 0, 0];
+    u[`uF${i}H`] = [f.lipCorner, f.lipInnerTop, f.lipInnerBottom, f.mouthOpen];
   }
   return u;
 }

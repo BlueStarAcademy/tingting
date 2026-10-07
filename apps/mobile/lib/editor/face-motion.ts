@@ -14,7 +14,7 @@ import type { FaceGeom } from './faces';
  * mutated in place, so sampling every frame allocates nothing.
  */
 
-const CH = 32;
+const CH = 35;
 /** channels below this index are geometry and get velocity prediction; the rest are expressions */
 const PREDICTED = 29;
 const I_CX = 0;
@@ -95,6 +95,9 @@ function pack(f: FaceGeom, v: Float64Array) {
   v[29] = f.mouthOpen;
   v[30] = f.smile;
   v[31] = f.eyesOpen;
+  v[32] = f.lipCorner;
+  v[33] = f.lipInnerTop;
+  v[34] = f.lipInnerBottom;
 }
 
 function unpack(v: Float64Array, f: FaceGeom) {
@@ -134,6 +137,9 @@ function unpack(v: Float64Array, f: FaceGeom) {
   f.mouthOpen = v[29];
   f.smile = v[30];
   f.eyesOpen = v[31];
+  f.lipCorner = v[32];
+  f.lipInnerTop = v[33];
+  f.lipInnerBottom = Math.min(v[34], v[33]);
 }
 
 const vec = () => ({ x: 0, y: 0 });
@@ -149,6 +155,10 @@ function blankFace(): FaceGeom {
     mouth: vec(),
     mouthHalfWidth: 0,
     lipHalfHeight: 0,
+    lipCorner: 0,
+    lipInnerTop: 0,
+    lipInnerBottom: 0,
+    lipShaped: false,
     chin: vec(),
     leftJaw: vec(),
     rightJaw: vec(),
@@ -239,10 +249,12 @@ export function createFaceMotion(maxFaces: number): FaceMotion {
         if (best && bestD < MATCH_RADIUS * Math.max(f.radius.x, best.x[I_RX])) {
           best.matched = true;
           best.geom.contoured = f.contoured;
+          best.geom.lipShaped = f.lipShaped;
           correct(best, at, meas);
         } else if (tracks.length + added.length < maxFaces) {
           const t = newTrack(at, meas);
           t.geom.contoured = f.contoured;
+          t.geom.lipShaped = f.lipShaped;
           added.push(t);
         }
       }

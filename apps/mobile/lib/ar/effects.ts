@@ -1,9 +1,12 @@
-import { AR_EFFECTS_V2, AR_V1_CATEGORY, isArV2, layoutArEffectV2, type ArCategory, type ArWarp } from './effects-v2';
+import type { BeautyValues } from '@/lib/editor/types';
+import { AR_EFFECTS_V2, AR_V1_CATEGORY, addArWarp, isArV2, layoutArEffectV2, type ArCategory, type ArWarp } from './effects-v2';
+import { AR_EFFECTS_V3, isArV3, layoutArEffectV3 } from './effects-v3';
 import { Rig, fall, triggerLevel, type ArFrame, type ArOp, type ArTrigger } from './rig';
 import { AR_SPRITES, type SpriteId } from './sprites';
 
 export { triggerLevel, type ArFace, type ArFrame, type ArOp, type ArTrigger } from './rig';
-export { AR_TABS, applyArWarp, type ArCategory } from './effects-v2';
+export { AR_TABS, type ArCategory } from './effects-v2';
+export { arFunSpec, arFunUniforms } from './effects-v3';
 
 export type ArEffect = {
   id: string;
@@ -11,7 +14,7 @@ export type ArEffect = {
   labelKey: string;
   thumb: SpriteId;
   category: ArCategory;
-  /** second sticker pack, listed under the "new" tab */
+  /** latest sticker pack, listed under the "new" tab and first in its category */
   isNew?: boolean;
   trigger?: ArTrigger;
   /** draws without a face (full-frame particles) */
@@ -44,16 +47,24 @@ const AR_EFFECTS_V1: Omit<ArEffect, 'category'>[] = [
 
 export const AR_EFFECTS: ArEffect[] = [
   ...AR_EFFECTS_V1.map((e) => ({ ...e, category: AR_V1_CATEGORY[e.id] ?? 'cute' })),
-  ...AR_EFFECTS_V2.map((e) => ({ ...e, isNew: true })),
+  ...AR_EFFECTS_V2,
+  ...AR_EFFECTS_V3.map((e) => ({ ...e, isNew: true })),
 ];
 
 export function getArEffect(id: string | null | undefined): ArEffect | null {
   return (id && AR_EFFECTS.find((e) => e.id === id)) || null;
 }
 
-/** Effects listed under a picker tab ('new' = the second pack). */
+/** Effects listed under a picker tab ('new' = the latest pack), newest first. */
 export function arEffectsInTab(tab: ArCategory | 'new'): ArEffect[] {
-  return AR_EFFECTS.filter((e) => (tab === 'new' ? e.isNew : e.category === tab));
+  if (tab === 'new') return AR_EFFECTS.filter((e) => e.isNew);
+  const inTab = AR_EFFECTS.filter((e) => e.category === tab);
+  return [...inTab.filter((e) => e.isNew), ...inTab.filter((e) => !e.isNew)];
+}
+
+/** Beauty values with the effect's face warp added on top. */
+export function applyArWarp(beauty: BeautyValues, effectId: string | null | undefined): BeautyValues {
+  return addArWarp(beauty, getArEffect(effectId)?.warp);
 }
 
 /** Tab to open the picker on: the selected effect's category, else the new pack. */
@@ -173,6 +184,7 @@ function faceOps(effect: ArEffect, rig: Rig, time: number) {
 
 /** Every sprite to draw for an effect, front-to-back order, in the frame's pixel space. */
 export function layoutArEffect(effectId: string | null | undefined, frame: ArFrame): ArOp[] {
+  if (isArV3(effectId)) return layoutArEffectV3(effectId as string, frame);
   if (isArV2(effectId)) return layoutArEffectV2(effectId as string, frame);
   const effect = getArEffect(effectId);
   if (!effect) return [];

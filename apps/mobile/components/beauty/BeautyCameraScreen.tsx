@@ -127,6 +127,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
+  const [debugFaces, setDebugFaces] = useState(false);
   const blink = useRef(new Animated.Value(0)).current;
   const arRef = useRef<ArLiveHandle | null>(null);
   const alive = useRef(true);
@@ -345,6 +346,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const arHint = (() => {
     if (!arEffect) return t('ar.pickHint');
     if (arEffect.category === 'mood') return t('ar.moodHint');
+    if (arEffect.ambient && arEffect.category === 'fun') return t('ar.screenHint');
     if (!arEffect.ambient || arEffect.trigger) {
       if (mode === 'fallback' || tracking === 'unavailable') return t('ar.afterShot');
       if (tracking !== 'tracking') return t('ar.showFace');
@@ -462,8 +464,8 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
             onFrame={onFrame}
           />
         ) : null}
-        {look.effectId && !comparing && !safeOn && mode === 'live' ? (
-          <ArLiveOverlay ref={arRef} effectId={look.effectId} width={box.w} height={box.h} />
+        {(look.effectId || debugFaces) && !comparing && !safeOn && mode === 'live' ? (
+          <ArLiveOverlay ref={arRef} effectId={look.effectId} width={box.w} height={box.h} debug={debugFaces} />
         ) : null}
         {box.band > 0 ? (
           <>
@@ -511,10 +513,14 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
         </View>
       </View>
       <View pointerEvents="box-none" style={[styles.statusRow, { top: insets.top + 58 }]}>
-        <View pointerEvents="none" style={[styles.statusChip, status.live && styles.statusChipLive]}>
+        <Pressable
+          onLongPress={() => setDebugFaces((d) => !d)}
+          delayLongPress={1200}
+          style={[styles.statusChip, status.live && styles.statusChipLive]}
+        >
           <View style={[styles.statusDot, status.live && styles.statusDotLive]} />
           <Text style={styles.statusText}>{status.text}</Text>
-        </View>
+        </Pressable>
         <Pressable
           onPress={toggleSafeMode}
           disabled={!safe}

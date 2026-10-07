@@ -1,4 +1,4 @@
-import { applyArWarp } from '@/lib/ar/effects-v2';
+import { applyArWarp, arFunUniforms } from '@/lib/ar/effects';
 import { buildColorMatrix, getFilterLook } from './color';
 import { FACE_PARTS } from './beauty-core';
 import type { FaceGeom } from './faces';
@@ -34,6 +34,7 @@ export function cameraLookUniforms(look: CameraLook, size: [number, number]): Ca
     uColorMat: mat,
     uColorOff: [m[4], m[9], m[14], m[19]],
     uFinish: [(extras?.fade ?? 0) * k, (extras?.vignette ?? 0) * k, (extras?.grain ?? 0) * k, (extras?.glow ?? 0) * k],
+    ...arFunUniforms(look.effectId, 0),
   };
 }
 
@@ -103,10 +104,16 @@ export function writeFaceUniform(f: FaceGeom | undefined, part: number, out: Flo
       out[2] = f.rightCheek.x;
       out[3] = f.rightCheek.y;
       return;
-    default:
+    case 6:
       out[0] = f.noseHalfWidth;
       out[1] = f.lipHalfHeight;
-      out[2] = 0;
+      out[2] = f.lipShaped ? 1 : 0;
       out[3] = 0;
+      return;
+    default:
+      out[0] = f.lipCorner;
+      out[1] = f.lipInnerTop;
+      out[2] = f.lipInnerBottom;
+      out[3] = f.mouthOpen;
   }
 }

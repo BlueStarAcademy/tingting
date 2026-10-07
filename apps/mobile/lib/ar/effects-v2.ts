@@ -132,9 +132,8 @@ const WARP_LIMIT: Record<BeautyKey, number> = {
   cheek: 3,
 };
 
-/** Beauty values with the effect's face warp added on top. */
-export function applyArWarp(beauty: BeautyValues, effectId: string | null | undefined): BeautyValues {
-  const warp = effectId ? V2.get(effectId)?.warp : undefined;
+/** Beauty values with an effect's face warp added on top. */
+export function addArWarp(beauty: BeautyValues, warp: ArWarp | undefined): BeautyValues {
   if (!warp) return beauty;
   const out = { ...beauty };
   for (const [k, v] of Object.entries(warp) as [BeautyKey, number][]) {
@@ -146,22 +145,22 @@ export function applyArWarp(beauty: BeautyValues, effectId: string | null | unde
 
 // ---- full-frame helpers ------------------------------------------------------------
 
-const unitOf = (frame: ArFrame) => Math.min(frame.width, frame.height);
+export const unitOf = (frame: ArFrame) => Math.min(frame.width, frame.height);
 
-function stretch(ops: ArOp[], sprite: ArSpriteId, x: number, y: number, w: number, h: number, alpha = 1, rot = 0) {
+export function stretch(ops: ArOp[], sprite: ArSpriteId, x: number, y: number, w: number, h: number, alpha = 1, rot = 0) {
   if (alpha < 0.01 || w < 1 || h < 1) return;
   ops.push({ sprite, x, y, w, h, rot, alpha });
 }
 
 /** square-ish sprite of width `w` centered at (x, y) */
-function dot(ops: ArOp[], sprite: ArSpriteId, x: number, y: number, w: number, alpha = 1, rot = 0) {
+export function dot(ops: ArOp[], sprite: ArSpriteId, x: number, y: number, w: number, alpha = 1, rot = 0) {
   stretch(ops, sprite, x, y, w, w * aspect(sprite), alpha, rot);
 }
 
-type DriftStyle = { sprites: ArSpriteId[]; count: number; size: number; speed: number; band: [number, number]; dir: 1 | -1; flap?: number };
+export type DriftStyle = { sprites: ArSpriteId[]; count: number; size: number; speed: number; band: [number, number]; dir: 1 | -1; flap?: number };
 
 /** fliers crossing the frame horizontally (gulls, bats, planes) */
-function drift(ops: ArOp[], frame: ArFrame, s: DriftStyle) {
+export function drift(ops: ArOp[], frame: ArFrame, s: DriftStyle) {
   const { width, height, time } = frame;
   const unit = unitOf(frame);
   for (let i = 0; i < s.count; i += 1) {
@@ -218,12 +217,12 @@ function twinkles(ops: ArOp[], frame: ArFrame, count: number, yMax: number, size
   }
 }
 
-function vignette(ops: ArOp[], frame: ArFrame, alpha: number) {
+export function vignette(ops: ArOp[], frame: ArFrame, alpha: number) {
   stretch(ops, 'fx_vignette', frame.width / 2, frame.height / 2, frame.width * 1.08, frame.height * 1.08, alpha);
 }
 
 /** zero-mean film grain, re-jittered about 12 times a second */
-function grain(ops: ArOp[], frame: ArFrame, alpha: number) {
+export function grain(ops: ArOp[], frame: ArFrame, alpha: number) {
   const tile = unitOf(frame) * 0.34;
   const k = Math.floor(frame.time * 12);
   const ox = rand(k, 61) * tile;
@@ -236,7 +235,7 @@ function grain(ops: ArOp[], frame: ArFrame, alpha: number) {
 const DIGITS: ArSpriteId[] = ['fx_d0', 'fx_d1', 'fx_d2', 'fx_d3', 'fx_d4', 'fx_d5', 'fx_d6', 'fx_d7', 'fx_d8', 'fx_d9'];
 
 /** orange LED date like a 90s compact camera: 'YY MM DD, bottom right */
-function dateStamp(ops: ArOp[], frame: ArFrame, inset: number) {
+export function dateStamp(ops: ArOp[], frame: ArFrame, inset: number) {
   const unit = unitOf(frame);
   const h = unit * 0.052;
   const now = new Date();

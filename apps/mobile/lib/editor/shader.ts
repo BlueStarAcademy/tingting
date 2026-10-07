@@ -1,4 +1,5 @@
 ﻿import { Skia, type SkRuntimeEffect } from '@shopify/react-native-skia';
+import { STILL_TIME, arFunUniforms } from '@/lib/ar/effects';
 import { breadcrumb, logEvent } from '@/lib/diagnostics';
 import { faceUniforms, type FaceGeom } from './faces';
 import type { FilterLook } from './color';
@@ -24,7 +25,7 @@ export function getEditorEffect(): SkRuntimeEffect | null {
 }
 
 /** Uniforms that change pixels; with all of them at 0 the shader returns the source unchanged. */
-const ACTIVE_UNIFORMS = ['uBeauty1', 'uBeauty2', 'uBeauty3', 'uMk1', 'uMk2', 'uFinish1', 'uFinish2', 'uFx1', 'uFx2'];
+const ACTIVE_UNIFORMS = ['uBeauty1', 'uBeauty2', 'uBeauty3', 'uMk1', 'uMk2', 'uFinish1', 'uFinish2', 'uFx1', 'uFx2', 'uFun'];
 
 /** Whether the scene needs the shader at all; otherwise the plain image + color matrix is identical. */
 export function needsEditorShader(uniforms: EditorUniforms): boolean {
@@ -80,6 +81,7 @@ export function buildUniforms(
     ],
     uFx1: [effects.light_leak, effects.prism, effects.dust, effects.spotlight],
     uFx2: [effects.sunflare, 0, 0, 0],
+    ...arFunUniforms(state.arId, STILL_TIME),
   };
   return { ...u, ...faceUniforms(faces, MAX_FACES) };
 }

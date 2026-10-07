@@ -1,8 +1,9 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useRef } from 'react';
 import { StyleSheet } from 'react-native';
-import { FilterMode, MipmapMode, Skia, SkiaPictureView, type SkPicture } from '@shopify/react-native-skia';
+import { FilterMode, MipmapMode, PaintStyle, Skia, SkiaPictureView, type SkPicture } from '@shopify/react-native-skia';
 import { layoutArEffect, type ArFace } from '@/lib/ar/effects';
 import type { SpriteId } from '@/lib/ar/sprites';
+import { faceDebugPaths } from '@/lib/editor/face-debug';
 import { scaleFace, type FaceGeom } from '@/lib/editor/faces';
 import { loadArSprites, loadedArImages, type ArImages } from './ArLayer';
 
@@ -12,9 +13,11 @@ export type ArLiveHandle = {
 };
 
 type Props = {
-  effectId: string;
+  effectId: string | null;
   width: number;
   height: number;
+  /** outlines what the tracker found (lips, eyes, face oval) over the stickers */
+  debug?: boolean;
 };
 
 type ViewApi = {
@@ -36,6 +39,7 @@ type State = {
   picture: SkPicture | null;
   recorder: ReturnType<typeof Skia.PictureRecorder>;
   paint: ReturnType<typeof Skia.Paint>;
+  line: ReturnType<typeof Skia.Paint>;
   src: Rect;
   dst: Rect;
 };
@@ -50,6 +54,13 @@ const createState = (): State => ({
   picture: null,
   recorder: Skia.PictureRecorder(),
   paint: Skia.Paint(),
+  line: (() => {
+    const p = Skia.Paint();
+    p.setStyle(PaintStyle.Stroke);
+    p.setStrokeWidth(2);
+    p.setAntiAlias(true);
+    return p;
+  })(),
   src: { x: 0, y: 0, width: 1, height: 1 },
   dst: { x: 0, y: 0, width: 1, height: 1 },
 });
@@ -61,7 +72,7 @@ const createState = (): State => ({
  * directly: no React state, no re-render per frame.
  */
 export const ArLiveOverlay = memo(
-  forwardRef<ArLiveHandle, Props>(function ArLiveOverlay({ effectId, width, height }, ref) {
+  forwardRef<ArLiveHandle, Props>(function ArLiveOverlay({ effectId, width, height, debug = false }, ref) {
     const viewRef = useRef<SkiaPictureView | null>(null);
     const stateRef = useRef<State | null>(null);
     stateRef.current ??= createState();
@@ -127,8 +138,8 @@ export const ArLiveOverlay = memo(
 
           const ops = layoutArEffect(effectId, { width, height, time: (at - s.start) / 1000, faces: next });
           // nothing to draw before and after: leave the view alone
-          if (ops.length === 0 && s.drawn === 0) return;
-          s.drawn = ops.length;
+          if (ops.length === 0 && s.drawn === 0 && !debug) return;
+          s.drawn = ops.length + (debug ? 1 : 0);
 
           const missing: SpriteId[] = [];
           for (const op of ops) {
@@ -160,10 +171,21 @@ export const ArLiveOverlay = memo(
             canvas.drawImageRectOptions(image, s.src, s.dst, FilterMode.Linear, MipmapMode.Linear, s.paint);
             canvas.restore();
           }
+          if (debug) {
+            s.line.setAlphaf(1);
+            for (const t of next) {
+              for (const p of faceDebugPaths(t.face)) {
+                const path = Skia.Path.Make();
+                path.addPoly(p.pts, p.closed);
+                s.line.setColor(Skia.Color(p.color));
+                canvas.drawPath(path, s.line);
+              }
+            }
+          }
           show(s.recorder.finishRecordingAsPicture());
         },
       }),
-      [effectId, width, height, s],
+      [effectId, width, height, debug, s],
     );
 
     return <SkiaPictureView ref={viewRef} style={StyleSheet.absoluteFill} pointerEvents="none" />;

@@ -1,4 +1,5 @@
 import { beautyCore, beautyPass, faceUniformDecl } from './beauty-core';
+import { FUN_CORE, funPost, funPre, funWarpPass } from './fun-core';
 
 /** Faces tracked in the live preview (couple selfies). */
 export const CAMERA_MAX_FACES = 2;
@@ -30,6 +31,8 @@ uniform vec3 uBlushCol;
 uniform mat4 uColorMat;
 uniform vec4 uColorOff;
 uniform vec4 uFinish;
+uniform vec4 uFun;
+uniform vec4 uFun2;
 ${faceUniformDecl(v.maxFaces)}
 `
     : `
@@ -78,7 +81,9 @@ const body = (v: Variant) =>
   vec3 lipCol = uLipCol;
   vec3 blushCol = uBlushCol;
   bool needBox = clarity > 0.001;
-${beautyPass(v.maxFaces)}
+${funPre(v.maxFaces)}
+${beautyPass(v.maxFaces, funWarpPass(v.maxFaces))}
+${funPost(v.maxFaces)}
 ${
   v.glow
     ? `  if (uFinish.w > 0.001) {
@@ -92,7 +97,7 @@ ${FINISH}`
   float maxSide = max(uSize.x, uSize.y);
 ${FINISH}`;
 
-const helpers = (v: Variant) => (v.beauty ? beautyCore(v.rings) : HASH);
+const helpers = (v: Variant) => (v.beauty ? `${beautyCore(v.rings)}\n${FUN_CORE}` : HASH);
 
 export const CAMERA_VERTEX_SOURCE = `#version 300 es
 precision highp float;

@@ -6,7 +6,7 @@ export type ArSpriteId = SpriteId;
 /** One sprite draw in image pixels; (x, y) is the sprite center, rot is clockwise radians. */
 export type ArOp = { sprite: ArSpriteId; x: number; y: number; w: number; h: number; rot: number; alpha: number };
 
-export type ArTrigger = 'mouth' | 'smile' | 'blink';
+export type ArTrigger = 'mouth' | 'smile' | 'blink' | 'tilt';
 
 export type ArFace = { face: FaceGeom; presence: number };
 
@@ -33,6 +33,7 @@ export function triggerLevel(face: FaceGeom, trigger: ArTrigger | undefined): nu
   if (trigger === 'mouth') return smooth(0.35, 0.65, face.mouthOpen);
   if (trigger === 'smile') return face.smile < 0 ? 0 : smooth(0.55, 0.8, face.smile);
   if (trigger === 'blink') return face.eyesOpen < 0 ? 0 : 1 - smooth(0.12, 0.4, face.eyesOpen);
+  if (trigger === 'tilt') return smooth(0.16, 0.32, Math.abs(face.angle));
   return 0;
 }
 

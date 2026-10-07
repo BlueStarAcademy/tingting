@@ -8,10 +8,11 @@
  *   A = center.xy, radius.xy        B = leftEye.xy, rightEye.xy (image-left eye first)
  *   C = nose.xy, mouth.xy           D = chin.xy, mouthHalfWidth, eyeRadius
  *   E = leftJaw.xy, rightJaw.xy     F = leftCheek.xy, rightCheek.xy
- *   G = noseHalfWidth, lipHalfHeight, 0, 0
+ *   G = noseHalfWidth, lipHalfHeight, lipShaped (1 = from lip contours), 0
+ *   H = lip corner level, inner upper-lip edge, inner lower-lip edge (px along up from mouth), mouthOpen
  */
 
-export const FACE_PARTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
+export const FACE_PARTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
 
 export const faceUniformDecl = (maxFaces: number) =>
   Array.from({ length: maxFaces }, (_, i) => FACE_PARTS.map((part) => `uniform vec4 uF${i}${part};`).join('\n')).join(
@@ -218,7 +219,30 @@ vec3 brightenSkin(vec3 c, float whiten, float tone, float mask) {
   return c;
 }
 
-vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, vec4 G,
+// Lip coverage (0..1) from the lip outline: outer edges rise/fall from the corners to the lip box
+// top/bottom, minus the opening between the inner edges. u runs corner to corner, v along up.
+float lipMask(vec2 q, vec2 mc, vec2 ax, vec2 up, float hw, float hh, vec4 H, float feather) {
+  vec2 d = q - mc;
+  float u = dot(d, ax) / hw;
+  if (abs(u) >= 1.08) { return 0.0; }
+  float v = dot(d, up);
+  float s = max(0.0, 1.0 - u * u);
+  float cv = H.x;
+  // exponents fitted to ML Kit lip contours of closed and open mouths
+  float top = cv + (hh - cv) * pow(s, 0.8);
+  float bot = cv + (-hh - cv) * pow(s, 0.8);
+  float m = smoothstep(-feather, feather, top - v) * smoothstep(-feather, feather, v - bot);
+  float gap = H.y - H.z;
+  if (gap > feather * 0.5) {
+    float it = cv + (H.y - cv) * pow(s, 1.1);
+    float ib = cv + (H.z - cv) * pow(s, 0.8);
+    float f2 = feather * 0.6;
+    m *= 1.0 - smoothstep(-f2, f2, it - v) * smoothstep(-f2, f2, v - ib);
+  }
+  return m * (1.0 - smoothstep(0.86, 1.06, abs(u)));
+}
+
+vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, vec4 G, vec4 H,
               float lipAmt, vec3 lipCol, float blushAmt, vec3 blushCol) {
   vec2 d0 = (q - A.xy) / (A.zw * 1.4);
   if (dot(d0, d0) > 1.0) { return c; }
@@ -236,12 +260,15 @@ vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, v
   if (lipAmt > 0.001) {
     float mw = D.z;
     float lh = G.y > 0.5 ? G.y : mw * 0.42;
-    float zone = ellipse(q, C.zw, ax, up, vec2(mw * 0.95, lh * 1.05));
+    float zone = lipMask(q, C.zw, ax, up, mw, lh, H, max(1.0, lh * 0.14));
     if (zone > 0.0) {
-      // lips are redder and darker than the surrounding skin; teeth are bright and unsaturated
+      // lips are redder and darker than the surrounding skin; teeth are bright and unsaturated.
+      // A contour outline is trusted and only keeps teeth out; an estimated one also needs redness.
       float cr = 0.5 + 0.5 * c0.r - 0.418688 * c0.g - 0.081312 * c0.b;
       float sat = max(c0.r, max(c0.g, c0.b)) - min(c0.r, min(c0.g, c0.b));
-      float lipness = smoothstep(0.545, 0.585, cr) * smoothstep(0.08, 0.18, sat) * (1.0 - smoothstep(0.62, 0.8, luma(c0)));
+      float teeth = smoothstep(0.55, 0.75, luma(c0)) * (1.0 - smoothstep(0.08, 0.16, sat));
+      float red = smoothstep(0.545, 0.585, cr) * smoothstep(0.08, 0.18, sat) * (1.0 - smoothstep(0.62, 0.8, luma(c0)));
+      float lipness = mix(red, 1.0 - teeth, G.z);
       vec3 colored = clamp(lipCol + (luma(c) - luma(lipCol)) * 0.9, 0.0, 1.0);
       vec3 t = mix(colored, c * lipCol * 1.5, 0.3);
       c = mix(c, t, clamp(zone * lipness * lipAmt * 1.1, 0.0, 1.0));
@@ -270,12 +297,13 @@ export const BEAUTY_CORE = beautyCore(3);
  * The beauty pass both shaders run per pixel. Expects in scope: `vec2 p` (pixel), uniforms
  * uSize, uFaceCount, uF{i}{A..G}, floats smoothAmt, whiten, tone, clarity, slim, chinAmt, lipAmt,
  * blushAmt, vec4 b2, vec3 lipCol, blushCol, and `bool needBox` (true when clarity or another
- * detail tool needs the box mean). Leaves `q` (warped position), `c0` (source color), `c`
+ * detail tool needs the box mean). `preWarp` runs on `q` before the beauty warp. Leaves `q` (warped position), `c0` (source color), `c`
  * (result), `face` (face mask), `mask` (skin mask), `sm` (smoothing weight), `box` and `bil` in scope.
  */
-export const beautyPass = (maxFaces: number) => `
+export const beautyPass = (maxFaces: number, preWarp = '') => `
   vec2 q = p;
-  ${perFace(maxFaces, (i) => `q = warpFace(q, ${faceArgs(i)}, slim, b2, chinAmt);`)}
+  ${preWarp}
+  ${perFace(maxFaces, (i) => `q = warpFace(q, ${faceArgs(i, ['A', 'B', 'C', 'D', 'E', 'F', 'G'])}, slim, b2, chinAmt);`)}
 
   vec3 c0 = px(q);
   vec3 c = c0;
@@ -311,6 +339,6 @@ export const beautyPass = (maxFaces: number) => `
   c = brightenSkin(c, whiten, tone, max(mask, skin * 0.75));
 
   if (lipAmt + blushAmt > 0.001) {
-    ${perFace(maxFaces, (i) => `c = lipBlush(c, c0, q, ${faceArgs(i, ['A', 'B', 'C', 'D', 'F', 'G'])}, lipAmt, lipCol, blushAmt, blushCol);`)}
+    ${perFace(maxFaces, (i) => `c = lipBlush(c, c0, q, ${faceArgs(i, ['A', 'B', 'C', 'D', 'F', 'G', 'H'])}, lipAmt, lipCol, blushAmt, blushCol);`)}
   }
 `;

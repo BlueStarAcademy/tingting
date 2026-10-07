@@ -1,4 +1,4 @@
-﻿import { BEAUTY_CORE, FACE_PARTS, beautyPass, faceArgs, faceUniformDecl, perFace } from './beauty-core';
+import { BEAUTY_CORE, FACE_PARTS, beautyPass, faceArgs, faceUniformDecl, perFace } from './beauty-core';
 
 export const MAX_FACES = 3;
 
@@ -87,11 +87,8 @@ half4 main(float2 fragP) {
   float glow = uFinish2.z;
   bool needBox = clarity > 0.001 || sharpen > 0.001;
 ${beautyPass(MAX_FACES)}
-  if (needBox) {
-    float sm = clamp(smoothAmt * mask * 1.3, 0.0, 1.0);
-    vec3 detail = c0 - box;
-    c += detail * clarity * 0.9 * face * (1.0 - sm * 0.8);
-    c += detail * sharpen * 1.6 * (1.0 - sm);
+  if (sharpen > 0.001) {
+    c += (c0 - box) * sharpen * 1.6 * (1.0 - sm);
   }
 
   if (uMk1.z + uMk1.w + uMk2.x + uMk2.y > 0.001) {

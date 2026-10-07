@@ -56,6 +56,19 @@ vec2 translateWarp(vec2 q, vec2 ctr, float rad, vec2 m) {
   return q - w * w * m;
 }
 
+// translateWarp with an elliptical footprint: radius ra along the unit axis a, rb across it. A
+// footprint stretched along a contour moves the whole contour instead of denting one point.
+// Fold-free while |m.a| / ra + |m.b| / rb < 0.6.
+vec2 ellipseWarp(vec2 q, vec2 ctr, vec2 a, float ra, float rb, vec2 m) {
+  vec2 d = q - ctr;
+  float u = dot(d, a) / ra;
+  float v = dot(d, vec2(a.y, -a.x)) / rb;
+  float x = u * u + v * v;
+  if (x >= 1.0) { return q; }
+  float w = 1.0 - x;
+  return q - w * w * m;
+}
+
 vec2 bulge(vec2 q, vec2 ctr, float rad, float s) {
   vec2 d = q - ctr;
   float dist = length(d);
@@ -101,39 +114,46 @@ vec2 warpFace(vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 E, vec4 F, vec4 G, fl
   float noseAmt = b2.z;
   float cheek = b2.w;
   vec2 q0 = q;
+  // shifts at 100% stay at or under about two thirds of each warp's fold limit, and a chain of
+  // fold-free warps is still fold-free
   if (slim > 0.001) {
-    float a = slim * fw * 0.07;
-    vec2 cl = mix(E.xy, A.xy, 0.12);
-    vec2 cr = mix(E.zw, A.xy, 0.12);
-    q = translateWarp(q, cl, fw * 0.34, normalize(ax + up * 0.15) * a);
-    q = translateWarp(q, cr, fw * 0.34, normalize(-ax + up * 0.15) * a);
+    // footprint runs up the side of the face (cheekbone to below the jaw): |m.a|/ra + |m.b|/rb
+    // is 0.4 at 100%
+    float a = slim * fw * 0.11;
+    vec2 cl = mix(mix(E.xy, F.xy, 0.25), A.xy, 0.12);
+    vec2 cr = mix(mix(E.zw, F.zw, 0.25), A.xy, 0.12);
+    q = ellipseWarp(q, cl, up, fw * 0.5, fw * 0.3, normalize(ax + up * 0.15) * a);
+    q = ellipseWarp(q, cr, up, fw * 0.5, fw * 0.3, normalize(-ax + up * 0.15) * a);
   }
   if (jaw > 0.001) {
-    // V-line: pull the lower jaw sides in toward the chin, without lifting the neck
-    float a = jaw * fw * 0.05;
+    // V-line: pull the lower jaw sides in toward the chin, without lifting the neck; footprint
+    // runs along the jawline (0.4 of the fold limit at 100%)
+    float a = jaw * fw * 0.07;
     vec2 jl = mix(E.xy, chin, 0.5) + up * (fw * 0.04);
     vec2 jr = mix(E.zw, chin, 0.5) + up * (fw * 0.04);
-    q = translateWarp(q, jl, fw * 0.22, normalize(ax + up * 0.35) * a);
-    q = translateWarp(q, jr, fw * 0.22, normalize(-ax + up * 0.35) * a);
+    q = ellipseWarp(q, jl, normalize(chin - E.xy), fw * 0.32, fw * 0.2, normalize(ax + up * 0.35) * a);
+    q = ellipseWarp(q, jr, normalize(chin - E.zw), fw * 0.32, fw * 0.2, normalize(-ax + up * 0.35) * a);
   }
   if (cheek > 0.001) {
-    float a = cheek * fw * 0.035;
+    float a = cheek * fw * 0.06;
     q = translateWarp(q, F.xy - ax * (fw * 0.12) + up * (eyeR * 0.3), fw * 0.22, ax * a);
     q = translateWarp(q, F.zw + ax * (fw * 0.12) + up * (eyeR * 0.3), fw * 0.22, -ax * a);
   }
-  // keep the neck and collar still: contour warps fade out just below the chin line
-  q = q0 + (q - q0) * smoothstep(-fw * 0.14, fw * 0.03, dot(q0 - chin, up));
+  // keep the neck and collar still: contour warps fade out below the chin line, over a band tall
+  // enough that the jaw outline doesn't bend where the fade starts
+  q = q0 + (q - q0) * smoothstep(-fw * 0.3, fw * 0.08, dot(q0 - chin, up));
   if (abs(chinAmt) > 0.001) {
-    q = translateWarp(q, chin + up * (fw * 0.06), fw * 0.2, up * (-chinAmt * fw * 0.05));
+    q = translateWarp(q, chin + up * (fw * 0.06), fw * 0.2, up * (-chinAmt * fw * 0.075));
   }
   if (noseAmt > 0.001) {
     vec2 nc = mix(nose, (le + re) * 0.5, 0.35);
     float rw = max(G.x * 1.7, eyeR * 1.3);
-    q = pinchX(q, nc, ax, up, rw, max(distance(nose, (le + re) * 0.5) * 0.85, eyeR * 2.0), noseAmt * 0.38);
+    q = pinchX(q, nc, ax, up, rw, max(distance(nose, (le + re) * 0.5) * 0.85, eyeR * 2.0), noseAmt * 0.55);
   }
   if (eyes > 0.001) {
-    q = bulge(q, le, eyeR * 2.1, eyes * 0.3);
-    q = bulge(q, re, eyeR * 2.1, eyes * 0.3);
+    // bulge stays fold-free below 1.0; 0.42 = 1.7x at the pupil at 100%
+    q = bulge(q, le, eyeR * 2.1, eyes * 0.42);
+    q = bulge(q, re, eyeR * 2.1, eyes * 0.42);
   }
   return q;
 }
@@ -159,7 +179,7 @@ vec3 smoothSkin(vec2 q, vec3 c0, float R, float amount, out vec3 box) {
   vec3 sum = c0;
   float wsum = 1.0;
   vec3 bsum = c0;
-  float s2 = 0.0035 + 0.02 * amount;
+  float s2 = 0.004 + 0.04 * amount;
   for (int ring = 0; ring < ${rings}; ring++) {
     float fr = float(ring);
     float rr = R * (1.0 + fr * ${(2.3 / Math.max(1, rings - 1)).toFixed(3)});
@@ -181,13 +201,19 @@ vec3 smoothSkin(vec2 q, vec3 c0, float R, float amount, out vec3 box) {
 
 vec3 brightenSkin(vec3 c, float whiten, float tone, float mask) {
   if (whiten > 0.001) {
+    // half luminance lift that keeps the skin's hue, half screen toward white; a plain screen
+    // alone turns warm skin grey-blue
     float w = whiten * mask;
-    c = mix(c, c + (1.0 - c) * 0.35, w);
-    c = mix(c, vec3(c.r * 0.985, c.g, min(1.0, c.b * 1.03 + 0.008)), w);
+    float l = luma(c);
+    float lt = l + (1.0 - l) * 0.5 * w;
+    vec3 keep = min(c * (lt / max(l, 0.02)), vec3(1.0));
+    vec3 lifted = c + (1.0 - c) * 0.5 * w;
+    c = mix(keep, lifted, 0.5);
+    c = mix(c, c * vec3(1.0, 0.99, 1.0) + vec3(0.0, 0.0, 0.012), w);
   }
   if (abs(tone) > 0.001) {
     float t = tone * mask;
-    c = clamp(c * vec3(1.0 + 0.07 * t, 1.0 + 0.012 * t, 1.0 - 0.08 * t) + vec3(0.012, 0.004, -0.01) * t, 0.0, 1.0);
+    c = clamp(c * vec3(1.0 + 0.1 * t, 1.0 + 0.015 * t, 1.0 - 0.11 * t) + vec3(0.016, 0.005, -0.012) * t, 0.0, 1.0);
   }
   return c;
 }
@@ -205,7 +231,7 @@ vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, v
     float a = ellipse(q, F.xy - ax * (fw * 0.03) + up * (eyeR * 0.2), ax, up, r);
     a += ellipse(q, F.zw + ax * (fw * 0.03) + up * (eyeR * 0.2), ax, up, r);
     vec3 t = mix(softLight(c, blushCol), c * blushCol * 1.12, 0.35);
-    c = mix(c, t, clamp(a * blushAmt * 0.75, 0.0, 1.0));
+    c = mix(c, t, clamp(a * blushAmt, 0.0, 1.0));
   }
   if (lipAmt > 0.001) {
     float mw = D.z;
@@ -218,7 +244,7 @@ vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, v
       float lipness = smoothstep(0.545, 0.585, cr) * smoothstep(0.08, 0.18, sat) * (1.0 - smoothstep(0.62, 0.8, luma(c0)));
       vec3 colored = clamp(lipCol + (luma(c) - luma(lipCol)) * 0.9, 0.0, 1.0);
       vec3 t = mix(colored, c * lipCol * 1.5, 0.3);
-      c = mix(c, t, clamp(zone * lipness * lipAmt * 0.75, 0.0, 1.0));
+      c = mix(c, t, clamp(zone * lipness * lipAmt * 1.1, 0.0, 1.0));
     }
   }
   return c;
@@ -242,9 +268,10 @@ export const BEAUTY_CORE = beautyCore(3);
 
 /**
  * The beauty pass both shaders run per pixel. Expects in scope: `vec2 p` (pixel), uniforms
- * uSize, uFaceCount, uF{i}{A..G}, and floats smoothAmt, whiten, tone, slim, chinAmt, lipAmt,
- * blushAmt, vec4 b2, vec3 lipCol, blushCol. Leaves `q` (warped position), `c0` (source color),
- * `c` (result), `face` (face mask), `mask` (skin mask), `box` and `bil` in scope.
+ * uSize, uFaceCount, uF{i}{A..G}, floats smoothAmt, whiten, tone, clarity, slim, chinAmt, lipAmt,
+ * blushAmt, vec4 b2, vec3 lipCol, blushCol, and `bool needBox` (true when clarity or another
+ * detail tool needs the box mean). Leaves `q` (warped position), `c0` (source color), `c`
+ * (result), `face` (face mask), `mask` (skin mask), `sm` (smoothing weight), `box` and `bil` in scope.
  */
 export const beautyPass = (maxFaces: number) => `
   vec2 q = p;
@@ -255,11 +282,12 @@ export const beautyPass = (maxFaces: number) => `
   float minSide = min(uSize.x, uSize.y);
   float maxSide = max(uSize.x, uSize.y);
 
+  // blur radii follow the face (or frame) size, so a 720 px live buffer smooths as much as export
   float face = 0.0;
-  float R = minSide * 0.011;
+  float R = minSide * 0.013;
   if (uFaceCount > 0.5) {
     float m = 0.0;
-    ${perFace(maxFaces, (i) => `m = faceMask(q, ${faceArgs(i, ['A', 'B', 'C', 'D'])}); if (m > face) { face = m; R = uF${i}A.z * 0.044; }`)}
+    ${perFace(maxFaces, (i) => `m = faceMask(q, ${faceArgs(i, ['A', 'B', 'C', 'D'])}); if (m > face) { face = m; R = uF${i}A.z * 0.052; }`)}
   } else {
     face = 1.0;
   }
@@ -268,14 +296,19 @@ export const beautyPass = (maxFaces: number) => `
 
   vec3 box = c0;
   vec3 bil = c0;
+  float sm = 0.0;
   if (smoothAmt > 0.001 || needBox) {
     bil = smoothSkin(q, c0, R, smoothAmt, box);
-    float sm = clamp(smoothAmt * mask * 1.3, 0.0, 1.0);
+    sm = clamp(smoothAmt * max(mask, skin * 0.4) * 1.5, 0.0, 1.0);
     c = mix(c0, bil, sm);
-    c += (c0 - bil) * sm * 0.1;
+    c += (c0 - bil) * sm * 0.06;
+  }
+  if (needBox && clarity > 0.001) {
+    c += (c0 - box) * clarity * 0.9 * face * (1.0 - sm * 0.8);
   }
 
-  c = brightenSkin(c, whiten, tone, mask);
+  // neck and other visible skin follow the face's tone so the face doesn't read as a mask
+  c = brightenSkin(c, whiten, tone, max(mask, skin * 0.75));
 
   if (lipAmt + blushAmt > 0.001) {
     ${perFace(maxFaces, (i) => `c = lipBlush(c, c0, q, ${faceArgs(i, ['A', 'B', 'C', 'D', 'F', 'G'])}, lipAmt, lipCol, blushAmt, blushCol);`)}

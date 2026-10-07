@@ -74,9 +74,10 @@ const body = (v: Variant) =>
   float chinAmt = uBeauty3.x;
   float lipAmt = uBeauty3.y;
   float blushAmt = uBeauty3.z;
+  float clarity = uBeauty3.w;
   vec3 lipCol = uLipCol;
   vec3 blushCol = uBlushCol;
-  bool needBox = false;
+  bool needBox = clarity > 0.001;
 ${beautyPass(v.maxFaces)}
 ${
   v.glow

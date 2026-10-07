@@ -28,13 +28,26 @@ export function cameraLookUniforms(look: CameraLook, size: [number, number]): Ca
     uSize: size,
     uBeauty1: [b.smooth, b.whiten, b.tone, b.slim],
     uBeauty2: [b.jaw, b.eyes, b.nose, b.cheek],
-    uBeauty3: [b.chin, look.lip, look.blush, 0],
+    uBeauty3: [b.chin, look.lip, look.blush, b.clarity],
     uLipCol: look.lipColor ? hexToRgb(look.lipColor) : LIP_COLOR,
     uBlushCol: look.blushColor ? hexToRgb(look.blushColor) : BLUSH_COLOR,
     uColorMat: mat,
     uColorOff: [m[4], m[9], m[14], m[19]],
     uFinish: [(extras?.fade ?? 0) * k, (extras?.vignette ?? 0) * k, (extras?.grain ?? 0) * k, (extras?.glow ?? 0) * k],
   };
+}
+
+/** Short FNV-1a hash of the uniform values (rounded to 1e-3), to confirm in logs which look the GPU got. */
+export function uniformsHash(u: CameraUniforms): string {
+  let h = 0x811c9dc5;
+  for (const name of Object.keys(u).sort()) {
+    const v = u[name];
+    for (const n of typeof v === 'number' ? [v] : v) {
+      h ^= Math.round(n * 1000) & 0xffffffff;
+      h = Math.imul(h, 0x01000193);
+    }
+  }
+  return (h >>> 0).toString(36);
 }
 
 /** `uF{face}{part}` names in the same order as FACE_PARTS, for caching uniform locations. */

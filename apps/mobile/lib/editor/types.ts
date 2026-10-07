@@ -148,30 +148,33 @@ export const BEAUTY_PRESETS: { id: string; label: string; values: BeautyValues; 
   {
     id: 'auto',
     label: '자동',
-    values: beauty({ smooth: 0.55, whiten: 0.3, tone: 0.1, slim: 0.25, jaw: 0.2, eyes: 0.22, nose: 0.15, cheek: 0.1 }),
-    makeup: { lip: 0.2, blush: 0.15 },
+    values: beauty({ smooth: 0.65, whiten: 0.4, tone: 0.08, clarity: 0.1, slim: 0.45, jaw: 0.35, eyes: 0.35, nose: 0.25, cheek: 0.15 }),
+    makeup: { lip: 0.3, blush: 0.25 },
   },
-  { id: 'natural', label: '내추럴', values: beauty({ smooth: 0.4, whiten: 0.18, clarity: 0.12, slim: 0.15, jaw: 0.1, eyes: 0.12, nose: 0.08, cheek: 0.05 }) },
+  { id: 'natural', label: '내추럴', values: beauty({ smooth: 0.45, whiten: 0.22, clarity: 0.15, slim: 0.25, jaw: 0.18, eyes: 0.18, nose: 0.12, cheek: 0.08 }) },
   {
     id: 'bright',
     label: '화사',
-    values: beauty({ smooth: 0.55, whiten: 0.45, tone: -0.1, slim: 0.22, jaw: 0.18, eyes: 0.18, nose: 0.12, cheek: 0.1 }),
-    makeup: { lip: 0.15, blush: 0.2 },
+    values: beauty({ smooth: 0.65, whiten: 0.65, tone: -0.12, slim: 0.4, jaw: 0.3, eyes: 0.3, nose: 0.2, cheek: 0.12 }),
+    makeup: { lip: 0.22, blush: 0.32 },
   },
   {
     id: 'pure',
     label: '청순',
-    values: beauty({ smooth: 0.65, whiten: 0.35, tone: -0.15, slim: 0.3, jaw: 0.25, chin: 0.1, eyes: 0.28, nose: 0.15, cheek: 0.15 }),
-    makeup: { lip: 0.2, blush: 0.25 },
+    values: beauty({ smooth: 0.75, whiten: 0.5, tone: -0.18, slim: 0.5, jaw: 0.4, chin: 0.12, eyes: 0.45, nose: 0.25, cheek: 0.2 }),
+    makeup: { lip: 0.25, blush: 0.38 },
   },
   {
     id: 'doll',
     label: '인형',
-    values: beauty({ smooth: 0.8, whiten: 0.4, tone: 0.05, slim: 0.45, jaw: 0.4, chin: 0.15, eyes: 0.45, nose: 0.3, cheek: 0.25 }),
-    makeup: { lip: 0.35, blush: 0.35 },
+    values: beauty({ smooth: 0.9, whiten: 0.55, tone: 0.05, slim: 0.7, jaw: 0.6, chin: 0.2, eyes: 0.75, nose: 0.45, cheek: 0.3 }),
+    makeup: { lip: 0.5, blush: 0.5 },
   },
-  { id: 'boy', label: '남친', values: beauty({ smooth: 0.3, whiten: 0.05, tone: 0.1, clarity: 0.35, slim: 0.15, jaw: 0.2, eyes: 0.05, nose: 0.1, cheek: 0.1 }) },
+  { id: 'boy', label: '남친', values: beauty({ smooth: 0.35, whiten: 0.05, tone: 0.15, clarity: 0.5, slim: 0.25, jaw: 0.35, eyes: 0.08, nose: 0.15, cheek: 0.15 }) },
 ];
+
+/** Earlier `auto` values; a saved camera look that still holds them is moved to the current `auto`. */
+export const LEGACY_AUTO_BEAUTY: BeautyValues = beauty({ smooth: 0.55, whiten: 0.3, tone: 0.1, slim: 0.25, jaw: 0.2, eyes: 0.22, nose: 0.15, cheek: 0.1 });
 
 export const AUTO_PRESET_ID = 'auto';
 

@@ -18,7 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/constants/theme';
-import { ArLiveOverlay, createArFeed } from '@/components/ar/ArLiveOverlay';
+import { ArLiveOverlay, type ArLiveHandle } from '@/components/ar/ArLiveOverlay';
 import { EditorSlider } from '@/components/editor/EditorSlider';
 import { ChipRow, ItemRow } from '@/components/editor/panels';
 import { AR_EFFECTS, getArEffect } from '@/lib/ar/effects';
@@ -37,7 +37,13 @@ import { BEAUTY_ITEMS, BEAUTY_PRESETS, EMPTY_BEAUTY, FACE_ONLY_BEAUTY, type Beau
 import { pickGalleryPhoto } from '@/lib/pick-photo';
 import { loadCameraSafeMode, saveCameraSafeMode, takeUnfinishedLiveSession, type CameraSafeMode } from '@/lib/camera-safe-mode';
 import { breadcrumb, logEvent, onJsStall } from '@/lib/diagnostics';
-import { LiveBeautyView, type LiveBeautyHandle, type LiveMode, type TrackingStatus } from './LiveBeautyView';
+import {
+  LiveBeautyView,
+  type LiveBeautyHandle,
+  type LiveBeautyProps,
+  type LiveMode,
+  type TrackingStatus,
+} from './LiveBeautyView';
 
 type Props = {
   onCapture: (uri: string, look: CameraLook) => void;
@@ -120,7 +126,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
   const blink = useRef(new Animated.Value(0)).current;
-  const arFeed = useRef(createArFeed());
+  const arRef = useRef<ArLiveHandle | null>(null);
   const alive = useRef(true);
   const lookRef = useRef(look);
   lookRef.current = look;
@@ -197,6 +203,10 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
     },
     [enableSafeMode],
   );
+
+  const onFrame = useCallback<NonNullable<LiveBeautyProps['onFrame']>>((faces, bufferWidth, at) => {
+    arRef.current?.draw(faces, bufferWidth, at);
+  }, []);
 
   const persist = useCallback(() => saveCameraLook(lookRef.current), []);
   const changeLook = (next: CameraLook, save = true) => {
@@ -434,13 +444,11 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
             live={!safe.on}
             onModeChange={onModeChange}
             onTrackingChange={setTracking}
-            onFaces={(faces, bufferWidth) => {
-              arFeed.current = { faces, bufferWidth, at: Date.now() };
-            }}
+            onFrame={onFrame}
           />
         ) : null}
         {look.effectId && !comparing && !safeOn && mode === 'live' ? (
-          <ArLiveOverlay effectId={look.effectId} feed={arFeed} width={box.w} height={box.h} />
+          <ArLiveOverlay ref={arRef} effectId={look.effectId} width={box.w} height={box.h} />
         ) : null}
         {box.band > 0 ? (
           <>

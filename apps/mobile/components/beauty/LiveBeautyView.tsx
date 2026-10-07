@@ -10,13 +10,15 @@ import {
   CAMERA_VERTEX_SOURCE,
   type CameraShaderTier,
 } from '@/lib/editor/camera-shader-source';
-import { buildCameraUniforms } from '@/lib/editor/camera-uniforms';
+import { cameraFaceUniformNames, cameraLookUniforms, writeFaceUniform } from '@/lib/editor/camera-uniforms';
 import { arNeedsClassification } from '@/lib/ar/effects';
 import { loadShaderTierStart, markLiveSession, saveShaderTierStart } from '@/lib/camera-safe-mode';
 import { breadcrumb, checkpoint, logError, logEvent } from '@/lib/diagnostics';
-import { blendFace, detectFaces, scaleFace, type FaceGeom } from '@/lib/editor/faces';
+import { createFaceMotion } from '@/lib/editor/face-motion';
+import { detectFaces, scaleFace, type FaceGeom } from '@/lib/editor/faces';
 import type { CameraLook } from '@/lib/editor/look';
 import { FACE_ONLY_BEAUTY } from '@/lib/editor/types';
+import { Samples, now } from '@/lib/perf';
 
 /** `live`: effects render on the preview. `fallback`: plain preview, effects only after capture. */
 export type LiveMode = 'starting' | 'live' | 'fallback';
@@ -28,7 +30,7 @@ export type LiveBeautyHandle = {
   takePicture: () => Promise<CapturedPhoto | null>;
 };
 
-type Props = {
+export type LiveBeautyProps = {
   style?: StyleProp<ViewStyle>;
   facing: CameraType;
   flash: FlashMode;
@@ -43,12 +45,17 @@ type Props = {
    */
   onModeChange?: (mode: LiveMode, reason?: string) => void;
   onTrackingChange?: (status: TrackingStatus) => void;
-  /** tracked faces in drawing-buffer pixels (same orientation as the preview) */
-  onFaces?: (faces: FaceGeom[], bufferWidth: number) => void;
+  /**
+   * Called right after every rendered GL frame with the faces that frame used, in drawing-buffer
+   * pixels (same orientation as the preview). The array and faces are reused; read, don't keep.
+   */
+  onFrame?: (faces: readonly FaceGeom[], bufferWidth: number, at: number) => void;
 };
 
 const TRACK_WIDTH = 360;
-const TRACK_INTERVAL_MS = 90;
+/** target spacing of detection rounds; slower rounds get a proportional rest so JS stays free */
+const TRACK_PERIOD_MS = 66;
+const TRACK_MIN_GAP_MS = 16;
 /** Per-step startup budgets. The plain preview stays visible until a GL frame is verified. */
 const CONTEXT_TIMEOUT_MS = 3000;
 const COMPILE_TIMEOUT_MS = 2500;
@@ -58,16 +65,28 @@ const FIRST_FRAME_POLL_MS = 150;
 const STARTUP_TIMEOUT_MS = 9000;
 /** The beauty shader runs per output pixel, so the drawing buffer is capped and scaled up on screen. */
 const MAX_GL_WIDTH = 720;
-const FRAME_MS = 33;
-const SLOWEST_FRAME_MS = 100;
 /**
- * expo-gl queues draws for its GL thread without backpressure and has no fences, so every few
- * frames a blocking flushEXP() measures how far behind the GL thread is.
+ * Render rates, fastest first. 60 fps samples every ~30 fps camera frame at a steady cadence
+ * (rendering at the camera's own rate aliases: frames get shown twice or skipped). The loop steps
+ * down while the GL thread can't keep up and retries the faster rate later with growing backoff.
  */
-const PACE_EVERY = 5;
-const BEHIND_MS = 60;
+const FRAME_LEVELS_MS = [1000 / 60, 1000 / 30, 1000 / 20, 1000 / 15, 1000 / 10];
+/** rAF ticks may arrive a little early; anything within this of the target interval draws */
+const FRAME_SLACK_MS = 4;
+/**
+ * expo-gl queues draws for its GL thread without backpressure and has no fences, so a blocking
+ * flushEXP() about every PACE_MS measures how far behind the GL thread is.
+ */
+const PACE_MS = 100;
+const BEHIND_MIN_MS = 25;
+const SLOW_CHECKS_TO_STEP = 2;
+const GOOD_CHECKS_TO_STEP = 5;
+const RETRY_BASE_MS = 2000;
+const RETRY_MAX_MS = 30000;
 const STALL_FLUSH_MS = 1500;
 const MAX_BEHIND_CHECKS = 6;
+const PERF_REPORT_MS = 10000;
+const JS_STALL_MS = 50;
 const SNAPSHOT_TIMEOUT_MS = 3000;
 const DETECT_TIMEOUT_MS = 4000;
 
@@ -164,25 +183,6 @@ function needsFaces(look: CameraLook): boolean {
   );
 }
 
-/** Pairs each new face with the closest previous one and eases toward it to hide detector jitter. */
-function smoothFaces(prev: FaceGeom[], next: FaceGeom[]): FaceGeom[] {
-  return next.map((f) => {
-    let best: FaceGeom | null = null;
-    let bestD = Infinity;
-    for (const p of prev) {
-      const d = Math.hypot(p.center.x - f.center.x, p.center.y - f.center.y);
-      if (d < bestD) {
-        bestD = d;
-        best = p;
-      }
-    }
-    if (!best || bestD > f.radius.x * 0.8) return f;
-    // move fast when the face moves a lot, settle when it is still
-    const t = Math.min(1, 0.45 + bestD / (f.radius.x * 0.6));
-    return blendFace(best, f, t);
-  });
-}
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Settled<T> = { value: T } | { late: Promise<unknown> };
@@ -226,8 +226,8 @@ function glFrame(size: { w: number; h: number }) {
  * expo-camera preview routed into an expo-gl texture and drawn through the beauty shader.
  * Falls back to the plain CameraView when the GL path is unavailable, stays black or can't keep up.
  */
-export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveBeautyView(
-  { style, facing, flash, zoom, ratio, look, live, onModeChange, onTrackingChange, onFaces },
+export const LiveBeautyView = forwardRef<LiveBeautyHandle, LiveBeautyProps>(function LiveBeautyView(
+  { style, facing, flash, zoom, ratio, look, live, onModeChange, onTrackingChange, onFrame },
   ref,
 ) {
   const cameraRef = useRef<CameraView | null>(null);
@@ -240,9 +240,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
 
   const lookRef = useRef(look);
   lookRef.current = look;
-  const facesRef = useRef<FaceGeom[]>([]);
-  const callbacks = useRef({ onModeChange, onTrackingChange, onFaces });
-  callbacks.current = { onModeChange, onTrackingChange, onFaces };
+  const callbacks = useRef({ onModeChange, onTrackingChange, onFrame });
+  callbacks.current = { onModeChange, onTrackingChange, onFrame };
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -479,63 +478,193 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, trackTex, 0);
       };
 
-      const draw = (prog: Program, uniforms: Record<string, number | number[]>) => {
+      const uniformLocation = (prog: Program, name: string) => {
+        let loc = prog.locations.get(name);
+        if (loc === undefined) {
+          loc = gl.getUniformLocation(prog.program, name);
+          prog.locations.set(name, loc);
+        }
+        return loc;
+      };
+
+      const bindQuad = (prog: Program) => {
         gl.useProgram(prog.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
         gl.enableVertexAttribArray(prog.position);
         gl.vertexAttribPointer(prog.position, 2, gl.FLOAT, false, 0, 0);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, cameraTexture);
-        let texLoc = prog.locations.get('cameraTexture');
-        if (texLoc === undefined) {
-          texLoc = gl.getUniformLocation(prog.program, 'cameraTexture');
-          prog.locations.set('cameraTexture', texLoc);
-        }
-        gl.uniform1i(texLoc, 0);
-        setUniforms(gl, prog, uniforms);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.uniform1i(uniformLocation(prog, 'cameraTexture'), 0);
       };
 
       const drawRaw = () => {
         ensureTrackTarget();
         gl.bindFramebuffer(gl.FRAMEBUFFER, trackFbo);
         gl.viewport(0, 0, trackW, trackH);
-        draw(raw, { uOut: [trackW, trackH] });
+        bindQuad(raw);
+        setUniforms(gl, raw, { uOut: [trackW, trackH] });
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       };
 
-      let frameMs = FRAME_MS;
+      // Uniform values live in the program object, so look uniforms are only re-sent when the look
+      // (or buffer size) changes, and face uniforms are written without allocating.
+      const faceNames = cameraFaceUniformNames(CAMERA_MAX_FACES);
+      const vec4 = new Float32Array(4);
+      let sentLook: CameraLook | null = null;
+      let sentW = 0;
+      let sentH = 0;
+      let sentNoFaces = false;
+      const drawMain = (faces: readonly FaceGeom[], w: number, h: number) => {
+        bindQuad(main);
+        const look = lookRef.current;
+        if (look !== sentLook || w !== sentW || h !== sentH) {
+          setUniforms(gl, main, cameraLookUniforms(look, [w, h]));
+          sentLook = look;
+          sentW = w;
+          sentH = h;
+        }
+        const count = Math.min(faces.length, CAMERA_MAX_FACES);
+        if (count > 0 || !sentNoFaces) {
+          const countLoc = uniformLocation(main, 'uFaceCount');
+          if (countLoc) gl.uniform1f(countLoc, count);
+          for (let i = 0; i < CAMERA_MAX_FACES; i += 1) {
+            const names = faceNames[i];
+            for (let p = 0; p < names.length; p += 1) {
+              const loc = uniformLocation(main, names[p]);
+              if (!loc) continue;
+              writeFaceUniform(i < count ? faces[i] : undefined, p, vec4);
+              gl.uniform4f(loc, vec4[0], vec4[1], vec4[2], vec4[3]);
+            }
+          }
+          sentNoFaces = count === 0;
+        }
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      };
+
+      const motion = createFaceMotion(CAMERA_MAX_FACES);
+      // set by the tracker; the next rendered frame draws the tracking copy in the same batch as the
+      // preview, so the snapshot queued right after it reads this frame (not a stale one)
+      let captureWanted: ((at: number) => void) | null = null;
+      const requestCapture = () =>
+        new Promise<number>((resolve) => {
+          captureWanted = resolve;
+        });
+
+      const perf = {
+        since: now(),
+        frames: 0,
+        stalls: 0,
+        rounds: 0,
+        interval: new Samples(1024),
+        pace: new Samples(256),
+        track: new Samples(256),
+        snap: new Samples(256),
+      };
+      const reportPerf = (t: number) => {
+        const secs = (t - perf.since) / 1000;
+        logEvent('camera_perf', {
+          tier: shaders.tier,
+          target: Math.round(1000 / FRAME_LEVELS_MS[level]),
+          fps: Math.round((perf.frames / secs) * 10) / 10,
+          p50: perf.interval.percentile(50),
+          p95: perf.interval.percentile(95),
+          trackHz: Math.round((perf.rounds / secs) * 10) / 10,
+          trackP95: perf.track.percentile(95),
+          snapP95: perf.snap.percentile(95),
+          paceP95: perf.pace.percentile(95),
+          stalls: perf.stalls,
+          faces: motion.count,
+        });
+        resetPerf(t);
+      };
+      const resetPerf = (t: number) => {
+        perf.since = t;
+        perf.frames = 0;
+        perf.stalls = 0;
+        perf.rounds = 0;
+        perf.interval.reset();
+        perf.pace.reset();
+        perf.track.reset();
+        perf.snap.reset();
+      };
+
+      let level = 0;
+      const retryAfter = FRAME_LEVELS_MS.map(() => RETRY_BASE_MS);
+      let retryAt = 0;
+      let slowChecks = 0;
+      let goodChecks = 0;
+      let behindAtSlowest = 0;
+      let lastTick = 0;
       let lastDraw = 0;
+      let lastPace = 0;
       let frames = 0;
-      let behind = 0;
+      const pace = (t: number) => {
+        const frameMs = FRAME_LEVELS_MS[level];
+        const t0 = now();
+        gl.flushEXP();
+        const waited = now() - t0;
+        perf.pace.push(waited);
+        if (waited > STALL_FLUSH_MS) {
+          stall('gl backlog', { waited: Math.round(waited), frameMs: Math.round(frameMs) });
+          return;
+        }
+        if (waited > Math.max(BEHIND_MIN_MS, frameMs * 1.5)) {
+          goodChecks = 0;
+          slowChecks += 1;
+          if (level === FRAME_LEVELS_MS.length - 1) {
+            behindAtSlowest += 1;
+            if (behindAtSlowest >= MAX_BEHIND_CHECKS) stall('gl too slow', { waited: Math.round(waited), frameMs });
+          } else if (slowChecks >= SLOW_CHECKS_TO_STEP) {
+            retryAt = t + retryAfter[level];
+            retryAfter[level] = Math.min(RETRY_MAX_MS, retryAfter[level] * 2);
+            level += 1;
+            slowChecks = 0;
+            breadcrumb('camera_rate', { fps: Math.round(1000 / FRAME_LEVELS_MS[level]), waited: Math.round(waited) });
+          }
+          return;
+        }
+        slowChecks = 0;
+        behindAtSlowest = Math.max(0, behindAtSlowest - 1);
+        goodChecks = waited < frameMs * 0.5 ? goodChecks + 1 : 0;
+        if (level > 0 && goodChecks >= GOOD_CHECKS_TO_STEP && t >= retryAt) {
+          level -= 1;
+          goodChecks = 0;
+          breadcrumb('camera_rate', { fps: Math.round(1000 / FRAME_LEVELS_MS[level]) });
+        }
+      };
+
       const frameLoop = () => {
         if (!alive) return;
         raf = requestAnimationFrame(frameLoop);
-        const now = Date.now();
-        if (now - lastDraw < frameMs - 4) return;
-        lastDraw = now;
+        const t = now();
+        if (lastTick && t - lastTick > JS_STALL_MS) perf.stalls += 1;
+        lastTick = t;
+        if (t - lastDraw < FRAME_LEVELS_MS[level] - FRAME_SLACK_MS) return;
+        if (lastDraw) perf.interval.push(t - lastDraw);
+        lastDraw = t;
         const w = gl.drawingBufferWidth;
         const h = gl.drawingBufferHeight;
+        const captured = captureWanted;
+        if (captured) {
+          captureWanted = null;
+          drawRaw();
+        }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, w, h);
-        draw(main, buildCameraUniforms(lookRef.current, facesRef.current, [w, h]));
+        const faces = motion.sample(t);
+        drawMain(faces, w, h);
         gl.endFrameEXP();
+        captured?.(t);
+        callbacks.current.onFrame?.(faces, w, t);
         frames += 1;
+        perf.frames += 1;
         if (frames === 1) breadcrumb('camera_first_draw', { ms: Date.now() - started });
-        if (frames % PACE_EVERY !== 0) return;
-        const t0 = Date.now();
-        gl.flushEXP();
-        const waited = Date.now() - t0;
-        if (waited > STALL_FLUSH_MS) {
-          stall('gl backlog', { waited, frameMs });
-        } else if (waited > BEHIND_MS) {
-          behind += 1;
-          frameMs = Math.min(SLOWEST_FRAME_MS, frameMs * 1.5);
-          if (behind >= MAX_BEHIND_CHECKS) stall('gl too slow', { waited, frameMs });
-        } else {
-          behind = Math.max(0, behind - 1);
-          frameMs = Math.max(FRAME_MS, frameMs * 0.92);
+        if (t - lastPace >= PACE_MS) {
+          lastPace = t;
+          pace(t);
         }
+        if (modeRef.current === 'live' && t - perf.since >= PERF_REPORT_MS) reportPerf(t);
       };
       frameLoop();
 
@@ -566,8 +695,10 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
       }
       breadcrumb('camera_first_frame', { ms: Date.now() - started });
       changeMode('live', shaders.tier);
+      resetPerf(now());
 
-      // Face tracking: snapshot the small raw copy, run ML Kit, map back to drawing-buffer pixels.
+      // Face tracking: snapshot the small raw copy, run ML Kit, map back to drawing-buffer pixels and
+      // feed the motion filter, which the render loop samples every frame.
       // Strictly one snapshot / detection in flight; a call that hangs pauses tracking, never stacks.
       let misses = 0;
       let lastStatus: TrackingStatus | null = null;
@@ -577,12 +708,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           callbacks.current.onTrackingChange?.(s);
         }
       };
-      const publish = () => callbacks.current.onFaces?.(facesRef.current, gl.drawingBufferWidth);
-      const clearFaces = () => {
-        if (!facesRef.current.length) return;
-        facesRef.current = [];
-        publish();
-      };
+      const clearFaces = () => motion.clear();
       while (alive) {
         if (!needsFaces(lookRef.current)) {
           clearFaces();
@@ -591,9 +717,11 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           continue;
         }
         let file: string | null = null;
-        const stepStart = Date.now();
+        const stepStart = now();
         try {
-          drawRaw();
+          const capturedAt = await requestCapture();
+          if (!alive) return;
+          const snapStart = now();
           const snap = await within(
             glView.takeSnapshotAsync({
               framebuffer: trackFbo ?? undefined,
@@ -612,6 +740,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
             continue;
           }
           if (!alive) return;
+          perf.snap.push(now() - snapStart);
           file = typeof snap.value.uri === 'string' ? snap.value.uri : snap.value.localUri;
           const detected = await within(
             detectFaces(file, {
@@ -634,17 +763,23 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
             clearFaces();
             report('unavailable');
             await sleep(2000);
-          } else if (result.faces.length > 0) {
-            misses = 0;
-            const scale = gl.drawingBufferWidth / trackW;
-            facesRef.current = smoothFaces(facesRef.current, result.faces.map((f) => scaleFace(f, scale)));
-            publish();
-            report('tracking');
           } else {
-            misses += 1;
-            if (misses >= 3) {
-              clearFaces();
-              report('searching');
+            perf.rounds += 1;
+            perf.track.push(now() - capturedAt);
+            const scale = gl.drawingBufferWidth / trackW;
+            motion.update(
+              capturedAt,
+              result.faces.map((f) => scaleFace(f, scale)),
+            );
+            if (result.faces.length > 0) {
+              misses = 0;
+              report('tracking');
+            } else {
+              misses += 1;
+              if (misses >= 3) {
+                clearFaces();
+                report('searching');
+              }
             }
           }
         } catch {
@@ -653,8 +788,10 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         } finally {
           if (file) FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
         }
-        // keep the tracker at or below half of the JS/GL budget on slow phones
-        await sleep(Math.max(TRACK_INTERVAL_MS, Date.now() - stepStart));
+        // ~15 rounds/s when a round is fast; a slow round gets a proportional rest so the tracker
+        // never takes the JS/GL budget away from rendering on slower phones
+        const elapsed = now() - stepStart;
+        await sleep(Math.max(TRACK_MIN_GAP_MS, TRACK_PERIOD_MS - elapsed, elapsed - TRACK_PERIOD_MS));
       }
     };
 
@@ -665,7 +802,6 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
-      facesRef.current = [];
       destroyTexture(cameraTexture);
     };
   }, [gl, cameraReady, useGl, shaders, holdGl, changeMode]);

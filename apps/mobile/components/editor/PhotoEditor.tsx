@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   BackHandler,
   Image,
+  PixelRatio,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,16 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Canvas, ImageFormat, Skia, drawAsImage, type SkImage } from '@shopify/react-native-skia';
+import {
+  Canvas,
+  FilterMode,
+  ImageFormat,
+  MipmapMode,
+  Skia,
+  drawAsImage,
+  type SkImage,
+  type SkRuntimeEffect,
+} from '@shopify/react-native-skia';
 import { EDITOR_FEATURES } from '@tingting/shared';
 import { loadArImages, useArImages } from '@/components/ar/ArLayer';
 import { theme } from '@/constants/theme';
@@ -37,12 +47,12 @@ import { CropView } from './CropView';
 import { TextSheet, type TextDraft } from './TextSheet';
 import { ChipRow, EmojiGrid, FilterStrip, ItemRow, Swatches, TileRow } from './panels';
 import { FILTERS, FILTER_GROUPS } from '@/lib/editor/color';
-import { detectFaces, type FaceDetectResult } from '@/lib/editor/faces';
+import { detectFaces, type FaceDetectResult, type FaceGeom } from '@/lib/editor/faces';
 import { FRAMES } from '@/lib/editor/frames';
 import { useEditHistory } from '@/lib/editor/history';
 import { prepareBaseImage, transformBase, writeJpegBase64, type CropBox } from '@/lib/editor/image';
 import type { CameraLook } from '@/lib/editor/look';
-import { buildSceneModel, hitTestItem } from '@/lib/editor/scene';
+import { createSceneModelBuilder, hitTestItem, type SceneModel } from '@/lib/editor/scene';
 import { getEditorEffect, needsEditorShader } from '@/lib/editor/shader';
 import {
   ADJUST_ITEMS,
@@ -63,6 +73,8 @@ import {
   type OverlayItem,
   type TextItem,
 } from '@/lib/editor/types';
+import { Samples, now } from '@/lib/perf';
+import type { ArImages } from '@/components/ar/ArLayer';
 
 type Props = {
   sourceUri: string;
@@ -124,6 +136,130 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
       },
     );
   });
+}
+
+const NO_FACES: FaceGeom[] = [];
+
+/** The screen draws a downscaled copy only when it is at most this fraction of the photo's size. */
+const PREVIEW_MAX_SHRINK = 0.75;
+/** preview sizes are rounded up to this step so small layout changes don't rebuild it */
+const PREVIEW_STEP_PX = 128;
+const EDITOR_PERF_MS = 10000;
+const EDITOR_PERF_MIN_SAMPLES = 5;
+
+/**
+ * Screen-sized copy of the photo for the on-screen canvas, so live edits sample (and upload) a
+ * texture the size of the display instead of the full edit base. Export always uses `image`.
+ */
+function usePreviewImage(image: SkImage | null, longEdgePx: number): SkImage | null {
+  const [preview, setPreview] = useState<{ source: SkImage; edge: number; image: SkImage } | null>(null);
+  const edge = Math.ceil(longEdgePx / PREVIEW_STEP_PX) * PREVIEW_STEP_PX;
+  useEffect(() => {
+    if (!image || edge <= 0) return;
+    const w = image.width();
+    const h = image.height();
+    const s = edge / Math.max(w, h);
+    if (s > PREVIEW_MAX_SHRINK) return;
+    const t0 = Date.now();
+    try {
+      const pw = Math.max(1, Math.round(w * s));
+      const ph = Math.max(1, Math.round(h * s));
+      const surface = Skia.Surface.MakeOffscreen(pw, ph) ?? Skia.Surface.Make(pw, ph);
+      if (!surface) return;
+      surface
+        .getCanvas()
+        .drawImageRectOptions(
+          image,
+          { x: 0, y: 0, width: w, height: h },
+          { x: 0, y: 0, width: pw, height: ph },
+          FilterMode.Linear,
+          MipmapMode.Linear,
+          null,
+        );
+      surface.flush();
+      const snapshot = surface.makeImageSnapshot();
+      // a raster copy can be drawn by any canvas regardless of which GPU context made it
+      const copy = snapshot.makeNonTextureImage() ?? snapshot;
+      breadcrumb('editor_preview_image', { ms: Date.now() - t0, w: pw, h: ph });
+      setPreview({ source: image, edge, image: copy });
+    } catch (e) {
+      breadcrumb('editor_preview_image_failed', { message: errorText(e).slice(0, 120) });
+    }
+  }, [image, edge]);
+  return preview && preview.source === image && preview.edge === edge ? preview.image : image;
+}
+
+/** Re-renders only when the picture inputs change, not for panel / tool / selection state. */
+const PreviewCanvas = memo(function PreviewCanvas({
+  width,
+  height,
+  image,
+  model,
+  effect,
+  arImages,
+  scale,
+  original,
+}: {
+  width: number;
+  height: number;
+  image: SkImage;
+  model: SceneModel;
+  effect: SkRuntimeEffect | null;
+  arImages: ArImages;
+  scale: number;
+  original: boolean;
+}) {
+  return (
+    <Canvas style={{ width, height }}>
+      <EditorScene image={image} model={model} effect={effect} arImages={arImages} scale={scale} original={original} />
+    </Canvas>
+  );
+});
+
+/**
+ * Preview latency while dragging: from the touch that changed the edit to the frame after the
+ * canvas received the new picture. Reported as `editor_perf` at most every EDITOR_PERF_MS.
+ */
+function useEditorPerf(model: SceneModel, tool: string) {
+  const ref = useRef<{ inputAt: number; samples: Samples; last: number; tool: string } | null>(null);
+  ref.current ??= { inputAt: 0, samples: new Samples(512), last: 0, tool };
+  const r = ref.current;
+  r.tool = tool;
+
+  // the canvas records its picture in its own layout effect, which runs before this one
+  useLayoutEffect(() => {
+    const at = r.inputAt;
+    if (!at) return;
+    r.inputAt = 0;
+    requestAnimationFrame(() => r.samples.push(now() - at));
+  }, [model, r]);
+
+  const mark = useCallback(
+    (at: number = now()) => {
+      if (!r.inputAt) r.inputAt = at;
+    },
+    [r],
+  );
+
+  const report = useCallback(
+    (force = false) => {
+      const t = now();
+      if (r.samples.count < EDITOR_PERF_MIN_SAMPLES || (!force && t - r.last < EDITOR_PERF_MS)) return;
+      logEvent('editor_perf', {
+        tool: r.tool,
+        n: r.samples.count,
+        p50: r.samples.percentile(50),
+        p95: r.samples.percentile(95),
+        max: r.samples.max(),
+      });
+      r.samples.reset();
+      r.last = t;
+    },
+    [r],
+  );
+
+  useEffect(() => () => report(true), [report]);
+  return { mark, report };
 }
 
 export function PhotoEditor(props: Props) {
@@ -325,9 +461,10 @@ function EditorBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.base.uri]);
   const faceResult = faceResults[state.base.uri];
-  const faces = faceResult && faceResult !== 'loading' ? faceResult.faces : [];
+  const faces = faceResult && faceResult !== 'loading' ? faceResult.faces : NO_FACES;
 
-  const model = useMemo(() => buildSceneModel(state, faces, caption), [state, faces, caption]);
+  const buildModel = useMemo(() => createSceneModelBuilder(), []);
+  const model = useMemo(() => buildModel(state, faces, caption), [buildModel, state, faces, caption]);
 
   // The beauty/effect shader is only used once it rendered correctly offscreen, and only while an
   // edit needs it; until then the photo shows through the plain image + color matrix path.
@@ -404,6 +541,21 @@ function EditorBody({
   const scale = area.width && area.height ? Math.min(area.width / layout.width, area.height / layout.height) : 0;
   const canvasW = layout.width * scale;
   const canvasH = layout.height * scale;
+  const previewImage = usePreviewImage(
+    image,
+    Math.max(layout.content.width, layout.content.height) * scale * PixelRatio.get(),
+  );
+
+  const perf = useEditorPerf(model, tool);
+  /** slider drags: live state change, already coalesced to one per frame by EditorSlider */
+  const drag = (inputAt: number, fn: (s: EditState) => EditState) => {
+    perf.mark(inputAt);
+    update(fn);
+  };
+  const endDrag = () => {
+    commit();
+    perf.report();
+  };
 
   const edited = hasEdits(state, original);
 
@@ -450,11 +602,34 @@ function EditorBody({
     return item;
   };
 
-  const patchItem = (id: string, patch: (item: OverlayItem) => Partial<OverlayItem>) => {
+  // gesture events arrive at touch rate (up to 120/s); they are merged and applied once per frame
+  const pendingPatch = useRef<{ id: string; patch: Partial<OverlayItem> } | null>(null);
+  const patchFrame = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(patchFrame.current), []);
+
+  const flushPatch = () => {
+    cancelAnimationFrame(patchFrame.current);
+    patchFrame.current = 0;
+    const p = pendingPatch.current;
+    pendingPatch.current = null;
+    if (!p) return;
     update((s) => ({
       ...s,
-      items: s.items.map((it) => (it.id === id ? ({ ...it, ...patch(it) } as OverlayItem) : it)),
+      items: s.items.map((it) => (it.id === p.id ? ({ ...it, ...p.patch } as OverlayItem) : it)),
     }));
+  };
+
+  const patchItem = (id: string, patch: Partial<OverlayItem>) => {
+    perf.mark();
+    const p = pendingPatch.current;
+    if (p && p.id !== id) flushPatch();
+    pendingPatch.current = p && p.id === id ? { id, patch: { ...p.patch, ...patch } } : { id, patch };
+    if (!patchFrame.current) patchFrame.current = requestAnimationFrame(flushPatch);
+  };
+
+  const endGesture = () => {
+    flushPatch();
+    endDrag();
   };
 
   const pan = Gesture.Pan()
@@ -472,9 +647,9 @@ function EditorBody({
       if (!start || !s) return;
       const dx = e.translationX / s / m.layout.content.width;
       const dy = e.translationY / s / m.layout.content.height;
-      patchItem(start.id, () => ({ x: start.x + dx, y: start.y + dy }));
+      patchItem(start.id, { x: start.x + dx, y: start.y + dy });
     })
-    .onEnd(() => commit());
+    .onEnd(endGesture);
 
   const pinch = Gesture.Pinch()
     .runOnJS(true)
@@ -486,9 +661,9 @@ function EditorBody({
     .onUpdate((e) => {
       const start = pinchStart.current;
       if (!start) return;
-      patchItem(start.id, () => ({ scale: Math.min(8, Math.max(0.15, start.scale * e.scale)) }));
+      patchItem(start.id, { scale: Math.min(8, Math.max(0.15, start.scale * e.scale)) });
     })
-    .onEnd(() => commit());
+    .onEnd(endGesture);
 
   const rotation = Gesture.Rotation()
     .runOnJS(true)
@@ -499,9 +674,9 @@ function EditorBody({
     .onUpdate((e) => {
       const start = rotateStart.current;
       if (!start) return;
-      patchItem(start.id, () => ({ rotation: start.rotation + e.rotation }));
+      patchItem(start.id, { rotation: start.rotation + e.rotation });
     })
-    .onEnd(() => commit());
+    .onEnd(endGesture);
 
   const tap = Gesture.Tap()
     .runOnJS(true)
@@ -669,8 +844,8 @@ function EditorBody({
             <EditorSlider
               value={state.beauty[beautyKey]}
               bipolar={beautyItem.bipolar}
-              onChange={(v) => update((s) => ({ ...s, beauty: { ...s.beauty, [beautyKey]: v } }))}
-              onComplete={commit}
+              onChange={(v, at) => drag(at, (s) => ({ ...s, beauty: { ...s.beauty, [beautyKey]: v } }))}
+              onComplete={endDrag}
               label={faceOnly && !hasFaces ? '얼굴 필요' : undefined}
             />
             <ItemRow
@@ -702,8 +877,10 @@ function EditorBody({
             )}
             <EditorSlider
               value={layer.amount}
-              onChange={(v) => update((s) => ({ ...s, makeup: { ...s.makeup, [makeupKey]: { ...s.makeup[makeupKey], amount: v } } }))}
-              onComplete={commit}
+              onChange={(v, at) =>
+                drag(at, (s) => ({ ...s, makeup: { ...s.makeup, [makeupKey]: { ...s.makeup[makeupKey], amount: v } } }))
+              }
+              onComplete={endDrag}
             />
             <ItemRow
               items={MAKEUP_ITEMS.map((m) => ({ key: m.key, label: m.label, icon: m.icon, active: state.makeup[m.key].amount > 0.001 }))}
@@ -720,15 +897,15 @@ function EditorBody({
             {state.filterId ? (
               <EditorSlider
                 value={state.filterIntensity}
-                onChange={(v) => update((s) => ({ ...s, filterIntensity: v }))}
-                onComplete={commit}
+                onChange={(v, at) => drag(at, (s) => ({ ...s, filterIntensity: v }))}
+                onComplete={endDrag}
                 label="강도"
               />
             ) : (
               <View style={{ height: 44 }} />
             )}
             <FilterStrip
-              image={image}
+              image={previewImage}
               filters={FILTERS.filter((f) => f.group === filterGroup)}
               selected={state.filterId}
               onSelect={(id) => apply((s) => ({ ...s, filterId: id, filterIntensity: id === s.filterId ? s.filterIntensity : 1 }))}
@@ -743,8 +920,8 @@ function EditorBody({
             <EditorSlider
               value={state.adjust[adjustKey]}
               bipolar={item.bipolar}
-              onChange={(v) => update((s) => ({ ...s, adjust: { ...s.adjust, [adjustKey]: v } }))}
-              onComplete={commit}
+              onChange={(v, at) => drag(at, (s) => ({ ...s, adjust: { ...s.adjust, [adjustKey]: v } }))}
+              onComplete={endDrag}
             />
             <ItemRow
               items={ADJUST_ITEMS.map((a) => ({ key: a.key, label: a.label, icon: a.icon, active: Math.abs(state.adjust[a.key]) > 0.001 }))}
@@ -760,8 +937,8 @@ function EditorBody({
             <View style={{ height: 24 }} />
             <EditorSlider
               value={state.effects[effectKey]}
-              onChange={(v) => update((s) => ({ ...s, effects: { ...s.effects, [effectKey]: v } }))}
-              onComplete={commit}
+              onChange={(v, at) => drag(at, (s) => ({ ...s, effects: { ...s.effects, [effectKey]: v } }))}
+              onComplete={endDrag}
             />
             <ItemRow
               items={EFFECT_ITEMS.map((f) => ({ key: f.key, label: f.label, icon: f.icon, active: state.effects[f.key] > 0.001 }))}
@@ -885,19 +1062,19 @@ function EditorBody({
       </View>
 
       <View style={styles.stage} onLayout={onArea}>
-        {image && scale > 0 ? (
+        {image && previewImage && scale > 0 ? (
           <GestureDetector gesture={gesture}>
             <View style={{ width: canvasW, height: canvasH }} collapsable={false}>
-              <Canvas style={{ width: canvasW, height: canvasH }}>
-                <EditorScene
-                  image={image}
-                  model={model}
-                  effect={effect}
-                  arImages={arImages}
-                  scale={scale}
-                  original={showOriginal}
-                />
-              </Canvas>
+              <PreviewCanvas
+                width={canvasW}
+                height={canvasH}
+                image={previewImage}
+                model={model}
+                effect={effect}
+                arImages={arImages}
+                scale={scale}
+                original={showOriginal}
+              />
               {selectedDraw && !showOriginal ? (
                 <View
                   pointerEvents="none"

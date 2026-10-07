@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   BlurMask,
   Circle,
@@ -24,7 +25,7 @@ import {
 } from '@shopify/react-native-skia';
 import { ArLayer, type ArImages } from '@/components/ar/ArLayer';
 import type { FrameLayout } from '@/lib/editor/frames';
-import type { Caption, Glyph, ItemDraw, LensPart, SceneModel } from '@/lib/editor/scene';
+import type { Caption as CaptionModel, Glyph, ItemDraw, LensPart, SceneModel } from '@/lib/editor/scene';
 
 type Props = {
   image: SkImage;
@@ -89,7 +90,7 @@ function ItemShape({ item }: { item: ItemDraw }) {
   );
 }
 
-function CaptionRow({ layout, caption }: { layout: FrameLayout; caption: Caption }) {
+function CaptionRow({ layout, caption }: { layout: FrameLayout; caption: CaptionModel }) {
   const { content } = layout;
   const bandTop = content.y + content.height;
   const bandHeight = layout.height - bandTop;
@@ -271,36 +272,95 @@ function FrameForeground({ layout }: { layout: FrameLayout }) {
   return null;
 }
 
+const Photo = memo(function Photo({
+  image,
+  effect,
+  uniforms,
+  matrix,
+  width,
+  height,
+  original,
+}: {
+  image: SkImage;
+  effect: SkRuntimeEffect | null;
+  uniforms: SceneModel['uniforms'];
+  matrix: SceneModel['matrix'];
+  width: number;
+  height: number;
+  original?: boolean;
+}) {
+  if (original) return <Image image={image} x={0} y={0} width={width} height={height} fit="fill" />;
+  if (effect) {
+    return (
+      <Rect x={0} y={0} width={width} height={height}>
+        <Shader source={effect} uniforms={uniforms}>
+          <ImageShader image={image} fit="fill" rect={{ x: 0, y: 0, width, height }} />
+        </Shader>
+        <ColorMatrix matrix={matrix} />
+      </Rect>
+    );
+  }
+  return (
+    <Image image={image} x={0} y={0} width={width} height={height} fit="fill">
+      <ColorMatrix matrix={matrix} />
+    </Image>
+  );
+});
+
+const Lens = memo(function Lens({ lens }: { lens: LensPart[] }) {
+  return (
+    <>
+      {lens.map((part, i) => (
+        <LensShape key={i} part={part} />
+      ))}
+    </>
+  );
+});
+
+const Items = memo(function Items({ items, hideItemId }: { items: ItemDraw[]; hideItemId?: string | null }) {
+  return (
+    <>
+      {items
+        .filter((item) => item.id !== hideItemId)
+        .map((item) => (
+          <ItemShape key={item.id} item={item} />
+        ))}
+    </>
+  );
+});
+
+const Background = memo(FrameBackground);
+const Foreground = memo(FrameForeground);
+const Caption = memo(CaptionRow);
+const Ar = memo(ArLayer);
+
+/**
+ * The parts are memoized on the scene model's sub-objects, which `createSceneModelBuilder` keeps
+ * stable while unchanged, so a slider tick re-renders only the photo node.
+ */
 export function EditorScene({ image, model, effect, arImages, scale, original, hideItemId }: Props) {
   const { layout } = model;
   const { content } = layout;
   const clip = rrect(rect(0, 0, content.width, content.height), layout.radius, layout.radius);
   return (
     <Group transform={[{ scale }]}>
-      <FrameBackground layout={layout} />
-      {!original ? <CaptionRow layout={layout} caption={model.caption} /> : null}
+      <Background layout={layout} />
+      {!original ? <Caption layout={layout} caption={model.caption} /> : null}
       <Group transform={[{ translateX: content.x }, { translateY: content.y }]} clip={clip}>
-        {original ? (
-          <Image image={image} x={0} y={0} width={content.width} height={content.height} fit="fill" />
-        ) : effect ? (
-          <Rect x={0} y={0} width={content.width} height={content.height}>
-            <Shader source={effect} uniforms={model.uniforms}>
-              <ImageShader image={image} fit="fill" rect={{ x: 0, y: 0, width: content.width, height: content.height }} />
-            </Shader>
-            <ColorMatrix matrix={model.matrix} />
-          </Rect>
-        ) : (
-          <Image image={image} x={0} y={0} width={content.width} height={content.height} fit="fill">
-            <ColorMatrix matrix={model.matrix} />
-          </Image>
-        )}
-        {!original ? model.lens.map((part, i) => <LensShape key={i} part={part} />) : null}
-        {!original && arImages && model.ar.length ? <ArLayer ops={model.ar} images={arImages} /> : null}
+        <Photo
+          image={image}
+          effect={effect}
+          uniforms={model.uniforms}
+          matrix={model.matrix}
+          width={content.width}
+          height={content.height}
+          original={original}
+        />
+        {!original ? <Lens lens={model.lens} /> : null}
+        {!original && arImages && model.ar.length ? <Ar ops={model.ar} images={arImages} /> : null}
       </Group>
-      <FrameForeground layout={layout} />
-      {!original
-        ? model.items.filter((item) => item.id !== hideItemId).map((item) => <ItemShape key={item.id} item={item} />)
-        : null}
+      <Foreground layout={layout} />
+      {!original ? <Items items={model.items} hideItemId={hideItemId} /> : null}
     </Group>
   );
 }

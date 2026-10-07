@@ -330,23 +330,58 @@ function buildCaption(layout: FrameLayout, caption: string | undefined): Caption
   return { main, sub };
 }
 
-export function buildSceneModel(state: EditState, faces: FaceGeom[], caption?: string): SceneModel {
-  const layout = frameLayout(state.frameId, state.base.width, state.base.height);
-  const look = getFilterLook(state.filterId);
-  return {
-    layout,
-    uniforms: buildUniforms(state, faces, look),
-    matrix: buildColorMatrix(state.filterId, state.filterIntensity, state.adjust),
-    items: buildItems(state, layout),
-    lens: buildLens(state, faces),
-    ar: layoutArEffect(state.arId, {
-      width: state.base.width,
-      height: state.base.height,
-      time: STILL_TIME,
-      faces: faces.map((face) => ({ face, presence: 1 })),
-    }),
-    caption: buildCaption(layout, caption),
+type SceneInputs = { state: EditState; faces: FaceGeom[]; caption?: string };
+
+/**
+ * Builds scene models incrementally: every part whose inputs are unchanged (by identity) is reused
+ * from the previous model, so a slider drag only rebuilds the uniforms or the color matrix, and the
+ * memoized scene components for everything else skip re-rendering.
+ */
+export function createSceneModelBuilder() {
+  let prev: (SceneInputs & { model: SceneModel }) | null = null;
+  return (state: EditState, faces: FaceGeom[], caption?: string): SceneModel => {
+    const last = prev;
+    const p = last?.state;
+    const m = last?.model;
+    const sameBase = p?.base === state.base;
+    const sameFaces = sameBase && last?.faces === faces;
+    const sameFilter = p?.filterId === state.filterId && p?.filterIntensity === state.filterIntensity;
+
+    const layout =
+      m && sameBase && p?.frameId === state.frameId ? m.layout : frameLayout(state.frameId, state.base.width, state.base.height);
+    const uniforms =
+      m &&
+      sameFaces &&
+      sameFilter &&
+      p?.beauty === state.beauty &&
+      p.makeup === state.makeup &&
+      p.adjust === state.adjust &&
+      p.effects === state.effects
+        ? m.uniforms
+        : buildUniforms(state, faces, getFilterLook(state.filterId));
+    const matrix =
+      m && sameFilter && p?.adjust === state.adjust ? m.matrix : buildColorMatrix(state.filterId, state.filterIntensity, state.adjust);
+    const items = m && p?.items === state.items && m.layout === layout ? m.items : buildItems(state, layout);
+    const lens = m && sameFaces && p?.lensId === state.lensId ? m.lens : buildLens(state, faces);
+    const ar =
+      m && sameFaces && p?.arId === state.arId
+        ? m.ar
+        : layoutArEffect(state.arId, {
+            width: state.base.width,
+            height: state.base.height,
+            time: STILL_TIME,
+            faces: faces.map((face) => ({ face, presence: 1 })),
+          });
+    const captionModel = m && m.layout === layout && last?.caption === caption ? m.caption : buildCaption(layout, caption);
+
+    const model = { layout, uniforms, matrix, items, lens, ar, caption: captionModel };
+    prev = { state, faces, caption, model };
+    return model;
   };
+}
+
+export function buildSceneModel(state: EditState, faces: FaceGeom[], caption?: string): SceneModel {
+  return createSceneModelBuilder()(state, faces, caption);
 }
 
 /** Topmost overlay item under a point given in layout units. */

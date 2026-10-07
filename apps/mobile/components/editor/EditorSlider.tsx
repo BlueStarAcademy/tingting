@@ -1,12 +1,17 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PanResponder, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { theme } from '@/constants/theme';
+import { now } from '@/lib/perf';
 
 type Props = {
   value: number;
   /** bipolar sliders run -1..1 with the thumb resting in the middle */
   bipolar?: boolean;
-  onChange: (value: number) => void;
+  /**
+   * At most once per animation frame while dragging (the latest value wins), and once more with the
+   * final value before `onComplete`. `inputAt` is when the touch that produced it arrived.
+   */
+  onChange: (value: number, inputAt: number) => void;
   onComplete: () => void;
   label?: string;
 };
@@ -15,38 +20,67 @@ const THUMB = 22;
 
 export function EditorSlider({ value, bipolar = false, onChange, onComplete, label }: Props) {
   const [width, setWidth] = useState(0);
+  // the thumb follows the finger locally; the (heavier) parent update is coalesced per frame
+  const [dragValue, setDragValue] = useState<number | null>(null);
   const widthRef = useRef(0);
   const startRef = useRef(0);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-  const handlers = useRef({ onChange, onComplete });
-  handlers.current = { onChange, onComplete };
+  const handlers = useRef({ onChange, onComplete, bipolar });
+  handlers.current = { onChange, onComplete, bipolar };
+  const pending = useRef<{ value: number; at: number } | null>(null);
+  const lastSent = useRef<number | null>(null);
+  const raf = useRef(0);
 
-  const min = bipolar ? -1 : 0;
-  const toX = (v: number) => ((v - min) / (1 - min)) * widthRef.current;
-  const fromX = (x: number) => {
-    const w = widthRef.current || 1;
-    const v = min + (Math.min(w, Math.max(0, x)) / w) * (1 - min);
-    if (bipolar && Math.abs(v) < 0.04) return 0;
-    return Math.round(v * 100) / 100;
-  };
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  const minOf = (isBipolar: boolean) => (isBipolar ? -1 : 0);
+  const toX = (v: number) => ((v - minOf(bipolar)) / (1 - minOf(bipolar))) * widthRef.current;
 
   const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => {
-        const x = evt.nativeEvent.locationX - THUMB / 2;
-        startRef.current = x;
-        handlers.current.onChange(fromX(x));
-      },
-      onPanResponderMove: (_evt, g) => {
-        handlers.current.onChange(fromX(startRef.current + g.dx));
-      },
-      onPanResponderRelease: () => handlers.current.onComplete(),
-      onPanResponderTerminate: () => handlers.current.onComplete(),
-    }),
+    (() => {
+      const fromX = (x: number) => {
+        const isBipolar = handlers.current.bipolar;
+        const min = minOf(isBipolar);
+        const w = widthRef.current || 1;
+        const v = min + (Math.min(w, Math.max(0, x)) / w) * (1 - min);
+        if (isBipolar && Math.abs(v) < 0.04) return 0;
+        return Math.round(v * 100) / 100;
+      };
+      const send = () => {
+        raf.current = 0;
+        const p = pending.current;
+        pending.current = null;
+        if (p) handlers.current.onChange(p.value, p.at);
+      };
+      const input = (x: number) => {
+        const v = fromX(x);
+        if (v === lastSent.current) return;
+        lastSent.current = v;
+        setDragValue(v);
+        // keep the time of the first touch the next frame will reflect
+        pending.current = { value: v, at: pending.current?.at ?? now() };
+        if (!raf.current) raf.current = requestAnimationFrame(send);
+      };
+      const end = () => {
+        cancelAnimationFrame(raf.current);
+        send();
+        lastSent.current = null;
+        setDragValue(null);
+        handlers.current.onComplete();
+      };
+      return PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (evt) => {
+          const x = evt.nativeEvent.locationX - THUMB / 2;
+          startRef.current = x;
+          input(x);
+        },
+        onPanResponderMove: (_evt, g) => input(startRef.current + g.dx),
+        onPanResponderRelease: end,
+        onPanResponderTerminate: end,
+      });
+    })(),
   ).current;
 
   const onLayout = (e: LayoutChangeEvent) => {
@@ -55,11 +89,12 @@ export function EditorSlider({ value, bipolar = false, onChange, onComplete, lab
     setWidth(w);
   };
 
-  const thumbX = width > 0 ? toX(value) : 0;
+  const shownValue = dragValue ?? value;
+  const thumbX = width > 0 ? toX(shownValue) : 0;
   const zeroX = width > 0 ? toX(0) : 0;
   const fillLeft = Math.min(zeroX, thumbX);
   const fillWidth = Math.abs(thumbX - zeroX);
-  const shown = Math.round(value * 100);
+  const shown = Math.round(shownValue * 100);
 
   return (
     <View style={styles.row}>

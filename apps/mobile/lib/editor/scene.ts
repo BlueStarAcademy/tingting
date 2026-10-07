@@ -5,7 +5,7 @@ import {
   type SkParagraph,
   type SkTextShadow,
 } from '@shopify/react-native-skia';
-import { STILL_TIME, layoutArEffect, type ArOp } from '@/lib/ar/effects';
+import { STILL_TIME, applyArWarp, layoutArEffect, type ArOp } from '@/lib/ar/effects';
 import { buildColorMatrix, getFilterLook, type ColorMatrix } from './color';
 import type { FaceGeom, Vec } from './faces';
 import { frameLayout, type FrameLayout } from './frames';
@@ -356,9 +356,10 @@ export function createSceneModelBuilder() {
       p?.beauty === state.beauty &&
       p.makeup === state.makeup &&
       p.adjust === state.adjust &&
-      p.effects === state.effects
+      p.effects === state.effects &&
+      p.arId === state.arId
         ? m.uniforms
-        : buildUniforms(state, faces, getFilterLook(state.filterId));
+        : buildUniforms({ ...state, beauty: applyArWarp(state.beauty, state.arId) }, faces, getFilterLook(state.filterId));
     const matrix =
       m && sameFilter && p?.adjust === state.adjust ? m.matrix : buildColorMatrix(state.filterId, state.filterIntensity, state.adjust);
     const items = m && p?.items === state.items && m.layout === layout ? m.items : buildItems(state, layout);

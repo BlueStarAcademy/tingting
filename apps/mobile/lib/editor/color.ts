@@ -170,6 +170,23 @@ const LOOKS: Record<string, FilterLook> = {
   portrait: look(chain(brightness(0.15), saturation(-0.05), warmth(0.1)), { glow: 0.2, vignette: 0.2 }),
   cinematic: look(chain(channels(1.03, 1, 0.95, 0, 0.015, 0.04), contrast(0.28), saturation(-0.08)), { vignette: 0.35 }),
   dehaze: look(chain(contrast(0.35), saturation(0.15), brightness(-0.03))),
+  cream: look(chain(brightness(0.2), warmth(0.15), saturation(-0.12), lift(0.04)), { glow: 0.2 }),
+  peach: look(chain(tint(0.3), warmth(0.35), brightness(0.15)), { glow: 0.1 }),
+  lavender: look(chain(tint(0.3), warmth(-0.2), brightness(0.12)), { glow: 0.15 }),
+  retro: look(chain(lerpMatrix(SEPIA, 0.25), contrast(0.1), warmth(0.3), channels(1.04, 0.98, 0.9)), {
+    fade: 0.2,
+    vignette: 0.35,
+    grain: 0.35,
+  }),
+  disposable: look(chain(lift(0.05), warmth(0.2), contrast(0.08), saturation(-0.1), channels(1.02, 1, 0.95, 0, 0.01, 0.03)), {
+    fade: 0.12,
+    vignette: 0.2,
+    grain: 0.4,
+  }),
+  manga: look(chain(GRAY, contrast(0.6), brightness(0.05)), { vignette: 0.2, grain: 0.15 }),
+  maple: look(chain(warmth(0.6), channels(1.08, 0.98, 0.88), saturation(0.25), contrast(0.08))),
+  ocean: look(chain(warmth(-0.45), saturation(0.35), channels(0.95, 1.02, 1.08, 0, 0.01, 0.02), brightness(0.05))),
+  night_view: look(chain(warmth(-0.25), contrast(0.3), saturation(0.25), tint(0.1)), { glow: 0.3 }),
 };
 
 export type FilterOption = {

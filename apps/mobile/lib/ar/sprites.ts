@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+import { AR_SPRITES_V2 } from './sprites-v2';
 
-/** Transparent sticker art for the AR face effects, with pixel sizes for aspect ratios. */
-export const AR_SPRITES = {
+const AR_SPRITES_V1 = {
   bunny_ears: { src: require('../../assets/ar/bunny_ears.png'), w: 388, h: 318 },
   cat_ears: { src: require('../../assets/ar/cat_ears.png'), w: 416, h: 242 },
   bear_ears: { src: require('../../assets/ar/bear_ears.png'), w: 444, h: 203 },
@@ -28,6 +28,9 @@ export const AR_SPRITES = {
   p_petal: { src: require('../../assets/ar/p_petal.png'), w: 160, h: 159 },
   p_snow: { src: require('../../assets/ar/p_snow.png'), w: 139, h: 160 },
 } as const;
+
+/** Transparent sticker art for the AR face effects, with pixel sizes for aspect ratios. */
+export const AR_SPRITES = { ...AR_SPRITES_V1, ...AR_SPRITES_V2 };
 
 export type SpriteId = keyof typeof AR_SPRITES;
 

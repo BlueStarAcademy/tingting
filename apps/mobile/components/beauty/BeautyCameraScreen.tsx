@@ -21,7 +21,7 @@ import { theme } from '@/constants/theme';
 import { ArLiveOverlay, type ArLiveHandle } from '@/components/ar/ArLiveOverlay';
 import { EditorSlider } from '@/components/editor/EditorSlider';
 import { ChipRow, ItemRow } from '@/components/editor/panels';
-import { AR_EFFECTS, getArEffect } from '@/lib/ar/effects';
+import { AR_TABS, arEffectsInTab, arTabOf, getArEffect, type ArCategory } from '@/lib/ar/effects';
 import { AR_SPRITES } from '@/lib/ar/sprites';
 import { translate as t } from '@/lib/i18n/translations';
 import {
@@ -33,6 +33,7 @@ import {
   saveCameraLook,
   type CameraLook,
 } from '@/lib/editor/look';
+import { MAKEUP_LOOKS, matchingMakeupLook, withMakeupLook } from '@/lib/editor/makeup-looks';
 import { BEAUTY_ITEMS, BEAUTY_PRESETS, EMPTY_BEAUTY, FACE_ONLY_BEAUTY, type BeautyKey } from '@/lib/editor/types';
 import { pickGalleryPhoto } from '@/lib/pick-photo';
 import { loadCameraSafeMode, saveCameraSafeMode, takeUnfinishedLiveSession, type CameraSafeMode } from '@/lib/camera-safe-mode';
@@ -117,6 +118,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const [look, setLook] = useState<CameraLook>(DEFAULT_CAMERA_LOOK);
   const [panel, setPanel] = useState<Panel>(null);
   const [item, setItem] = useState<ItemKey>('smooth');
+  const [arTab, setArTab] = useState<ArCategory | 'new' | null>(null);
   const [comparing, setComparing] = useState(false);
   const [mode, setMode] = useState<LiveMode>('starting');
   const [tracking, setTracking] = useState<TrackingStatus>('off');
@@ -322,6 +324,7 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const activePreset = matchingPreset(look);
   const currentItem = ITEMS.find((i) => i.key === item) ?? ITEMS[0];
   const arEffect = getArEffect(look.effectId);
+  const arTabNow = arTab ?? arTabOf(look.effectId);
 
   const safeOn = !!safe?.on;
   const status = (() => {
@@ -341,17 +344,24 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
         : null;
   const arHint = (() => {
     if (!arEffect) return t('ar.pickHint');
+    if (arEffect.category === 'mood') return t('ar.moodHint');
     if (!arEffect.ambient || arEffect.trigger) {
       if (mode === 'fallback' || tracking === 'unavailable') return t('ar.afterShot');
       if (tracking !== 'tracking') return t('ar.showFace');
     }
-    return arEffect.trigger ? t(`ar.trigger.${arEffect.trigger}`) : t('ar.multiFace');
+    if (arEffect.trigger) return t(`ar.trigger.${arEffect.trigger}`);
+    return arEffect.category === 'couple' ? t('ar.coupleHint') : t('ar.multiFace');
   })();
 
   const renderPanel = () => {
     if (panel === 'beauty') {
       return (
         <View style={styles.panel}>
+          <ChipRow
+            options={MAKEUP_LOOKS.map((l) => ({ key: l.id, label: `💄 ${l.label}` }))}
+            value={matchingMakeupLook(look)}
+            onChange={(id) => changeLook(withMakeupLook(look, id))}
+          />
           <ChipRow
             options={BEAUTY_PRESETS.map((p) => ({ key: p.id, label: p.id === 'none' ? '초기화' : p.label }))}
             value={activePreset}
@@ -409,9 +419,14 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
           <Text style={styles.panelHint} numberOfLines={1}>
             {arHint}
           </Text>
+          <ChipRow
+            options={AR_TABS.map((tab) => ({ key: tab.id, label: t(tab.labelKey) }))}
+            value={arTabNow}
+            onChange={(id) => setArTab(id as ArCategory | 'new')}
+          />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.arRow}>
             <ArThumb label={t('ar.none')} on={!look.effectId} onPress={() => changeLook({ ...look, effectId: null })} />
-            {AR_EFFECTS.map((e) => (
+            {arEffectsInTab(arTabNow).map((e) => (
               <ArThumb
                 key={e.id}
                 label={t(e.labelKey)}

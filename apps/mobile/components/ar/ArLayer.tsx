@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FilterMode, Group, Image, MipmapMode, Skia, loadData, type SkImage } from '@shopify/react-native-skia';
 import type { ArOp } from '@/lib/ar/effects';
-import { AR_SPRITES, SPRITE_IDS, type SpriteId } from '@/lib/ar/sprites';
+import { AR_SPRITES, type SpriteId } from '@/lib/ar/sprites';
 
 export type ArImages = Partial<Record<SpriteId, SkImage>>;
 
@@ -34,21 +34,21 @@ export async function loadArSprites(ids: readonly SpriteId[]): Promise<ArImages>
   return { ...loaded };
 }
 
-export function loadArImages(): Promise<ArImages> {
-  return loadArSprites(SPRITE_IDS);
-}
+export const arSpritesOf = (ops: readonly ArOp[]): SpriteId[] => Array.from(new Set(ops.map((op) => op.sprite)));
 
-/** Decoded sticker art, loaded once per app session. */
-export function useArImages(enabled = true): ArImages {
+/** Decoded art for the sprites these ops draw; each sprite is decoded once per app session. */
+export function useArImages(ops: readonly ArOp[]): ArImages {
   const [images, setImages] = useState<ArImages>(() => ({ ...loaded }));
+  const key = arSpritesOf(ops).sort().join(',');
   useEffect(() => {
-    if (!enabled) return;
+    if (!key) return;
+    const ids = key.split(',') as SpriteId[];
     let alive = true;
-    loadArImages().then((next) => alive && setImages(next));
+    loadArSprites(ids).then((next) => alive && setImages(next));
     return () => {
       alive = false;
     };
-  }, [enabled]);
+  }, [key]);
   return images;
 }
 

@@ -1,3 +1,4 @@
+import { applyArWarp } from '@/lib/ar/effects-v2';
 import { buildColorMatrix, getFilterLook } from './color';
 import { FACE_PARTS } from './beauty-core';
 import type { FaceGeom } from './faces';
@@ -16,7 +17,7 @@ export type CameraUniforms = Record<string, number | number[]>;
 
 /** Look uniforms for the live camera shader (faces are sent separately); `size` is the drawing buffer in pixels. */
 export function cameraLookUniforms(look: CameraLook, size: [number, number]): CameraUniforms {
-  const b = look.beauty;
+  const b = applyArWarp(look.beauty, look.effectId);
   const k = look.filterId ? look.filterIntensity : 0;
   const extras = getFilterLook(look.filterId);
   const m = buildColorMatrix(look.filterId, k, EMPTY_ADJUST);
@@ -28,8 +29,8 @@ export function cameraLookUniforms(look: CameraLook, size: [number, number]): Ca
     uBeauty1: [b.smooth, b.whiten, b.tone, b.slim],
     uBeauty2: [b.jaw, b.eyes, b.nose, b.cheek],
     uBeauty3: [b.chin, look.lip, look.blush, 0],
-    uLipCol: LIP_COLOR,
-    uBlushCol: BLUSH_COLOR,
+    uLipCol: look.lipColor ? hexToRgb(look.lipColor) : LIP_COLOR,
+    uBlushCol: look.blushColor ? hexToRgb(look.blushColor) : BLUSH_COLOR,
     uColorMat: mat,
     uColorOff: [m[4], m[9], m[14], m[19]],
     uFinish: [(extras?.fade ?? 0) * k, (extras?.vignette ?? 0) * k, (extras?.grain ?? 0) * k, (extras?.glow ?? 0) * k],

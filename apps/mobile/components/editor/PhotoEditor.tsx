@@ -27,9 +27,9 @@ import {
   type SkRuntimeEffect,
 } from '@shopify/react-native-skia';
 import { EDITOR_FEATURES } from '@tingting/shared';
-import { loadArImages, useArImages } from '@/components/ar/ArLayer';
+import { arSpritesOf, loadArSprites, useArImages } from '@/components/ar/ArLayer';
 import { theme } from '@/constants/theme';
-import { AR_EFFECTS } from '@/lib/ar/effects';
+import { AR_TABS, arEffectsInTab, arTabOf, type ArCategory } from '@/lib/ar/effects';
 import { AR_SPRITES } from '@/lib/ar/sprites';
 import { translate } from '@/lib/i18n/translations';
 import { breadcrumb, checkpoint, logEvent } from '@/lib/diagnostics';
@@ -52,6 +52,7 @@ import { FRAMES } from '@/lib/editor/frames';
 import { useEditHistory } from '@/lib/editor/history';
 import { prepareBaseImage, transformBase, writeJpegBase64, type CropBox } from '@/lib/editor/image';
 import type { CameraLook } from '@/lib/editor/look';
+import { MAKEUP_LOOKS, getMakeupLook, matchingMakeupLook, type MakeupLook } from '@/lib/editor/makeup-looks';
 import { createSceneModelBuilder, hitTestItem, type SceneModel } from '@/lib/editor/scene';
 import { getEditorEffect, needsEditorShader } from '@/lib/editor/shader';
 import {
@@ -399,8 +400,8 @@ function initialState(
     state.beauty = { ...look.beauty };
     state.makeup = {
       ...state.makeup,
-      lip: { ...state.makeup.lip, amount: look.lip },
-      blush: { ...state.makeup.blush, amount: look.blush },
+      lip: { color: look.lipColor ?? state.makeup.lip.color, amount: look.lip },
+      blush: { color: look.blushColor ?? state.makeup.blush.color, amount: look.blush },
     };
     if (look.filterId && FILTERS.some((f) => f.id === look.filterId)) {
       state.filterId = look.filterId;
@@ -422,6 +423,16 @@ function applyPreset(state: EditState, preset: (typeof BEAUTY_PRESETS)[number]):
     lip: { ...state.makeup.lip, amount: preset.makeup?.lip ?? 0 },
     blush: { ...state.makeup.blush, amount: preset.makeup?.blush ?? 0 },
   };
+  return state;
+}
+
+function applyMakeupLook(state: EditState, look: MakeupLook): EditState {
+  state.beauty = { ...look.beauty };
+  state.makeup = { ...state.makeup, lip: { ...look.lip }, blush: { ...look.blush } };
+  if (look.filterId && FILTERS.some((f) => f.id === look.filterId)) {
+    state.filterId = look.filterId;
+    state.filterIntensity = look.filterIntensity;
+  }
   return state;
 }
 
@@ -523,7 +534,8 @@ function EditorBody({
   };
 
   const [tool, setTool] = useState<Tool>('beauty');
-  const arImages = useArImages(!!state.arId || tool === 'lens');
+  const arImages = useArImages(model.ar);
+  const [lensTab, setLensTab] = useState<ArCategory | 'new' | null>(null);
   const [beautyKey, setBeautyKey] = useState<BeautyKey>('smooth');
   const [makeupKey, setMakeupKey] = useState<MakeupKey>('blush');
   const [adjustKey, setAdjustKey] = useState<AdjustKey>('brightness');
@@ -791,7 +803,7 @@ function EditorBody({
     if (!image) return;
     setSaving(true);
     try {
-      const sprites = state.arId ? await loadArImages() : arImages;
+      const sprites = model.ar.length ? await loadArSprites(arSpritesOf(model.ar)) : arImages;
       let exportEffect = effect;
       if (!exportEffect && wantsEffect && !fxOff.off) {
         const fx = getEditorEffect();
@@ -822,6 +834,7 @@ function EditorBody({
     return '이 앱 버전에서는 얼굴 인식을 쓸 수 없어요 · 새 APK로 업데이트해 주세요';
   })();
   const hasFaces = faces.length > 0;
+  const lensTabNow = lensTab ?? (state.lensId === TRAVEL_STAMP ? 'travel' : arTabOf(state.arId));
 
   const renderPanel = () => {
     switch (tool) {
@@ -860,7 +873,22 @@ function EditorBody({
         const item = MAKEUP_ITEMS.find((m) => m.key === makeupKey) ?? MAKEUP_ITEMS[0];
         const layer = state.makeup[makeupKey];
         return (
-          <View style={styles.panelInner}>
+          <View style={[styles.panelInner, { gap: 0 }]}>
+            <ChipRow
+              options={MAKEUP_LOOKS.map((l) => ({ key: l.id, label: `💄 ${l.label}` }))}
+              value={matchingMakeupLook({
+                beauty: state.beauty,
+                lip: state.makeup.lip.amount,
+                blush: state.makeup.blush.amount,
+                lipColor: state.makeup.lip.color,
+                blushColor: state.makeup.blush.color,
+                filterId: state.filterId,
+              })}
+              onChange={(id) => {
+                const look = getMakeupLook(id);
+                if (look) apply((s) => applyMakeupLook({ ...s }, look));
+              }}
+            />
             {hasFaces ? (
               <Swatches
                 colors={item.palette}
@@ -975,16 +1003,23 @@ function EditorBody({
             <Text style={styles.hint} numberOfLines={1}>
               {faceStatus}
             </Text>
+            <ChipRow
+              options={AR_TABS.map((tab) => ({ key: tab.id, label: translate(tab.labelKey) }))}
+              value={lensTabNow}
+              onChange={(id) => setLensTab(id as ArCategory | 'new')}
+            />
             <TileRow
               tiles={[
                 { key: 'none', label: translate('ar.none'), icon: '🚫' },
-                ...AR_EFFECTS.map((e) => ({
+                ...arEffectsInTab(lensTabNow).map((e) => ({
                   key: e.id,
                   label: translate(e.labelKey),
                   image: AR_SPRITES[e.thumb].src,
                   disabled: !hasFaces && !e.ambient,
                 })),
-                { key: TRAVEL_STAMP, label: translate('ar.travelStamp'), icon: STAMP_ICON },
+                ...(lensTabNow === 'travel' || state.lensId === TRAVEL_STAMP
+                  ? [{ key: TRAVEL_STAMP, label: translate('ar.travelStamp'), icon: STAMP_ICON }]
+                  : []),
               ]}
               selected={state.arId ?? state.lensId ?? 'none'}
               onSelect={(key) =>

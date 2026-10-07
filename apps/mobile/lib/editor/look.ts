@@ -12,7 +12,12 @@ export type CameraLook = {
   filterIntensity: number;
   /** AR face effect (stickers that follow the face) */
   effectId: string | null;
+  /** makeup shades picked by a makeup look; the first palette color when unset */
+  lipColor?: string;
+  blushColor?: string;
 };
+
+const HEX = /^#[0-9A-Fa-f]{6}$/;
 
 export function presetLook(presetId: string, base?: CameraLook): CameraLook {
   const preset = BEAUTY_PRESETS.find((p) => p.id === presetId) ?? BEAUTY_PRESETS[0];
@@ -53,6 +58,8 @@ export function encodeLook(look: CameraLook): string {
     f: look.filterId,
     i: round(look.filterIntensity),
     e: look.effectId,
+    lc: look.lipColor,
+    bc: look.blushColor,
   });
 }
 
@@ -66,6 +73,8 @@ export function decodeLook(raw: string | null | undefined): CameraLook | null {
       f?: unknown;
       i?: unknown;
       e?: unknown;
+      lc?: unknown;
+      bc?: unknown;
     };
     const beauty = { ...EMPTY_BEAUTY };
     for (const k of Object.keys(EMPTY_BEAUTY) as BeautyKey[]) beauty[k] = num(o.b?.[k], -1, 1, 0);
@@ -77,6 +86,8 @@ export function decodeLook(raw: string | null | undefined): CameraLook | null {
       filterId,
       filterIntensity: num(o.i, 0, 1, 1),
       effectId: typeof o.e === 'string' && getArEffect(o.e) ? o.e : null,
+      lipColor: typeof o.lc === 'string' && HEX.test(o.lc) ? o.lc : undefined,
+      blushColor: typeof o.bc === 'string' && HEX.test(o.bc) ? o.bc : undefined,
     };
   } catch {
     return null;
@@ -100,18 +111,27 @@ export function saveCameraLook(look: CameraLook): void {
 /** SNOW-style quick filters shown on the camera; ids come from the shared editor filter list. */
 export const CAMERA_FILTER_IDS = [
   'ai_bbosyap',
+  'filter_cream',
+  'filter_peach',
   'filter_soft_clean',
   'filter_peach_skin',
   'filter_rosy',
   'filter_porcelain',
   'filter_clean_k',
   'filter_aegyo',
+  'filter_lavender',
   'filter_dreamy',
   'filter_latte',
+  'filter_retro',
+  'filter_disposable',
   'filter_kodak_gold',
   'filter_film',
+  'filter_maple',
+  'filter_ocean',
   'filter_jeju_sea',
+  'filter_night_view',
   'filter_mono',
+  'filter_manga',
 ];
 
 export const CAMERA_FILTERS = CAMERA_FILTER_IDS.map((id) => getFilter(id)).filter(

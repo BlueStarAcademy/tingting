@@ -60,6 +60,15 @@ const filters: FeatureSeed[] = [
   { id: 'filter_daily_cam', name: { ko: '일상캠', en: 'Daily Cam' }, previewColor: '#E2E8F0', effectKey: 'daily_cam', group: { ko: 'K-감성', en: 'K-Mood' } },
   { id: 'filter_aegyo', name: { ko: '애교톤', en: 'Aegyo Tone' }, previewColor: '#FBCFE8', effectKey: 'aegyo', group: { ko: 'K-감성', en: 'K-Mood' } },
   { id: 'filter_clean_k', name: { ko: '청순', en: 'Clean K' }, previewColor: '#DBEAFE', effectKey: 'clean_k', group: { ko: 'K-감성', en: 'K-Mood' } },
+  { id: 'filter_cream', name: { ko: '크림', en: 'Cream' }, previewColor: '#FFF1DC', effectKey: 'cream', group: { ko: '셀피', en: 'Selfie' } },
+  { id: 'filter_peach', name: { ko: '복숭아', en: 'Peach' }, previewColor: '#FFB59E', effectKey: 'peach', group: { ko: '셀피', en: 'Selfie' } },
+  { id: 'filter_lavender', name: { ko: '라벤더', en: 'Lavender' }, previewColor: '#C7B8F5', effectKey: 'lavender', group: { ko: '셀피', en: 'Selfie' } },
+  { id: 'filter_retro', name: { ko: '레트로', en: 'Retro' }, previewColor: '#C98B4B', effectKey: 'retro', group: { ko: '필름', en: 'Film' } },
+  { id: 'filter_disposable', name: { ko: '일회용카메라', en: 'Disposable' }, previewColor: '#E8C27A', effectKey: 'disposable', group: { ko: '필름', en: 'Film' } },
+  { id: 'filter_manga', name: { ko: '흑백만화', en: 'Manga' }, previewColor: '#27272A', effectKey: 'manga', group: { ko: '필름', en: 'Film' } },
+  { id: 'filter_maple', name: { ko: '단풍', en: 'Maple' }, previewColor: '#D9531E', effectKey: 'maple', group: { ko: '계절', en: 'Season' } },
+  { id: 'filter_ocean', name: { ko: '청량 바다', en: 'Ocean' }, previewColor: '#22B8D8', effectKey: 'ocean', group: { ko: '여행', en: 'Travel' } },
+  { id: 'filter_night_view', name: { ko: '밤빛', en: 'Night View' }, previewColor: '#3B3F8F', effectKey: 'night_view', group: { ko: '야경', en: 'Night' } },
 ];
 
 const stickers: EditorFeature[] = [

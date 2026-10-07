@@ -3,13 +3,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { getPlaceCategory, getRegion, type Place } from '@tingting/shared';
 import { CategoryBadge, type IconName } from '@/components/ui';
 import { formatDateRange } from '@/lib/dates';
+import { thumbUri } from '@/lib/media';
 import { cardSurface } from '@/lib/ui';
 import { theme } from '@/constants/theme';
 
 export function PlaceCover({ place, size }: { place: Place; size: number }) {
   const info = getPlaceCategory(place.category);
   if (place.coverPhotoUri) {
-    return <Image source={{ uri: place.coverPhotoUri }} style={{ width: size, height: size, borderRadius: 14 }} />;
+    return (
+      <Image
+        source={{ uri: thumbUri(place.coverPhotoUri, size) }}
+        style={{ width: size, height: size, borderRadius: 14 }}
+        resizeMethod="resize"
+      />
+    );
   }
   return (
     <View style={[styles.coverFallback, { width: size, height: size, backgroundColor: `${info.color}22` }]}>

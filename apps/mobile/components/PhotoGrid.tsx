@@ -1,6 +1,7 @@
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Photo } from '@tingting/shared';
+import { thumbUri } from '@/lib/media';
 import { displayUri } from '@/lib/photo-flow';
 import { theme } from '@/constants/theme';
 
@@ -29,7 +30,7 @@ export function PhotoGrid({
             { width: size, height: size, marginRight: (index + 1) % columns === 0 ? 0 : GAP },
           ]}
         >
-          <Image source={{ uri: displayUri(photo) }} style={styles.image} />
+          <Image source={{ uri: thumbUri(displayUri(photo), size) }} style={styles.image} resizeMethod="resize" />
           {photo.editedUri ? (
             <View style={styles.editedMark}>
               <Ionicons name="color-wand" size={10} color="#fff" />

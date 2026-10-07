@@ -1,14 +1,17 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ErrorBoundaryProps } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { FolderAlbumTab } from '@/components/album/FolderAlbumTab';
 import { PhoneAlbumTab } from '@/components/album/PhoneAlbumTab';
 import { RegionAlbumTab } from '@/components/album/RegionAlbumTab';
 import { Screen } from '@/components/Screen';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import type { IconName } from '@/components/ui';
 import { useFocusLoad } from '@/hooks/useFocusLoad';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/lib/api';
+import { breadcrumb, logEvent } from '@/lib/diagnostics';
 import { theme } from '@/constants/theme';
 
 type AlbumTab = 'region' | 'folder' | 'phone';
@@ -19,14 +22,23 @@ const TABS: { id: AlbumTab; icon: IconName }[] = [
   { id: 'phone', icon: 'phone-portrait-outline' },
 ];
 
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <ScreenErrorBoundary {...props} screen="album" />;
+}
+
 export default function AlbumScreen() {
   const { t } = useLocale();
   const [tab, setTab] = useState<AlbumTab>('region');
-  /** Tabs stay mounted once opened so switching back keeps their place. */
+  /** Tabs mount on first open (the phone tab touches the media library only then) and stay mounted. */
   const [visited, setVisited] = useState<Set<AlbumTab>>(() => new Set(['region']));
   const { data: summary, refreshing, refresh, reload } = useFocusLoad(() => api.getAlbumSummary());
 
+  useEffect(() => {
+    logEvent('album_mount');
+  }, []);
+
   const select = useCallback((next: AlbumTab) => {
+    breadcrumb('album_tab', { tab: next });
     setTab(next);
     setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)));
   }, []);

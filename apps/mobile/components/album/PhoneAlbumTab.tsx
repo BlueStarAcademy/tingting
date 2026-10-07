@@ -53,6 +53,7 @@ import {
   type DevicePhoto,
 } from '@/lib/device-gallery';
 import { formatTimestamp } from '@/lib/dates';
+import { breadcrumb, logError, logEvent } from '@/lib/diagnostics';
 import { placementFromTarget, uploadPhotosTo } from '@/lib/photo-flow';
 import { getMainTabBarBottomInset } from '@/constants/layout';
 import { cardSurface } from '@/lib/ui';
@@ -61,6 +62,16 @@ import { theme } from '@/constants/theme';
 const CARD_GAP = 12;
 
 type Transfer = { mode: 'move' | 'copy'; ids: string[] };
+
+let lastPermission = '';
+
+/** Reports permission results to diagnostics; repeated identical checks are reported once. */
+function reportPermission(event: string, p: PermissionResponse) {
+  const key = `${p.status}/${p.accessPrivileges ?? ''}`;
+  if (event === 'media_permission_check' && key === lastPermission) return;
+  lastPermission = key;
+  logEvent(event, { status: p.status, granted: p.granted, canAskAgain: p.canAskAgain, access: p.accessPrivileges });
+}
 
 export function PhoneAlbumTab({ active }: { active: boolean }) {
   const { t } = useLocale();
@@ -100,20 +111,25 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
     try {
       const next = await getPhotoPermission();
       setPerm(next);
+      reportPermission('media_permission_check', next);
       return next;
-    } catch {
+    } catch (e) {
+      logError('media_permission_check', e);
       setPerm(null);
       return null;
     }
   }, []);
 
   const loadAlbums = useCallback(async () => {
+    const started = Date.now();
     try {
       const [list, cover] = await Promise.all([listDeviceAlbums(), allPhotosCover()]);
       setAlbums(list);
       setAllCover(cover);
       setError(null);
+      breadcrumb('device_albums', { count: list.length, ms: Date.now() - started });
     } catch (e) {
+      logError('device_albums', e, { ms: Date.now() - started });
       setError(e instanceof Error ? e.message : t('album.phone.failed'));
       setAlbums((prev) => prev ?? []);
     }
@@ -127,13 +143,16 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
       const id = ++requestId.current;
       if (opts.reset) setPhotos(null);
       const keep = opts.reset ? PHOTO_PAGE : Math.max(PHOTO_PAGE, photosRef.current?.length ?? 0);
+      const started = Date.now();
       try {
         const rows = await listDevicePhotos(target.id, 0, keep);
+        breadcrumb('device_photos', { count: rows.length, ms: Date.now() - started });
         if (id !== requestId.current) return;
         setPhotos(rows);
         setHasMore(rows.length === keep);
         setError(null);
       } catch (e) {
+        logError('device_photos', e, { ms: Date.now() - started });
         if (id !== requestId.current) return;
         setError(e instanceof Error ? e.message : t('album.phone.failed'));
         setPhotos((prev) => prev ?? []);
@@ -162,20 +181,43 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
     }
   }, [hasMore, loadingMore]);
 
+  /** One refresh at a time; triggers that arrive meanwhile collapse into a single follow-up run. */
+  const refreshState = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
   const refreshAll = useCallback(async () => {
-    const p = await checkPermission();
-    if (!p?.granted) return;
-    await Promise.all([loadAlbums(), viewRef.current ? loadPhotos() : Promise.resolve()]);
+    const state = refreshState.current;
+    if (state.running) {
+      state.again = true;
+      return;
+    }
+    state.running = true;
+    try {
+      do {
+        state.again = false;
+        const p = await checkPermission();
+        if (!p?.granted) break;
+        await Promise.all([loadAlbums(), viewRef.current ? loadPhotos() : Promise.resolve()]);
+      } while (state.again);
+    } finally {
+      state.running = false;
+    }
   }, [checkPermission, loadAlbums, loadPhotos]);
 
   // First activation, focus returns (editor, settings) and app resume.
   const activeRef = useRef(active);
   activeRef.current = active;
   useEffect(() => {
+    logEvent('phone_album_mount');
+  }, []);
+  useEffect(() => {
     if (active) void refreshAll();
   }, [active, refreshAll]);
+  const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
       if (activeRef.current) void refreshAll();
     }, [refreshAll]),
   );
@@ -242,7 +284,11 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
   };
 
   const requestAccess = async () => {
-    const next = await requestPhotoPermission().catch(() => null);
+    const next = await requestPhotoPermission().catch((e) => {
+      logError('media_permission_request', e);
+      return null;
+    });
+    if (next) reportPermission('media_permission_request', next);
     setPerm(next);
     if (next?.granted) void refreshAll();
   };
@@ -311,6 +357,17 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
     });
 
   const selectedIds = useMemo(() => [...selection.selected], [selection.selected]);
+  const viewerItems = useMemo(
+    () =>
+      (photos ?? []).map((p) => ({
+        key: p.id,
+        uri: photoDisplayUri(p.id),
+        caption: [p.creationTime ? formatTimestamp(new Date(p.creationTime).toISOString()) : null, p.filename]
+          .filter(Boolean)
+          .join(' · '),
+      })),
+    [photos],
+  );
   const count = photos?.length ?? 0;
   const bottomPad = getMainTabBarBottomInset(insets.bottom) + theme.spacing.xl + (selection.selecting ? SELECTION_BAR_HEIGHT : 0);
 
@@ -434,7 +491,7 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
               onPress={() => openAlbum({ id: item.id || null, title: item.title })}
             >
               {item.coverUri ? (
-                <Image source={{ uri: item.coverUri }} style={[styles.cover, { height: cardWidth - 16 }]} />
+                <Image source={{ uri: item.coverUri }} style={[styles.cover, { height: cardWidth - 16 }]} resizeMethod="resize" />
               ) : (
                 <View style={[styles.cover, styles.coverEmpty, { height: cardWidth - 16 }]}>
                   <Ionicons name="images-outline" size={30} color={theme.colors.primaryLight} />
@@ -482,12 +539,6 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
         { key: 'copy', icon: 'copy-outline', label: t('album.action.copy'), onPress: () => setDeviceSheet({ mode: 'copy', ids: selectedIds }) },
         { key: 'delete', icon: 'trash-outline', label: t('album.action.delete'), danger: true, onPress: () => remove(selectedIds) },
       ];
-
-  const viewerItems = (photos ?? []).map((p) => ({
-    key: p.id,
-    uri: photoDisplayUri(p.id),
-    caption: [p.creationTime ? formatTimestamp(new Date(p.creationTime).toISOString()) : null, p.filename].filter(Boolean).join(' · '),
-  }));
 
   const viewerActions = (item: { key: string }): ViewerAction[] => [
     { key: 'edit', icon: 'color-wand', label: t('album.action.edit'), primary: true, onPress: () => void edit(item.key) },
@@ -545,7 +596,8 @@ export function PhoneAlbumTab({ active }: { active: boolean }) {
         onEndReachedThreshold={0.6}
         removeClippedSubviews
         windowSize={7}
-        initialNumToRender={24}
+        initialNumToRender={15}
+        maxToRenderPerBatch={9}
         ListHeaderComponent={
           <View>
             <Pressable onPress={closeAlbum} style={styles.back} hitSlop={6}>
@@ -653,7 +705,11 @@ function DeviceAlbumSheet({
                 afterSheetClose(() => onPick(album.id));
               }}
             >
-              {album.coverUri ? <Image source={{ uri: album.coverUri }} style={styles.sheetThumb} /> : <View style={styles.sheetThumb} />}
+              {album.coverUri ? (
+                <Image source={{ uri: album.coverUri }} style={styles.sheetThumb} resizeMethod="resize" />
+              ) : (
+                <View style={styles.sheetThumb} />
+              )}
               <Text style={styles.sheetText} numberOfLines={1}>
                 {album.title}
               </Text>

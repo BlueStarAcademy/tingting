@@ -10,7 +10,10 @@ import { AppShell } from '@/components/AppShell';
 import { WebLayoutFix } from '@/components/WebLayoutFix';
 import { MainTabBar } from '@/components/MainTabBar';
 import { UpdateChecker } from '@/components/UpdateChecker';
+import { installDiagnostics } from '@/lib/diagnostics';
 import { theme } from '@/constants/theme';
+
+installDiagnostics();
 
 export default function RootLayout() {
   return (

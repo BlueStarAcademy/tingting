@@ -59,19 +59,31 @@ function imagesQuery(album: Album | null): Query {
   return album ? q.album(album) : q;
 }
 
+/** Runs `fn` over `items` with at most `limit` native calls in flight. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 export async function listDeviceAlbums(): Promise<DeviceAlbum[]> {
   const albums = await Album.getAll();
-  const loaded = await Promise.all(
-    albums.map(async (album): Promise<DeviceAlbum | null> => {
-      try {
-        const [title, cover] = await Promise.all([album.getTitle(), imagesQuery(album).limit(1).exeForMetadata()]);
-        if (!cover[0]) return null;
-        return { id: album.id, title, coverUri: photoDisplayUri(cover[0].id) };
-      } catch {
-        return null;
-      }
-    }),
-  );
+  const loaded = await mapLimit(albums, 6, async (album): Promise<DeviceAlbum | null> => {
+    try {
+      const [title, cover] = await Promise.all([album.getTitle(), imagesQuery(album).limit(1).exeForMetadata()]);
+      if (!cover[0]) return null;
+      return { id: album.id, title, coverUri: photoDisplayUri(cover[0].id) };
+    } catch {
+      return null;
+    }
+  });
   return loaded
     .filter((a): a is DeviceAlbum => a !== null)
     .sort((a, b) => (a.title === 'TingTing' ? -1 : b.title === 'TingTing' ? 1 : a.title.localeCompare(b.title, 'ko')));

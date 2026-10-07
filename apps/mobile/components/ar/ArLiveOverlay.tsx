@@ -2,8 +2,9 @@ import { memo, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { StyleSheet } from 'react-native';
 import { Canvas } from '@shopify/react-native-skia';
 import { layoutArEffect, type ArFace, type ArOp } from '@/lib/ar/effects';
+import type { SpriteId } from '@/lib/ar/sprites';
 import { blendFace, scaleFace, type FaceGeom } from '@/lib/editor/faces';
-import { ArLayer, useArImages } from './ArLayer';
+import { ArLayer, loadArSprites, loadedArImages, type ArImages } from './ArLayer';
 
 /** Latest tracking result, written by the camera and read every animation frame. */
 export type ArFeed = { faces: FaceGeom[]; bufferWidth: number; at: number };
@@ -25,14 +26,17 @@ const STALE_MS = 700;
  * between them each sticker eases toward the newest face so it glides instead of jumping.
  */
 export const ArLiveOverlay = memo(function ArLiveOverlay({ effectId, feed, width, height }: Props) {
-  const images = useArImages();
+  const [images, setImages] = useState<ArImages>(loadedArImages);
   const [ops, setOps] = useState<ArOp[]>([]);
   const tracks = useRef<ArFace[]>([]);
 
   useEffect(() => {
+    let alive = true;
     let raf = 0;
     let last = 0;
+    let drawn = 0;
     const start = Date.now();
+    const requested = new Set<SpriteId>();
     tracks.current = [];
     const step = () => {
       raf = requestAnimationFrame(step);
@@ -71,10 +75,26 @@ export const ArLiveOverlay = memo(function ArLiveOverlay({ effectId, feed, width
         if (presence > 0) next.push({ face: t.face, presence });
       }
       tracks.current = next;
-      setOps(layoutArEffect(effectId, { width, height, time: (now - start) / 1000, faces: next }));
+      const nextOps = layoutArEffect(effectId, { width, height, time: (now - start) / 1000, faces: next });
+      // nothing to draw before and after: skip the re-render entirely
+      if (nextOps.length === 0 && drawn === 0) return;
+      drawn = nextOps.length;
+
+      const missing: SpriteId[] = [];
+      for (const op of nextOps) {
+        if (!requested.has(op.sprite)) {
+          requested.add(op.sprite);
+          missing.push(op.sprite);
+        }
+      }
+      if (missing.length) loadArSprites(missing).then((loaded) => alive && setImages(loaded));
+      setOps(nextOps);
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+    };
   }, [effectId, feed, width, height]);
 
   return (

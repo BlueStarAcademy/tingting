@@ -36,6 +36,7 @@ import type {
   TripPlan,
   Visit,
 } from '@tingting/shared';
+import { breadcrumb, logEvent, setDiagnosticsTransport } from '@/lib/diagnostics';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
 const APP_KEY = process.env.EXPO_PUBLIC_APP_KEY ?? '';
@@ -78,7 +79,21 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   if (token) headers.Authorization = `Bearer ${token}`;
   if (APP_KEY) headers['X-App-Key'] = APP_KEY;
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const traced = !path.startsWith('/client-logs');
+  const route = path.split('?')[0];
+  const started = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (e) {
+    if (traced) breadcrumb('fetch_failed', { route, ms: Date.now() - started });
+    throw e;
+  }
+  if (traced) {
+    const ms = Date.now() - started;
+    breadcrumb('fetch', { route, status: res.status, ms });
+    if (ms > 4000) logEvent('slow_fetch', { route, status: res.status, ms });
+  }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -230,8 +245,9 @@ export const api = {
     return request(`/visits/${id}`, { method: 'DELETE' });
   },
 
-  listPhotos(filter: { placeId?: string; regionCode?: string } = {}): Promise<Photo[]> {
-    return request(`/photos${query(filter)}`);
+  listPhotos(filter: { placeId?: string; regionCode?: string; limit?: number } = {}): Promise<Photo[]> {
+    const { limit, ...rest } = filter;
+    return request(`/photos${query({ ...rest, limit: limit ? String(limit) : undefined })}`);
   },
 
   getPhoto(id: string): Promise<Photo> {
@@ -366,3 +382,8 @@ export const api = {
     return request(`/courses/place-info${query({ id, typeId })}`);
   },
 };
+
+setDiagnosticsTransport(async (body) => {
+  if (!(await getToken())) throw new Error('not signed in');
+  await request('/client-logs', { method: 'POST', body: json(body) });
+});

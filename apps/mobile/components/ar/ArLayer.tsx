@@ -6,25 +6,36 @@ import { AR_SPRITES, SPRITE_IDS, type SpriteId } from '@/lib/ar/sprites';
 export type ArImages = Partial<Record<SpriteId, SkImage>>;
 
 const loaded: ArImages = {};
-let pending: Promise<ArImages> | null = null;
+const pending = new Map<SpriteId, Promise<void>>();
+
+function loadSprite(id: SpriteId): Promise<void> {
+  if (loaded[id]) return Promise.resolve();
+  let job = pending.get(id);
+  if (!job) {
+    // failures are not cached, so a missing sprite is retried on the next request
+    job = loadData(AR_SPRITES[id].src, (data) => Skia.Image.MakeImageFromEncoded(data))
+      .then((image) => {
+        if (image) loaded[id] = image;
+      })
+      .catch(() => {})
+      .finally(() => pending.delete(id));
+    pending.set(id, job);
+  }
+  return job;
+}
+
+export function loadedArImages(): ArImages {
+  return { ...loaded };
+}
+
+/** Decodes only the given sprites (the live camera needs a few, not the whole catalog). */
+export async function loadArSprites(ids: readonly SpriteId[]): Promise<ArImages> {
+  await Promise.all(ids.map(loadSprite));
+  return { ...loaded };
+}
 
 export function loadArImages(): Promise<ArImages> {
-  if (!pending) {
-    pending = Promise.all(
-      SPRITE_IDS.map((id) =>
-        loadData(AR_SPRITES[id].src, (data) => Skia.Image.MakeImageFromEncoded(data))
-          .then((image) => {
-            if (image) loaded[id] = image;
-          })
-          .catch(() => {}),
-      ),
-    ).then(() => {
-      // retry the missing ones next time instead of caching a partial failure forever
-      if (SPRITE_IDS.some((id) => !loaded[id])) pending = null;
-      return { ...loaded };
-    });
-  }
-  return pending;
+  return loadArSprites(SPRITE_IDS);
 }
 
 /** Decoded sticker art, loaded once per app session. */

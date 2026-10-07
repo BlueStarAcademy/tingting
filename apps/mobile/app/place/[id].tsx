@@ -35,6 +35,7 @@ import { useContentWidth } from '@/hooks/useContentWidth';
 import { useFocusLoad } from '@/hooks/useFocusLoad';
 import { api } from '@/lib/api';
 import { formatDateKey, formatDateRange, todayKey } from '@/lib/dates';
+import { thumbUri } from '@/lib/media';
 import { openPlaceNavigation, type PlaceNavigationProvider } from '@/lib/place-navigation';
 import { pickGalleryPhotos } from '@/lib/pick-photo';
 import { uploadManyPhotos } from '@/lib/photo-flow';
@@ -152,7 +153,7 @@ export default function PlaceDetailScreen() {
       right={<PremiumIconButton icon="create-outline" onPress={() => setSheet('edit')} accessibilityLabel="장소 수정" />}
     >
       {place.coverPhotoUri ? (
-        <Image source={{ uri: place.coverPhotoUri }} style={styles.cover} />
+        <Image source={{ uri: thumbUri(place.coverPhotoUri, innerWidth) }} style={styles.cover} resizeMethod="resize" />
       ) : (
         <View style={[styles.cover, styles.coverFallback, { backgroundColor: `${info.color}22` }]}>
           <Ionicons name={info.icon as IconName} size={56} color={info.color} />

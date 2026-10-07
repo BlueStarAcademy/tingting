@@ -35,6 +35,8 @@ import {
 } from '@/lib/editor/look';
 import { BEAUTY_ITEMS, BEAUTY_PRESETS, EMPTY_BEAUTY, FACE_ONLY_BEAUTY, type BeautyKey } from '@/lib/editor/types';
 import { pickGalleryPhoto } from '@/lib/pick-photo';
+import { loadCameraSafeMode, saveCameraSafeMode, takeUnfinishedLiveSession, type CameraSafeMode } from '@/lib/camera-safe-mode';
+import { breadcrumb, logEvent, onJsStall } from '@/lib/diagnostics';
 import { LiveBeautyView, type LiveBeautyHandle, type LiveMode, type TrackingStatus } from './LiveBeautyView';
 
 type Props = {
@@ -112,6 +114,8 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const [comparing, setComparing] = useState(false);
   const [mode, setMode] = useState<LiveMode>('starting');
   const [tracking, setTracking] = useState<TrackingStatus>('off');
+  const [safe, setSafe] = useState<CameraSafeMode | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
@@ -120,13 +124,72 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const alive = useRef(true);
   const lookRef = useRef(look);
   lookRef.current = look;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const safeRef = useRef(safe);
+  safeRef.current = safe;
 
   useEffect(() => {
     loadCameraLook().then((saved) => alive.current && setLook(saved));
+    Promise.all([loadCameraSafeMode(), takeUnfinishedLiveSession()]).then(([saved, unfinished]) => {
+      logEvent('camera_mount', { safe: saved.on, reason: saved.reason, unfinished });
+      if (!alive.current) return;
+      if (unfinished && !saved.on) {
+        const next = { on: true, reason: 'unfinished' };
+        saveCameraSafeMode(next);
+        setSafe(next);
+        setNotice('지난번에 카메라가 멈춘 것 같아 안전 모드로 열었어요');
+      } else {
+        setSafe(saved);
+      }
+    });
     return () => {
       alive.current = false;
+      breadcrumb('camera_unmount');
     };
   }, []);
+
+  const enableSafeMode = useCallback((reason: string) => {
+    if (!alive.current || safeRef.current?.on) return;
+    const next = { on: true, reason };
+    logEvent('camera_safe_mode_auto', { reason }, 'warn');
+    saveCameraSafeMode(next);
+    setSafe(next);
+    setNotice('카메라가 버거워해서 안전 모드로 바꿨어요');
+  }, []);
+
+  const toggleSafeMode = () => {
+    const next = { on: !safe?.on, reason: 'user' };
+    breadcrumb('camera_safe_mode_toggle', { on: next.on });
+    saveCameraSafeMode(next);
+    setSafe(next);
+    setNotice(next.on ? '안전 모드: 미리보기는 원본, 찍으면 효과가 적용돼요' : '실시간 뷰티를 다시 켰어요');
+  };
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // A long JS freeze while the live pipeline runs means this phone can't sustain it.
+  useEffect(
+    () =>
+      onJsStall((ms) => {
+        if (ms >= 1500 && modeRef.current !== 'fallback' && safeRef.current && !safeRef.current.on) {
+          enableSafeMode('js stall');
+        }
+      }),
+    [enableSafeMode],
+  );
+
+  const onModeChange = useCallback(
+    (m: LiveMode, reason?: string) => {
+      setMode(m);
+      if (m === 'fallback' && reason?.startsWith('stall:')) enableSafeMode(reason);
+    },
+    [enableSafeMode],
+  );
 
   const persist = useCallback(() => saveCameraLook(lookRef.current), []);
   const changeLook = (next: CameraLook, save = true) => {
@@ -243,7 +306,9 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const currentItem = ITEMS.find((i) => i.key === item) ?? ITEMS[0];
   const arEffect = getArEffect(look.effectId);
 
+  const safeOn = !!safe?.on;
   const status = (() => {
+    if (safeOn) return { text: '안전 모드 · 찍으면 뷰티·스티커가 적용돼요', live: false };
     if (mode === 'starting') return { text: '카메라 준비 중…', live: false };
     if (mode === 'fallback') return { text: '미리보기는 원본 · 찍으면 뷰티가 적용돼요', live: false };
     if (tracking === 'tracking') return { text: '실시간 뷰티 · 얼굴 인식됨', live: true };
@@ -350,21 +415,24 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
     <View style={styles.root}>
       <StatusBar style="light" />
       <View style={[styles.previewBox, { top: box.top, width: box.w, height: box.h }]}>
-        <LiveBeautyView
-          ref={liveRef}
-          style={StyleSheet.absoluteFill}
-          facing={facing}
-          flash={cameraFlash}
-          zoom={zoom}
-          ratio={aspect === '9:16' ? '16:9' : '4:3'}
-          look={comparing ? NO_LOOK : look}
-          onModeChange={(m) => setMode(m)}
-          onTrackingChange={setTracking}
-          onFaces={(faces, bufferWidth) => {
-            arFeed.current = { faces, bufferWidth, at: Date.now() };
-          }}
-        />
-        {look.effectId && !comparing ? (
+        {safe ? (
+          <LiveBeautyView
+            ref={liveRef}
+            style={StyleSheet.absoluteFill}
+            facing={facing}
+            flash={cameraFlash}
+            zoom={zoom}
+            ratio={aspect === '9:16' ? '16:9' : '4:3'}
+            look={comparing ? NO_LOOK : look}
+            live={!safe.on}
+            onModeChange={onModeChange}
+            onTrackingChange={setTracking}
+            onFaces={(faces, bufferWidth) => {
+              arFeed.current = { faces, bufferWidth, at: Date.now() };
+            }}
+          />
+        ) : null}
+        {look.effectId && !comparing && !safeOn && mode === 'live' ? (
           <ArLiveOverlay effectId={look.effectId} feed={arFeed} width={box.w} height={box.h} />
         ) : null}
         {box.band > 0 ? (
@@ -412,11 +480,27 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
           <RoundIcon icon={grid ? 'grid' : 'grid-outline'} onPress={() => setGrid((g) => !g)} />
         </View>
       </View>
-      <View pointerEvents="none" style={[styles.statusRow, { top: insets.top + 58 }]}>
-        <View style={[styles.statusChip, status.live && styles.statusChipLive]}>
+      <View pointerEvents="box-none" style={[styles.statusRow, { top: insets.top + 58 }]}>
+        <View pointerEvents="none" style={[styles.statusChip, status.live && styles.statusChipLive]}>
           <View style={[styles.statusDot, status.live && styles.statusDotLive]} />
           <Text style={styles.statusText}>{status.text}</Text>
         </View>
+        <Pressable
+          onPress={toggleSafeMode}
+          disabled={!safe}
+          hitSlop={8}
+          style={[styles.safeChip, safeOn && styles.safeChipOn]}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: safeOn }}
+        >
+          <Ionicons name={safeOn ? 'shield-checkmark' : 'shield-outline'} size={13} color="#fff" />
+          <Text style={styles.statusText}>{safeOn ? '안전 모드 켜짐' : '안전 모드'}</Text>
+        </Pressable>
+        {notice ? (
+          <View pointerEvents="none" style={styles.noticeChip}>
+            <Text style={styles.noticeText}>{notice}</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 14 }]}>
@@ -617,7 +701,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
   },
-  statusRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  statusRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 6 },
+  safeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  safeChipOn: { backgroundColor: 'rgba(37,99,235,0.7)' },
+  noticeChip: {
+    maxWidth: '86%',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  noticeText: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' },
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter, type ErrorBoundaryProps, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getRegion, type Place } from '@tingting/shared';
 import { Screen } from '@/components/Screen';
 import { PlacePickerModal } from '@/components/PlacePickerModal';
 import { PhotoGrid } from '@/components/PhotoGrid';
+import { ScreenErrorBoundary } from '@/components/ScreenErrorBoundary';
 import { SectionTitle, type IconName } from '@/components/ui';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useFocusLoad } from '@/hooks/useFocusLoad';
@@ -18,13 +19,17 @@ import { theme } from '@/constants/theme';
 
 const PERMISSION = { permissionTitle: '사진 권한 필요', permissionMessage: '갤러리 접근을 허용해 주세요' };
 
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <ScreenErrorBoundary {...props} screen="camera-tab" />;
+}
+
 export default function CameraHubScreen() {
   const router = useRouter();
   const innerWidth = useContentWidth() - theme.spacing.lg * 2;
   const [place, setPlace] = useState<Place | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
-  const { data: recent, reload } = useFocusLoad(async () => (await api.listPhotos()).slice(0, 9));
+  const { data: recent, reload } = useFocusLoad(async () => (await api.listPhotos({ limit: 9 })).slice(0, 9));
 
   const placeQuery = place ? `placeId=${place.id}` : '';
 

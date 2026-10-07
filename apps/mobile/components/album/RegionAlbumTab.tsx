@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getRegion, REGIONS, type AlbumScope, type AlbumSummary } from '@tingting/shared';
 import { ServerAlbumGrid } from '@/components/album/ServerAlbumGrid';
 import { useLocale } from '@/hooks/useLocale';
+import { thumbUri } from '@/lib/media';
 import { theme } from '@/constants/theme';
 
 const UNSORTED = '__unsorted__';
@@ -39,7 +40,7 @@ export function RegionAlbumTab({ active, summary, onChanged }: { active: boolean
           return (
             <Pressable key={r.code} onPress={() => setSelected(r.code)} style={[styles.card, on && { borderColor: r.color }]}>
               {stat?.coverPhotoUri ? (
-                <Image source={{ uri: stat.coverPhotoUri }} style={styles.cover} />
+                <Image source={{ uri: thumbUri(stat.coverPhotoUri, 58) }} style={styles.cover} resizeMethod="resize" />
               ) : (
                 <View style={[styles.cover, { backgroundColor: `${r.color}26` }]}>
                   <Ionicons name="image-outline" size={18} color={r.color} />

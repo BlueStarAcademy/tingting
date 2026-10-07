@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { thumbUri } from '@/lib/media';
 import { theme } from '@/constants/theme';
 
 export const GRID_GAP = 4;
@@ -30,7 +31,7 @@ export const PhotoTile = memo(function PhotoTile({ uri, size, selecting, selecte
       accessibilityRole="imagebutton"
       accessibilityState={{ selected }}
     >
-      <Image source={{ uri }} style={styles.image} />
+      <Image source={{ uri: thumbUri(uri, size) }} style={styles.image} resizeMethod="resize" />
       {edited && !selecting ? (
         <View style={styles.editedMark}>
           <Ionicons name="color-wand" size={10} color="#fff" />

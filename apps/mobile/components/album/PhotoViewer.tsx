@@ -9,12 +9,14 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { IconName } from '@/components/ui';
 import { useContentWidth } from '@/hooks/useContentWidth';
+import { thumbUri } from '@/lib/media';
 import { theme } from '@/constants/theme';
 
 export type ViewerItem = { key: string; uri: string; caption?: string };
@@ -41,6 +43,7 @@ export function PhotoViewer<T extends ViewerItem>({
 }) {
   const insets = useSafeAreaInsets();
   const width = useContentWidth();
+  const { height } = useWindowDimensions();
   const listRef = useRef<FlatList<T>>(null);
   const [current, setCurrent] = useState(index ?? 0);
 
@@ -91,8 +94,8 @@ export function PhotoViewer<T extends ViewerItem>({
             initialNumToRender={1}
             maxToRenderPerBatch={2}
             renderItem={({ item: it }) => (
-              <View style={{ width, height: '100%' }}>
-                <Image source={{ uri: it.uri }} style={styles.image} resizeMode="contain" />
+              <View style={{ width, height }}>
+                <Image source={{ uri: thumbUri(it.uri, width) }} style={styles.image} resizeMode="contain" resizeMethod="resize" />
               </View>
             )}
           />

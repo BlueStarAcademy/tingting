@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppState, PixelRatio, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { CameraView, type CameraType, type FlashMode } from 'expo-camera';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -11,6 +11,8 @@ import {
 } from '@/lib/editor/camera-shader-source';
 import { buildCameraUniforms } from '@/lib/editor/camera-uniforms';
 import { arNeedsClassification } from '@/lib/ar/effects';
+import { markLiveSession } from '@/lib/camera-safe-mode';
+import { breadcrumb, logEvent } from '@/lib/diagnostics';
 import { blendFace, detectFaces, scaleFace, type FaceGeom } from '@/lib/editor/faces';
 import type { CameraLook } from '@/lib/editor/look';
 import { FACE_ONLY_BEAUTY } from '@/lib/editor/types';
@@ -32,6 +34,9 @@ type Props = {
   zoom: number;
   ratio: '4:3' | '16:9';
   look: CameraLook;
+  /** false = safe mode: plain CameraView only, no GL pipeline at all */
+  live: boolean;
+  /** `reason` starting with "stall:" means the device could not keep up with the live pipeline */
   onModeChange?: (mode: LiveMode, reason?: string) => void;
   onTrackingChange?: (status: TrackingStatus) => void;
   /** tracked faces in drawing-buffer pixels (same orientation as the preview) */
@@ -42,6 +47,20 @@ const TRACK_WIDTH = 360;
 const TRACK_INTERVAL_MS = 90;
 const BLACK_FRAME_TIMEOUT_MS = 5000;
 const STARTUP_TIMEOUT_MS = 10000;
+/** The beauty shader runs per output pixel, so the drawing buffer is capped and scaled up on screen. */
+const MAX_GL_WIDTH = 720;
+const FRAME_MS = 33;
+const SLOWEST_FRAME_MS = 100;
+/**
+ * expo-gl queues draws for its GL thread without backpressure and has no fences, so every few
+ * frames a blocking flushEXP() measures how far behind the GL thread is.
+ */
+const PACE_EVERY = 5;
+const BEHIND_MS = 60;
+const STALL_FLUSH_MS = 1500;
+const MAX_BEHIND_CHECKS = 6;
+const SNAPSHOT_TIMEOUT_MS = 3000;
+const DETECT_TIMEOUT_MS = 4000;
 
 type Program = { program: WebGLProgram; position: number; locations: Map<string, WebGLUniformLocation | null> };
 
@@ -114,36 +133,98 @@ function smoothFaces(prev: FaceGeom[], next: FaceGeom[]): FaceGeom[] {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Resolves with the value, or `late` (the still-running promise) once `ms` passes. */
+function within<T>(promise: Promise<T>, ms: number): Promise<{ value: T } | { late: Promise<unknown> }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve({ late: promise.catch(() => undefined) }), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve({ value });
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** GLView layout that renders at most MAX_GL_WIDTH px wide and is scaled up to fill `size`. */
+function glFrame(size: { w: number; h: number }) {
+  const scale = Math.max(1, (size.w * PixelRatio.get()) / MAX_GL_WIDTH);
+  const w = Math.round(size.w / scale);
+  const h = Math.round(size.h / scale);
+  return {
+    key: `${w}x${h}`,
+    style: {
+      position: 'absolute' as const,
+      left: (size.w - w) / 2,
+      top: (size.h - h) / 2,
+      width: w,
+      height: h,
+      transform: [{ scale }],
+    },
+  };
+}
+
 /**
  * expo-camera preview routed into an expo-gl texture and drawn through the beauty shader.
- * Falls back to the plain CameraView when the GL path is unavailable or stays black.
+ * Falls back to the plain CameraView when the GL path is unavailable, stays black or can't keep up.
  */
 export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveBeautyView(
-  { style, facing, flash, zoom, ratio, look, onModeChange, onTrackingChange, onFaces },
+  { style, facing, flash, zoom, ratio, look, live, onModeChange, onTrackingChange, onFaces },
   ref,
 ) {
   const cameraRef = useRef<CameraView | null>(null);
   const glViewRef = useRef<GLView | null>(null);
-  const [mode, setMode] = useState<LiveMode>('starting');
+  const [mode, setMode] = useState<LiveMode>(live ? 'starting' : 'fallback');
   const [cameraKey, setCameraKey] = useState(0);
   const [cameraReady, setCameraReady] = useState(false);
-  const [gl, setGl] = useState<ExpoWebGLRenderingContext | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [glState, setGlState] = useState<{ key: string; gl: ExpoWebGLRenderingContext } | null>(null);
 
   const lookRef = useRef(look);
   lookRef.current = look;
   const facesRef = useRef<FaceGeom[]>([]);
   const callbacks = useRef({ onModeChange, onTrackingChange, onFaces });
   callbacks.current = { onModeChange, onTrackingChange, onFaces };
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const changeMode = useCallback((next: LiveMode, reason?: string) => {
+    if (modeRef.current === next) return;
+    modeRef.current = next;
     setMode(next);
     callbacks.current.onModeChange?.(next, reason);
+    if (next === 'live') logEvent('camera_live');
     if (next === 'fallback') {
+      if (reason !== 'safe mode') logEvent('camera_fallback', { reason }, 'warn');
       callbacks.current.onTrackingChange?.('off');
       setCameraReady(false);
       setCameraKey((k) => k + 1);
     }
   }, []);
+
+  const liveRef = useRef(live);
+  useEffect(() => {
+    if (liveRef.current === live) {
+      if (!live) callbacks.current.onModeChange?.('fallback', 'safe mode');
+      return;
+    }
+    liveRef.current = live;
+    if (live) {
+      modeRef.current = 'starting';
+      setMode('starting');
+      setCameraReady(false);
+      setCameraKey((k) => k + 1);
+      callbacks.current.onModeChange?.('starting');
+    } else if (modeRef.current === 'fallback') {
+      callbacks.current.onModeChange?.('fallback', 'safe mode');
+    } else {
+      changeMode('fallback', 'safe mode');
+    }
+  }, [live, changeMode]);
 
   useImperativeHandle(
     ref,
@@ -158,13 +239,19 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
     [],
   );
 
-  const useGl = mode !== 'fallback';
+  const useGl = live && mode !== 'fallback';
+  const frame = size && size.w > 0 && size.h > 0 ? glFrame(size) : null;
+  const gl = useGl && frame && glState?.key === frame.key ? glState.gl : null;
 
   useEffect(() => {
-    if (mode !== 'starting') return;
-    const timer = setTimeout(() => changeMode('fallback', 'camera start timeout'), STARTUP_TIMEOUT_MS);
+    if (!useGl) setGlState(null);
+  }, [useGl]);
+
+  useEffect(() => {
+    if (mode !== 'starting' || !live) return;
+    const timer = setTimeout(() => changeMode('fallback', 'stall: camera start timeout'), STARTUP_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [mode, changeMode]);
+  }, [mode, live, changeMode]);
 
   useEffect(() => {
     if (!useGl || !gl || !cameraReady) return;
@@ -175,10 +262,20 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
     let alive = true;
     let raf = 0;
     let cameraTexture: WebGLTexture | null = null;
+    markLiveSession(true);
+    const appState = AppState.addEventListener('change', (s) => markLiveSession(s === 'active'));
+    const stall = (reason: string, data: Record<string, unknown>) => {
+      if (!alive) return;
+      alive = false;
+      cancelAnimationFrame(raf);
+      logEvent('camera_gl_stall', { reason, ...data }, 'warn');
+      changeMode('fallback', `stall: ${reason}`);
+    };
 
     const run = async () => {
       let main: Program;
       let raw: Program;
+      const started = Date.now();
       try {
         main = buildProgram(gl, CAMERA_FRAGMENT_SOURCE);
         raw = buildProgram(gl, CAMERA_RAW_FRAGMENT_SOURCE);
@@ -188,6 +285,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         return;
       }
       if (!alive) return;
+      breadcrumb('camera_texture', { ms: Date.now() - started, w: gl.drawingBufferWidth, h: gl.drawingBufferHeight });
 
       const vbo = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -239,20 +337,42 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       };
 
-      const frame = () => {
+      let frameMs = FRAME_MS;
+      let lastDraw = 0;
+      let frames = 0;
+      let behind = 0;
+      const frameLoop = () => {
         if (!alive) return;
-        raf = requestAnimationFrame(frame);
+        raf = requestAnimationFrame(frameLoop);
+        const now = Date.now();
+        if (now - lastDraw < frameMs - 4) return;
+        lastDraw = now;
         const w = gl.drawingBufferWidth;
         const h = gl.drawingBufferHeight;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, w, h);
         draw(main, buildCameraUniforms(lookRef.current, facesRef.current, [w, h]));
         gl.endFrameEXP();
+        frames += 1;
+        if (frames === 1) breadcrumb('camera_first_frame', { ms: Date.now() - started });
+        if (frames % PACE_EVERY !== 0) return;
+        const t0 = Date.now();
+        gl.flushEXP();
+        const waited = Date.now() - t0;
+        if (waited > STALL_FLUSH_MS) {
+          stall('gl backlog', { waited, frameMs });
+        } else if (waited > BEHIND_MS) {
+          behind += 1;
+          frameMs = Math.min(SLOWEST_FRAME_MS, frameMs * 1.5);
+          if (behind >= MAX_BEHIND_CHECKS) stall('gl too slow', { waited, frameMs });
+        } else {
+          behind = Math.max(0, behind - 1);
+          frameMs = Math.max(FRAME_MS, frameMs * 0.92);
+        }
       };
-      frame();
+      frameLoop();
 
       // The camera texture stays black if the device never delivers frames to the SurfaceTexture.
-      const started = Date.now();
       const probe = new Uint8Array(4 * 16);
       let gotFrame = false;
       while (alive && !gotFrame && Date.now() - started < BLACK_FRAME_TIMEOUT_MS) {
@@ -272,12 +392,13 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
       }
       if (!alive) return;
       if (!gotFrame) {
-        changeMode('fallback', 'no camera frames');
+        changeMode('fallback', 'stall: no camera frames');
         return;
       }
       changeMode('live');
 
       // Face tracking: snapshot the small raw copy, run ML Kit, map back to drawing-buffer pixels.
+      // Strictly one snapshot / detection in flight; a call that hangs pauses tracking, never stacks.
       let misses = 0;
       let lastStatus: TrackingStatus | null = null;
       const report = (s: TrackingStatus) => {
@@ -287,37 +408,60 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         }
       };
       const publish = () => callbacks.current.onFaces?.(facesRef.current, gl.drawingBufferWidth);
+      const clearFaces = () => {
+        if (!facesRef.current.length) return;
+        facesRef.current = [];
+        publish();
+      };
       while (alive) {
         if (!needsFaces(lookRef.current)) {
-          if (facesRef.current.length) {
-            facesRef.current = [];
-            publish();
-          }
+          clearFaces();
           report('off');
           await sleep(300);
           continue;
         }
         let file: string | null = null;
+        const stepStart = Date.now();
         try {
           drawRaw();
-          const snap = await glView.takeSnapshotAsync({
-            framebuffer: trackFbo ?? undefined,
-            rect: { x: 0, y: 0, width: trackW, height: trackH },
-            flip: false,
-            format: 'jpeg',
-            compress: 0.8,
-          });
+          const snap = await within(
+            glView.takeSnapshotAsync({
+              framebuffer: trackFbo ?? undefined,
+              rect: { x: 0, y: 0, width: trackW, height: trackH },
+              flip: false,
+              format: 'jpeg',
+              compress: 0.8,
+            }),
+            SNAPSHOT_TIMEOUT_MS,
+          );
+          if ('late' in snap) {
+            logEvent('camera_snapshot_timeout', undefined, 'warn');
+            clearFaces();
+            report('unavailable');
+            await snap.late;
+            continue;
+          }
           if (!alive) return;
-          file = typeof snap.uri === 'string' ? snap.uri : snap.localUri;
-          const result = await detectFaces(file, {
-            fast: true,
-            maxFaces: CAMERA_MAX_FACES,
-            classify: arNeedsClassification(lookRef.current.effectId),
-          });
+          file = typeof snap.value.uri === 'string' ? snap.value.uri : snap.value.localUri;
+          const detected = await within(
+            detectFaces(file, {
+              fast: true,
+              maxFaces: CAMERA_MAX_FACES,
+              classify: arNeedsClassification(lookRef.current.effectId),
+            }),
+            DETECT_TIMEOUT_MS,
+          );
+          if ('late' in detected) {
+            logEvent('camera_detect_timeout', undefined, 'warn');
+            clearFaces();
+            report('unavailable');
+            await detected.late;
+            continue;
+          }
           if (!alive) return;
+          const result = detected.value;
           if (result.status === 'unavailable' || result.status === 'error') {
-            facesRef.current = [];
-            publish();
+            clearFaces();
             report('unavailable');
             await sleep(2000);
           } else if (result.faces.length > 0) {
@@ -329,8 +473,7 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
           } else {
             misses += 1;
             if (misses >= 3) {
-              facesRef.current = [];
-              publish();
+              clearFaces();
               report('searching');
             }
           }
@@ -340,7 +483,8 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         } finally {
           if (file) FileSystem.deleteAsync(file, { idempotent: true }).catch(() => {});
         }
-        await sleep(TRACK_INTERVAL_MS);
+        // keep the tracker at or below half of the JS/GL budget on slow phones
+        await sleep(Math.max(TRACK_INTERVAL_MS, Date.now() - stepStart));
       }
     };
 
@@ -348,13 +492,20 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
+      appState.remove();
+      markLiveSession(false);
       facesRef.current = [];
       if (cameraTexture) glView.destroyObjectAsync(cameraTexture as WebGLTexture & { id: number }).catch(() => {});
     };
   }, [gl, cameraReady, useGl, changeMode]);
 
+  const onLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setSize((prev) => (prev && Math.abs(prev.w - width) < 1 && Math.abs(prev.h - height) < 1 ? prev : { w: width, h: height }));
+  };
+
   return (
-    <View style={[styles.box, style]}>
+    <View style={[styles.box, style]} onLayout={onLayout}>
       <CameraView
         key={cameraKey}
         ref={cameraRef}
@@ -364,14 +515,25 @@ export const LiveBeautyView = forwardRef<LiveBeautyHandle, Props>(function LiveB
         zoom={zoom}
         ratio={ratio}
         mirror={facing === 'front'}
-        onCameraReady={() => setCameraReady(true)}
-        onMountError={(e) => callbacks.current.onModeChange?.('fallback', e.message)}
+        onCameraReady={() => {
+          breadcrumb('camera_ready', { live });
+          setCameraReady(true);
+        }}
+        onMountError={(e) => {
+          logEvent('camera_mount_error', { message: e.message }, 'warn');
+          if (live && modeRef.current !== 'fallback') changeMode('fallback', e.message);
+          else callbacks.current.onModeChange?.('fallback', e.message);
+        }}
       />
-      {useGl ? (
+      {useGl && frame ? (
         <GLView
+          key={frame.key}
           ref={glViewRef}
-          style={StyleSheet.absoluteFill}
-          onContextCreate={(ctx) => setGl(ctx)}
+          style={frame.style}
+          onContextCreate={(ctx) => {
+            breadcrumb('gl_ready', { w: ctx.drawingBufferWidth, h: ctx.drawingBufferHeight });
+            setGlState({ key: frame.key, gl: ctx });
+          }}
         />
       ) : null}
     </View>

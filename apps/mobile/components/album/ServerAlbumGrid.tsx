@@ -391,7 +391,8 @@ export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyT
         onEndReachedThreshold={0.6}
         removeClippedSubviews
         windowSize={7}
-        initialNumToRender={24}
+        initialNumToRender={15}
+        maxToRenderPerBatch={9}
         ListEmptyComponent={
           items === null ? (
             error ? (

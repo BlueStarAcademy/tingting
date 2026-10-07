@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useContentWidth } from '@/hooks/useContentWidth';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/lib/api';
+import { thumbUri } from '@/lib/media';
 import { cardSurface } from '@/lib/ui';
 import { getMainTabBarBottomInset } from '@/constants/layout';
 import { theme } from '@/constants/theme';
@@ -227,7 +228,11 @@ export function FolderAlbumTab({ active, summary, refreshing, onRefresh, onChang
             onLongPress={() => setMenuFor(item)}
           >
             {item.coverPhotoUri ? (
-              <Image source={{ uri: item.coverPhotoUri }} style={[styles.cover, { height: cardWidth - 16 }]} />
+              <Image
+                source={{ uri: thumbUri(item.coverPhotoUri, cardWidth) }}
+                style={[styles.cover, { height: cardWidth - 16 }]}
+                resizeMethod="resize"
+              />
             ) : (
               <View style={[styles.cover, styles.coverEmpty, { height: cardWidth - 16 }]}>
                 <Ionicons name="folder-outline" size={34} color={theme.colors.accent} />

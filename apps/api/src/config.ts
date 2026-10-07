@@ -23,6 +23,8 @@ export const config = {
   /** Mount a Railway Volume here so photos survive redeploys. */
   uploadsDir: process.env.UPLOADS_DIR ?? path.join(__dirname, '..', 'uploads'),
   maxUploadBytes: 25 * 1024 * 1024,
+  /** Disk cache for resized album thumbnails; regenerated on demand, so it can be ephemeral. */
+  thumbsDir: process.env.THUMBS_DIR?.trim() ?? '',
   kakaoRestApiKey: process.env.KAKAO_REST_API_KEY ?? '',
   /** data.go.kr TourAPI (KorService2) key; either the Encoding or Decoding form works. */
   tourApiKey: decodeServiceKey(process.env.TOUR_API_KEY ?? ''),

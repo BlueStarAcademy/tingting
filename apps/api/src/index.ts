@@ -5,6 +5,8 @@ import { migrate } from './db';
 import { authMiddleware, authRouter, seedCoupleUsers } from './auth';
 import { handle, HttpError, publicBaseUrl } from './http';
 import { getUploadsDir, persistMediaUpload } from './media-upload';
+import { serveThumb } from './media-thumbs';
+import { clientLogsRouter } from './routes/client-logs';
 import { placesRouter, visitsRouter } from './routes/places';
 import { photosRouter } from './routes/photos';
 import { albumsRouter } from './routes/albums';
@@ -25,8 +27,10 @@ app.use(
     credentials: true,
   }),
 );
+app.use('/client-logs', express.json({ limit: '64kb' }));
 app.use(express.json({ limit: '40mb' }));
 app.use('/media/files', express.static(getUploadsDir(), { maxAge: '30d', fallthrough: false }));
+app.get('/media/thumb/:name', handle(serveThumb));
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -89,6 +93,7 @@ const searchLimit = rateLimit(60, 60_000);
 app.use('/recommendations', authMiddleware, searchLimit, recommendationsRouter);
 app.use('/nearby', authMiddleware, searchLimit, nearbyRouter);
 app.use('/courses', authMiddleware, coursesRouter);
+app.use('/client-logs', authMiddleware, rateLimit(30, 60_000), clientLogsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
@@ -98,6 +103,11 @@ app.use((_req, res) => {
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) {
     res.status(err.status).json({ error: err.message });
+    return;
+  }
+  const status = (err as { status?: unknown })?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    res.status(status).json({ error: 'Bad request' });
     return;
   }
   console.error(err);

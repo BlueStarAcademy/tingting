@@ -28,8 +28,10 @@ photosRouter.get(
       params.push(regionCode);
       where.push(`COALESCE(ph.region_code, pl.region_code) = $${params.length}`);
     }
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 1000));
+    params.push(limit);
     const { rows } = await pool.query(
-      `${PHOTO_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ph.taken_at DESC LIMIT 1000`,
+      `${PHOTO_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ph.taken_at DESC LIMIT $${params.length}`,
       params,
     );
     const base = publicBaseUrl(req);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { REGIONS, type AlbumFolder, type AlbumTarget } from '@tingting/shared';
+import { cityFolderTitle, formatTripDates, getRegion, REGIONS, type AlbumFolder, type AlbumTarget, type CityFolder } from '@tingting/shared';
 import { afterSheetClose } from '@/components/album/ActionSheet';
 import { AppModal } from '@/components/AppModal';
 import { PremiumButton } from '@/components/PremiumButton';
@@ -15,10 +15,13 @@ export function sameTarget(a: AlbumTarget | undefined, b: AlbumTarget): boolean 
   if (!a || a.kind !== b.kind) return false;
   if (a.kind === 'region' && b.kind === 'region') return a.regionCode === b.regionCode;
   if (a.kind === 'folder' && b.kind === 'folder') return a.folderId === b.folderId;
+  if (a.kind === 'city' && b.kind === 'city') return a.cityFolderId === b.cityFolderId;
   return true;
 }
 
-/** Pick a region album or a general folder (and create a folder inline). */
+const CITY_PREVIEW = 6;
+
+/** Pick a region album, a city trip folder or a general folder (and create a folder inline). */
 export function AlbumTargetSheet({
   visible,
   title,
@@ -37,6 +40,8 @@ export function AlbumTargetSheet({
 }) {
   const { t } = useLocale();
   const [folders, setFolders] = useState<AlbumFolder[] | null>(null);
+  const [cityFolders, setCityFolders] = useState<CityFolder[] | null>(null);
+  const [allCities, setAllCities] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,8 +53,13 @@ export function AlbumTargetSheet({
     setName('');
     setError(null);
     setFolders(null);
+    setCityFolders(null);
+    setAllCities(false);
     api.listFolders().then(setFolders).catch(() => setFolders([]));
+    api.listCityFolders().then(setCityFolders).catch(() => setCityFolders([]));
   }, [visible]);
+
+  const cityRows = cityFolders ? (allCities ? cityFolders : cityFolders.slice(0, CITY_PREVIEW)) : [];
 
   const pick = (target: AlbumTarget) => {
     onClose();
@@ -94,7 +104,37 @@ export function AlbumTargetSheet({
           })}
         </View>
 
-        <Text style={styles.section}>{t('album.target.folders')}</Text>
+        {cityFolders === null || cityFolders.length > 0 ? <Text style={styles.section}>{t('album.target.cities')}</Text> : null}
+        {cityFolders === null ? (
+          <ActivityIndicator color={theme.colors.primary} style={styles.loader} />
+        ) : (
+          cityRows.map((folder) => {
+            const target: AlbumTarget = { kind: 'city', cityFolderId: folder.id };
+            const isCurrent = sameTarget(current, target);
+            const region = getRegion(folder.regionCode);
+            return (
+              <Pressable key={folder.id} disabled={isCurrent} onPress={() => pick(target)} style={[styles.row, isCurrent && styles.currentRow]}>
+                <Ionicons name="location" size={20} color={region?.color ?? theme.colors.primary} />
+                <View style={styles.cityText}>
+                  <Text style={styles.rowText} numberOfLines={1}>
+                    {cityFolderTitle(folder)}
+                  </Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {region?.name} {folder.cityName} · {formatTripDates(folder.startDate, folder.endDate)}
+                  </Text>
+                </View>
+                <Text style={styles.rowMeta}>{isCurrent ? t('album.target.current') : t('album.count', { count: folder.photoCount })}</Text>
+              </Pressable>
+            );
+          })
+        )}
+        {cityFolders && cityFolders.length > CITY_PREVIEW && !allCities ? (
+          <Pressable style={styles.more} onPress={() => setAllCities(true)} hitSlop={6}>
+            <Text style={styles.moreText}>{t('album.target.moreCities', { count: cityFolders.length - CITY_PREVIEW })}</Text>
+          </Pressable>
+        ) : null}
+
+        <Text style={[styles.section, styles.sectionGap]}>{t('album.target.folders')}</Text>
         {folders === null ? (
           <ActivityIndicator color={theme.colors.primary} style={styles.loader} />
         ) : (
@@ -167,6 +207,11 @@ const styles = StyleSheet.create({
   currentRow: { opacity: 0.45 },
   rowText: { flex: 1, color: theme.colors.text, fontSize: 15, fontWeight: '700' },
   rowMeta: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
+  cityText: { flex: 1, gap: 1 },
+  rowSub: { color: theme.colors.textMuted, fontSize: 12 },
+  more: { paddingVertical: 10, alignSelf: 'flex-start' },
+  moreText: { color: theme.colors.primary, fontSize: 13, fontWeight: '800' },
+  sectionGap: { marginTop: theme.spacing.md },
   createText: { color: theme.colors.primary },
   create: { gap: 8, paddingVertical: 12 },
   error: { color: theme.colors.error, fontSize: 13 },

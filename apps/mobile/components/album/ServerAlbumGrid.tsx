@@ -28,6 +28,7 @@ const MAX_PAGE = 200;
 function scopeTarget(scope: AlbumScope): AlbumTarget | undefined {
   if (scope.kind === 'region') return { kind: 'region', regionCode: scope.regionCode };
   if (scope.kind === 'folder') return { kind: 'folder', folderId: scope.folderId };
+  if (scope.kind === 'city') return { kind: 'city', cityFolderId: scope.cityFolderId };
   if (scope.kind === 'unsorted') return { kind: 'none' };
   return undefined;
 }
@@ -35,6 +36,7 @@ function scopeTarget(scope: AlbumScope): AlbumTarget | undefined {
 function scopePlacement(scope: AlbumScope): PhotoPlacement | null {
   if (scope.kind === 'region') return { regionCode: scope.regionCode };
   if (scope.kind === 'folder') return { folderId: scope.folderId };
+  if (scope.kind === 'city') return { cityFolderId: scope.cityFolderId };
   return null;
 }
 
@@ -116,9 +118,25 @@ type Props = {
   onChanged?: () => void;
   /** Extra right-side control in the toolbar (e.g. folder menu) */
   toolbarExtra?: ReactElement | null;
+  /** Extra photo viewer actions (e.g. "set as cover") */
+  viewerExtra?: (photo: Photo) => ViewerAction[];
+  /** Pushed stack screens have no tab bar to clear */
+  standalone?: boolean;
 };
 
-export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyTitle, emptyMessage, onChanged, toolbarExtra }: Props) {
+export function ServerAlbumGrid({
+  scope,
+  active,
+  title,
+  subtitle,
+  header,
+  emptyTitle,
+  emptyMessage,
+  onChanged,
+  toolbarExtra,
+  viewerExtra,
+  standalone,
+}: Props) {
   const { t } = useLocale();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -263,7 +281,12 @@ export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyT
   };
 
   const placementQuery = placement
-    ? { regionCode: placement.regionCode ?? undefined, folderId: placement.folderId ?? undefined, back: '1' }
+    ? {
+        regionCode: placement.regionCode ?? undefined,
+        folderId: placement.folderId ?? undefined,
+        cityFolderId: placement.cityFolderId ?? undefined,
+        back: '1',
+      }
     : {};
 
   const uploadFromCamera = () => router.push(`/capture?${editorQuery(placementQuery)}` as Href);
@@ -326,6 +349,13 @@ export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyT
       },
     },
     { key: 'delete', icon: 'trash-outline', label: t('album.action.delete'), danger: true, onPress: () => confirmDelete([item.photo.id]) },
+    ...(viewerExtra?.(item.photo) ?? []).map((action) => ({
+      ...action,
+      onPress: () => {
+        setViewerIndex(null);
+        action.onPress();
+      },
+    })),
     {
       key: 'detail',
       icon: 'information-circle-outline',
@@ -337,7 +367,10 @@ export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyT
     },
   ];
 
-  const bottomPad = getMainTabBarBottomInset(insets.bottom) + theme.spacing.xl + (selection.selecting ? SELECTION_BAR_HEIGHT : 0);
+  const bottomPad =
+    (standalone ? Math.max(insets.bottom, 12) : getMainTabBarBottomInset(insets.bottom)) +
+    theme.spacing.xl +
+    (selection.selecting ? SELECTION_BAR_HEIGHT : 0);
   const count = items?.length ?? 0;
 
   const listHeader = (
@@ -429,6 +462,7 @@ export function ServerAlbumGrid({ scope, active, title, subtitle, header, emptyT
           onToggleAll={() => (selection.selected.size === count ? selection.setAll([]) : selection.setAll((items ?? []).map((p) => p.id)))}
           onDone={selection.done}
           actions={selectionActions}
+          standalone={standalone}
         />
       ) : null}
 

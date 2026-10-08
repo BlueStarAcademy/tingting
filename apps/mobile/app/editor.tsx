@@ -30,6 +30,7 @@ export default function EditorRoute() {
     placeId?: string;
     regionCode?: string;
     folderId?: string;
+    cityFolderId?: string;
     /** 'device': save the result back into the phone gallery instead of TingTing */
     target?: string;
     /** '1': return to the previous screen after saving instead of opening the photo */
@@ -43,6 +44,7 @@ export default function EditorRoute() {
   const photoId = params.photoId ? String(params.photoId) : null;
   const regionCode = params.regionCode ? String(params.regionCode) : null;
   const folderId = params.folderId ? String(params.folderId) : null;
+  const cityFolderId = params.cityFolderId ? String(params.cityFolderId) : null;
   const toDevice = params.target === 'device';
   const returnBack = params.back === '1';
   const [placeId, setPlaceId] = useState<string | null>(params.placeId ? String(params.placeId) : null);
@@ -85,7 +87,7 @@ export default function EditorRoute() {
         safeBack(router);
         return;
       }
-      const photo = await saveNewPhoto({ originalUri: sourceUri, editedUri, placeId, regionCode, folderId });
+      const photo = await saveNewPhoto({ originalUri: sourceUri, editedUri, placeId, regionCode, folderId, cityFolderId });
       if (returnBack) safeBack(router);
       else router.replace(`/photo/${photo.id}` as Href);
     } catch (e) {

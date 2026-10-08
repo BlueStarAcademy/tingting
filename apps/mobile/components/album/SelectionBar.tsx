@@ -26,6 +26,7 @@ export function SelectionBar({
   onDone,
   actions,
   title,
+  standalone,
 }: {
   count: number;
   allSelected: boolean;
@@ -33,11 +34,14 @@ export function SelectionBar({
   onDone: () => void;
   actions: SelectionAction[];
   title?: string;
+  /** Docked to the screen bottom on pushed screens without the tab bar */
+  standalone?: boolean;
 }) {
   const { t } = useLocale();
   const insets = useSafeAreaInsets();
+  const bottom = standalone ? Math.max(insets.bottom, 12) : getMainTabBarBottomInset(insets.bottom) + 8;
   return (
-    <View style={[styles.wrap, shadow('lg'), { bottom: getMainTabBarBottomInset(insets.bottom) + 8 }]}>
+    <View style={[styles.wrap, shadow('lg'), { bottom }]}>
       <View style={styles.header}>
         <Text style={styles.count} numberOfLines={1}>
           {title ?? t('album.select.count', { count })}

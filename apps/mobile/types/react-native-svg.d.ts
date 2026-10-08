@@ -16,6 +16,8 @@ declare module 'react-native-svg' {
     strokeWidth?: number;
     strokeLinejoin?: string;
     strokeLinecap?: string;
+    strokeDasharray?: string | number;
+    fillRule?: 'evenodd' | 'nonzero';
     onPress?: () => void;
   }
 
@@ -62,6 +64,7 @@ declare module 'react-native-svg' {
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
+    strokeDasharray?: string | number;
   }
 
   export interface StopProps {

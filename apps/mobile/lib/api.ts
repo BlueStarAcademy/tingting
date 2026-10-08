@@ -8,12 +8,19 @@ import type {
   AlbumTarget,
   AuthSession,
   BackupStatus,
+  CityFolder,
+  CityFolderDeleteMode,
+  CityFolderDetail,
+  CityFolderInput,
+  CityPin,
+  CityPinInput,
   CoupleUser,
   CourseDay,
   CourseDraft,
   CoursePoint,
   CourseRequest,
   CourseTransport,
+  GeoSearchResult,
   HomeDashboard,
   KakaoPlaceResult,
   Photo,
@@ -108,6 +115,14 @@ function query(params: Record<string, string | undefined>): string {
 }
 
 const json = (body: unknown) => JSON.stringify(body);
+
+/** `region:SEO`, `folder:<id>`, `city:<id>` or `none`, as the album endpoints take in query strings. */
+function targetParam(target: AlbumTarget): string {
+  if (target.kind === 'region') return `region:${target.regionCode}`;
+  if (target.kind === 'folder') return `folder:${target.folderId}`;
+  if (target.kind === 'city') return `city:${target.cityFolderId}`;
+  return 'none';
+}
 
 export const api = {
   /** Swap the stored token for a fresh one on every launch so it never runs out. */
@@ -262,6 +277,7 @@ export const api = {
     takenAt?: string;
     regionCode?: string;
     folderId?: string;
+    cityFolderId?: string;
   }): Promise<Photo> {
     return request('/photos', { method: 'POST', body: json(input) });
   },
@@ -284,6 +300,7 @@ export const api = {
         scope: scope.kind,
         regionCode: scope.kind === 'region' ? scope.regionCode : undefined,
         folderId: scope.kind === 'folder' ? scope.folderId : undefined,
+        cityFolderId: scope.kind === 'city' ? scope.cityFolderId : undefined,
         cursor: page.cursor,
         limit: page.limit ? String(page.limit) : undefined,
       })}`,
@@ -321,19 +338,55 @@ export const api = {
   /** Non-empty folders need `photos`: delete them too, or move them to `target`. */
   deleteFolder(id: string, photos?: { mode: 'delete' } | { mode: 'move'; target: AlbumTarget }): Promise<void> {
     const target = photos?.mode === 'move' ? photos.target : undefined;
-    return request(
-      `/albums/folders/${id}${query({
-        photos: photos?.mode,
-        target: !target
-          ? undefined
-          : target.kind === 'region'
-            ? `region:${target.regionCode}`
-            : target.kind === 'folder'
-              ? `folder:${target.folderId}`
-              : 'none',
-      })}`,
-      { method: 'DELETE' },
-    );
+    return request(`/albums/folders/${id}${query({ photos: photos?.mode, target: target ? targetParam(target) : undefined })}`, {
+      method: 'DELETE',
+    });
+  },
+
+  listCityFolders(filter: { regionCode?: string; cityCode?: string } = {}): Promise<CityFolder[]> {
+    return request(`/albums/cities${query(filter)}`);
+  },
+
+  getCityFolder(id: string): Promise<CityFolderDetail> {
+    return request(`/albums/cities/${id}`);
+  },
+
+  createCityFolder(input: CityFolderInput): Promise<CityFolder> {
+    return request('/albums/cities', { method: 'POST', body: json(input) });
+  },
+
+  /** `title: null` restores the default title, `coverPhotoId: null` the latest photo as cover. */
+  updateCityFolder(
+    id: string,
+    patch: Partial<Pick<CityFolderInput, 'title' | 'startDate' | 'endDate' | 'memo'>> & { coverPhotoId?: string | null },
+  ): Promise<CityFolder> {
+    return request(`/albums/cities/${id}`, { method: 'PATCH', body: json(patch) });
+  },
+
+  /** Folders with photos need `photos`: keep them in the province album, or delete them too. */
+  deleteCityFolder(id: string, photos?: CityFolderDeleteMode): Promise<void> {
+    return request(`/albums/cities/${id}${query({ photos })}`, { method: 'DELETE' });
+  },
+
+  addCityPin(folderId: string, input: CityPinInput): Promise<CityPin> {
+    return request(`/albums/cities/${folderId}/pins`, { method: 'POST', body: json(input) });
+  },
+
+  updateCityPin(folderId: string, pinId: string, patch: Partial<CityPinInput>): Promise<CityPin> {
+    return request(`/albums/cities/${folderId}/pins/${pinId}`, { method: 'PATCH', body: json(patch) });
+  },
+
+  deleteCityPin(folderId: string, pinId: string): Promise<void> {
+    return request(`/albums/cities/${folderId}/pins/${pinId}`, { method: 'DELETE' });
+  },
+
+  /** Kakao Local when the server has a key, OpenStreetMap otherwise; biased to the city's area. */
+  searchGeo(q: string, near: { cityCode?: string; regionCode?: string } = {}): Promise<GeoSearchResult> {
+    return request(`/geo/search${query({ q, ...near })}`);
+  },
+
+  reverseGeo(lat: number, lng: number): Promise<{ name?: string; address?: string }> {
+    return request(`/geo/reverse${query({ lat: lat.toFixed(6), lng: lng.toFixed(6) })}`);
   },
 
   listPlans(): Promise<TripPlan[]> {

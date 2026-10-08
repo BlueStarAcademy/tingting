@@ -7,16 +7,18 @@ const MAX_EDGE = 2560;
 
 const stamp = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-/** Where a new photo is filed: a place (its region album by default), a region album or a folder. */
+/** Where a new photo is filed: a place (its region album by default), a region album, a folder or a city folder. */
 export type PhotoPlacement = {
   placeId?: string | null;
   regionCode?: string | null;
   folderId?: string | null;
+  cityFolderId?: string | null;
 };
 
 export function placementFromTarget(target: AlbumTarget): PhotoPlacement {
   if (target.kind === 'region') return { regionCode: target.regionCode };
   if (target.kind === 'folder') return { folderId: target.folderId };
+  if (target.kind === 'city') return { cityFolderId: target.cityFolderId };
   return {};
 }
 
@@ -52,6 +54,7 @@ export async function saveNewPhoto(
     placeId: input.placeId ?? undefined,
     regionCode: input.regionCode ?? undefined,
     folderId: input.folderId ?? undefined,
+    cityFolderId: input.cityFolderId ?? undefined,
     takenAt: input.takenAt,
   });
 }

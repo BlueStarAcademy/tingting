@@ -6,7 +6,7 @@ import { encodeLook } from '@/lib/editor/look';
 import { safeBack } from '@/lib/navigation';
 
 /** Album placement params passed straight through to the editor. */
-const FORWARDED = ['placeId', 'regionCode', 'folderId', 'back'] as const;
+const FORWARDED = ['placeId', 'regionCode', 'folderId', 'cityFolderId', 'back'] as const;
 
 export function ErrorBoundary(props: ErrorBoundaryProps) {
   return (
@@ -20,7 +20,7 @@ export function ErrorBoundary(props: ErrorBoundaryProps) {
 }
 
 export default function CaptureRoute() {
-  const query = useLocalSearchParams<{ placeId?: string; regionCode?: string; folderId?: string; back?: string }>();
+  const query = useLocalSearchParams<{ placeId?: string; regionCode?: string; folderId?: string; cityFolderId?: string; back?: string }>();
   const router = useRouter();
 
   return (

@@ -12,9 +12,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MAX_BULK = 500;
 const MAX_FOLDER_NAME = 40;
 
-type Placement = { regionCode: string | null; folderId: string | null };
+export type Placement = { regionCode: string | null; folderId: string | null; cityFolderId: string | null };
 
-function isUuid(value: unknown): value is string {
+export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_RE.test(value);
 }
 
@@ -39,26 +39,39 @@ async function assertFolder(db: Pick<PoolClient, 'query'>, id: unknown): Promise
   return id;
 }
 
-/** `{ kind: 'region' | 'folder' | 'none', ... }` -> the columns to write. */
+/** The city folder's id and province; photos filed there keep that province as their region album. */
+export async function assertCityFolder(db: Pick<PoolClient, 'query'>, id: unknown): Promise<{ id: string; regionCode: string }> {
+  if (!isUuid(id)) throw new HttpError(404, '세부 지역 폴더를 찾을 수 없어요');
+  const { rows } = await db.query('SELECT region_code FROM city_folders WHERE id = $1', [id]);
+  if (!rows[0]) throw new HttpError(404, '세부 지역 폴더를 찾을 수 없어요');
+  return { id, regionCode: String(rows[0].region_code) };
+}
+
+/** `{ kind: 'region' | 'folder' | 'city' | 'none', ... }` -> the columns to write. */
 export async function resolveTarget(db: Pick<PoolClient, 'query'>, target: unknown): Promise<Placement> {
   const t = (target ?? {}) as Record<string, unknown>;
   if (t.kind === 'region') {
     const code = optionalString(t.regionCode);
     if (!code || !getRegion(code)) throw new HttpError(400, '지역이 올바르지 않아요');
-    return { regionCode: code, folderId: null };
+    return { regionCode: code, folderId: null, cityFolderId: null };
   }
-  if (t.kind === 'folder') return { regionCode: null, folderId: await assertFolder(db, t.folderId) };
-  if (t.kind === 'none') return { regionCode: null, folderId: null };
+  if (t.kind === 'folder') return { regionCode: null, folderId: await assertFolder(db, t.folderId), cityFolderId: null };
+  if (t.kind === 'city') {
+    const city = await assertCityFolder(db, t.cityFolderId);
+    return { regionCode: city.regionCode, folderId: null, cityFolderId: city.id };
+  }
+  if (t.kind === 'none') return { regionCode: null, folderId: null, cityFolderId: null };
   throw new HttpError(400, '옮길 앨범을 선택해 주세요');
 }
 
-/** `region:SEO`, `folder:<uuid>` or `none`, for query strings. */
+/** `region:SEO`, `folder:<uuid>`, `city:<uuid>` or `none`, for query strings. */
 function parseTargetParam(value: unknown): unknown {
   const s = optionalString(value) ?? '';
   if (s === 'none') return { kind: 'none' };
   const [kind, id] = s.split(':');
   if (kind === 'region') return { kind, regionCode: id };
   if (kind === 'folder') return { kind, folderId: id };
+  if (kind === 'city') return { kind, cityFolderId: id };
   return null;
 }
 
@@ -82,7 +95,7 @@ albumsRouter.get(
   '/summary',
   handle(async (req, res) => {
     const base = publicBaseUrl(req);
-    const [regions, folders, counts] = await Promise.all([
+    const [regions, folders, counts, cities] = await Promise.all([
       pool.query(`
         SELECT r.region_code, r.photo_count, c.uri AS cover_photo_uri
         FROM (SELECT region_code, COUNT(*) AS photo_count FROM photos
@@ -96,6 +109,12 @@ albumsRouter.get(
         COUNT(*) FILTER (WHERE region_code IS NULL AND folder_id IS NULL) AS unsorted,
         COUNT(*) AS total
         FROM photos`),
+      pool.query(`
+        SELECT cf.region_code, cf.city_code, COUNT(*) AS folder_count, COALESCE(SUM(p.n), 0) AS photo_count
+        FROM city_folders cf
+        LEFT JOIN (SELECT city_folder_id, COUNT(*) AS n FROM photos WHERE city_folder_id IS NOT NULL GROUP BY city_folder_id) p
+          ON p.city_folder_id = cf.id
+        GROUP BY cf.region_code, cf.city_code`),
     ]);
     const summary: AlbumSummary = {
       regions: regions.rows.map((r) => ({
@@ -104,6 +123,12 @@ albumsRouter.get(
         coverPhotoUri: toPublicUri(r.cover_photo_uri, base),
       })),
       folders: folders.rows.map((r) => mapFolder(r, base)),
+      cities: cities.rows.map((r) => ({
+        regionCode: String(r.region_code),
+        cityCode: String(r.city_code),
+        folderCount: Number(r.folder_count),
+        photoCount: Number(r.photo_count),
+      })),
       unsortedCount: Number(counts.rows[0].unsorted),
       totalCount: Number(counts.rows[0].total),
     };
@@ -133,6 +158,8 @@ albumsRouter.get(
       add('ph.region_code = ?', code);
     } else if (scope === 'folder') {
       add('ph.folder_id = ?', await assertFolder(pool, req.query.folderId));
+    } else if (scope === 'city') {
+      add('ph.city_folder_id = ?', (await assertCityFolder(pool, req.query.cityFolderId)).id);
     } else if (scope === 'unsorted') {
       where.push('ph.region_code IS NULL AND ph.folder_id IS NULL');
     } else if (scope !== 'all') {
@@ -168,11 +195,10 @@ albumsRouter.post(
   handle(async (req, res) => {
     const ids = photoIds(req.body?.photoIds);
     const target = await resolveTarget(pool, req.body?.target);
-    const { rowCount } = await pool.query('UPDATE photos SET region_code = $1, folder_id = $2 WHERE id = ANY($3::uuid[])', [
-      target.regionCode,
-      target.folderId,
-      ids,
-    ]);
+    const { rowCount } = await pool.query(
+      'UPDATE photos SET region_code = $1, folder_id = $2, city_folder_id = $3 WHERE id = ANY($4::uuid[])',
+      [target.regionCode, target.folderId, target.cityFolderId, ids],
+    );
     res.json({ updated: rowCount ?? 0 });
   }),
 );
@@ -184,11 +210,11 @@ albumsRouter.post(
     const target = await resolveTarget(pool, req.body?.target);
     // FOR SHARE waits for a concurrent delete of the source, so we never copy a row whose files are being unlinked.
     const { rows } = await pool.query(
-      `INSERT INTO photos (place_id, visit_id, original_uri, edited_uri, taken_at, created_by, region_code, folder_id)
-       SELECT place_id, visit_id, original_uri, edited_uri, taken_at, $1, $2, $3
-       FROM (SELECT * FROM photos WHERE id = ANY($4::uuid[]) FOR SHARE) src
+      `INSERT INTO photos (place_id, visit_id, original_uri, edited_uri, taken_at, created_by, region_code, folder_id, city_folder_id)
+       SELECT place_id, visit_id, original_uri, edited_uri, taken_at, $1, $2, $3, $4
+       FROM (SELECT * FROM photos WHERE id = ANY($5::uuid[]) FOR SHARE) src
        RETURNING id`,
-      [userId(req), target.regionCode, target.folderId, ids],
+      [userId(req), target.regionCode, target.folderId, target.cityFolderId, ids],
     );
     const base = publicBaseUrl(req);
     const created = rows.length
@@ -298,9 +324,10 @@ albumsRouter.delete(
         } else if (mode === 'move') {
           const target = await resolveTarget(client, parseTargetParam(req.query.target));
           if (target.folderId === id) throw new HttpError(400, '지우는 폴더로는 옮길 수 없어요');
-          await client.query('UPDATE photos SET region_code = $1, folder_id = $2 WHERE folder_id = $3', [
+          await client.query('UPDATE photos SET region_code = $1, folder_id = $2, city_folder_id = $3 WHERE folder_id = $4', [
             target.regionCode,
             target.folderId,
+            target.cityFolderId,
             id,
           ]);
         } else {

@@ -98,6 +98,8 @@ export interface Photo {
   albumRegionCode?: string;
   /** General album folder ("일반 앨범"); exclusive with albumRegionCode */
   folderId?: string;
+  /** City trip folder inside the region album; `albumRegionCode` stays set */
+  cityFolderId?: string;
   placeName?: string;
   originalUri: string;
   editedUri?: string;
@@ -124,22 +126,116 @@ export interface RegionAlbumSummary {
   coverPhotoUri?: string;
 }
 
+/** Per 시/군/구 totals of city trip folders; only cities with a folder are returned. */
+export interface CityAlbumSummary {
+  regionCode: string;
+  cityCode: string;
+  folderCount: number;
+  photoCount: number;
+}
+
 export interface AlbumSummary {
   regions: RegionAlbumSummary[];
   folders: AlbumFolder[];
+  cities: CityAlbumSummary[];
   /** Photos filed under neither a region nor a folder */
   unsortedCount: number;
   totalCount: number;
 }
 
+export type CityPinCategory = 'food' | 'cafe' | 'sight' | 'stay' | 'etc';
+
+/** One trip to one 시/군/구 ("세부 지역 폴더"), e.g. 강원 → 속초 · 2026.10. Shared by both partners. */
+export interface CityFolder {
+  id: string;
+  regionCode: string;
+  cityCode: string;
+  cityName: string;
+  /** Custom title; show `cityFolderTitle()` for the default */
+  title?: string;
+  /** YYYY-MM-DD */
+  startDate: string;
+  /** YYYY-MM-DD, for multi-day trips */
+  endDate?: string;
+  /** One line, up to 60 characters */
+  memo?: string;
+  coverPhotoId?: string;
+  /** Chosen cover, else the latest photo */
+  coverPhotoUri?: string;
+  photoCount: number;
+  pinCount: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CityFolderInput {
+  regionCode: string;
+  cityCode: string;
+  title?: string | null;
+  startDate: string;
+  endDate?: string | null;
+  memo?: string | null;
+}
+
+/** A place pinned on a city folder's street map ("세부장소 핀"). */
+export interface CityPin {
+  id: string;
+  folderId: string;
+  name: string;
+  memo?: string;
+  category: CityPinCategory;
+  lat: number;
+  lng: number;
+  address?: string;
+  kakaoPlaceId?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CityPinInput = Pick<CityPin, 'name' | 'category' | 'lat' | 'lng'> & {
+  memo?: string | null;
+  address?: string | null;
+  kakaoPlaceId?: string | null;
+};
+
+export interface CityFolderDetail {
+  folder: CityFolder;
+  pins: CityPin[];
+}
+
+/** kakao = Kakao Local (when the server has a key), osm = OpenStreetMap Nominatim */
+export type GeoSource = 'kakao' | 'osm';
+
+export interface GeoPlace {
+  id: string;
+  source: GeoSource;
+  name: string;
+  address?: string;
+  lat: number;
+  lng: number;
+  category: CityPinCategory;
+  /** Provider label, e.g. "카페" or "음식점 > 한식" */
+  categoryLabel?: string;
+  kakaoPlaceId?: string;
+}
+
+export interface GeoSearchResult {
+  items: GeoPlace[];
+  source: GeoSource;
+}
+
 export type AlbumTarget =
   | { kind: 'region'; regionCode: string }
   | { kind: 'folder'; folderId: string }
+  | { kind: 'city'; cityFolderId: string }
   | { kind: 'none' };
 
 export type AlbumScope =
   | { kind: 'region'; regionCode: string }
   | { kind: 'folder'; folderId: string }
+  | { kind: 'city'; cityFolderId: string }
   | { kind: 'unsorted' }
   | { kind: 'all' };
 
@@ -151,6 +247,9 @@ export interface PhotoPage {
 
 /** What to do with a folder's photos when the folder is deleted. */
 export type FolderDeleteMode = 'delete' | 'move';
+
+/** City folders: `keep` leaves the photos in the province album. */
+export type CityFolderDeleteMode = 'keep' | 'delete';
 
 export interface TripPlan {
   id: string;

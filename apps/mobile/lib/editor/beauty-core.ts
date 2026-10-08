@@ -269,9 +269,10 @@ vec3 lipBlush(vec3 c, vec3 c0, vec2 q, vec4 A, vec4 B, vec4 C, vec4 D, vec4 F, v
       float teeth = smoothstep(0.55, 0.75, luma(c0)) * (1.0 - smoothstep(0.08, 0.16, sat));
       float red = smoothstep(0.545, 0.585, cr) * smoothstep(0.08, 0.18, sat) * (1.0 - smoothstep(0.62, 0.8, luma(c0)));
       float lipness = mix(red, 1.0 - teeth, G.z);
-      vec3 colored = clamp(lipCol + (luma(c) - luma(lipCol)) * 0.9, 0.0, 1.0);
-      vec3 t = mix(colored, c * lipCol * 1.5, 0.3);
-      c = mix(c, t, clamp(zone * lipness * lipAmt * 1.1, 0.0, 1.0));
+      vec3 colored = clamp(lipCol + (luma(c) - luma(lipCol)), 0.0, 1.0);
+      vec3 t = mix(colored, c * lipCol * 1.35, 0.4);
+      t = mix(vec3(luma(t)), t, 0.85);
+      c = mix(c, t, clamp(zone * lipness * lipAmt * 0.7, 0.0, 0.7));
     }
   }
   return c;

@@ -70,6 +70,20 @@ const ITEMS: { key: ItemKey; label: string; icon: string; bipolar?: boolean }[] 
 ];
 const FACE_ITEMS: ItemKey[] = [...FACE_ONLY_BEAUTY, 'lip', 'blush'];
 
+/** Strength an item jumps to the first time it is picked; the camera opens with a gentle base. */
+const PICK_STRENGTH: Partial<Record<ItemKey, number>> = {
+  smooth: 0.65,
+  whiten: 0.45,
+  clarity: 0.4,
+  slim: 0.5,
+  jaw: 0.45,
+  eyes: 0.5,
+  nose: 0.4,
+  cheek: 0.35,
+  lip: 0.4,
+  blush: 0.4,
+};
+
 const NO_LOOK: CameraLook = { beauty: EMPTY_BEAUTY, lip: 0, blush: 0, filterId: null, filterIntensity: 0, effectId: null };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -215,6 +229,15 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
   const changeLook = (next: CameraLook, save = true) => {
     setLook(next);
     if (save) saveCameraLook(next);
+  };
+
+  const touched = useRef(new Set<ItemKey>());
+  const selectItem = (key: ItemKey) => {
+    setItem(key);
+    if (touched.current.has(key)) return;
+    touched.current.add(key);
+    const strong = PICK_STRENGTH[key];
+    if (strong !== undefined && itemValue(look, key) < strong) changeLook(withItem(look, key, strong));
   };
 
   const shoot = async () => {
@@ -373,14 +396,17 @@ export function BeautyCameraScreen({ onCapture, onClose }: Props) {
             value={itemValue(look, item)}
             bipolar={currentItem.bipolar}
             label={currentItem.label}
-            onChange={(v) => changeLook(withItem(look, item, v), false)}
+            onChange={(v) => {
+              touched.current.add(item);
+              changeLook(withItem(look, item, v), false);
+            }}
             onComplete={persist}
           />
           {faceHint ? <Text style={styles.panelHint}>{faceHint}</Text> : null}
           <ItemRow
             items={ITEMS.map((i) => ({ key: i.key, label: i.label, icon: i.icon, active: Math.abs(itemValue(look, i.key)) > 0.001 }))}
             selected={item}
-            onSelect={(k) => setItem(k as ItemKey)}
+            onSelect={(k) => selectItem(k as ItemKey)}
           />
         </View>
       );

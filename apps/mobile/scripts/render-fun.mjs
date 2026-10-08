@@ -89,6 +89,8 @@ const app = await bundle(
   export { faceUniforms, toGeom } from '@/lib/editor/faces';
   export { faceDebugPaths } from '@/lib/editor/face-debug';
   export { EMPTY_BEAUTY, createEditState } from '@/lib/editor/types';
+  export { presetLook } from '@/lib/editor/look';
+  export { MAKEUP_LOOKS, withMakeupLook } from '@/lib/editor/makeup-looks';
   export { AR_EFFECTS, STILL_TIME, applyArWarp, getArEffect, layoutArEffect, triggerLevel } from '@/lib/ar/effects';
   export { buildUniforms } from '@/lib/editor/shader';
   export { EDITOR_SHADER_SOURCE, MAX_FACES } from '@/lib/editor/shader-source';
@@ -335,6 +337,27 @@ if (want('lips')) {
     ],
     2,
     420,
+  );
+}
+
+// --- lip tint strength on the contour outline -----------------------------------------------------
+if (want('tint')) {
+  const view = { x: closedFace.mouth.x - closedFace.mouthHalfWidth * 1.7, w: closedFace.mouthHalfWidth * 3.4 };
+  view.h = view.w * 0.78;
+  view.y = closedFace.mouth.y - view.h * 0.5;
+  const looks = [
+    ['원본', NONE],
+    ['자동 (기본값)', app.presetLook('auto')],
+    ['립 40 (선택 시)', { ...NONE, lip: 0.4 }],
+    ['립 100', LIP],
+    ...app.MAKEUP_LOOKS.map((l) => [l.label, app.withMakeupLook(NONE, l.id)]),
+  ];
+  grid(
+    'lip-tint',
+    'Lip tint strength (contour outline, mouth close-up)',
+    looks.map(([label, look]) => ({ label, view, image: renderFrame({ image: closedImg, faces: [closedFace], look, time: 0, rect: view }) })),
+    4,
+    300,
   );
 }
 

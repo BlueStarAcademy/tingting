@@ -148,8 +148,8 @@ export const BEAUTY_PRESETS: { id: string; label: string; values: BeautyValues; 
   {
     id: 'auto',
     label: '자동',
-    values: beauty({ smooth: 0.65, whiten: 0.4, tone: 0.08, clarity: 0.1, slim: 0.45, jaw: 0.35, eyes: 0.35, nose: 0.25, cheek: 0.15 }),
-    makeup: { lip: 0.3, blush: 0.25 },
+    values: beauty({ smooth: 0.3, whiten: 0.15, tone: 0.03, clarity: 0.05, slim: 0.12, jaw: 0.08, eyes: 0.1, nose: 0.05, cheek: 0.04 }),
+    makeup: { lip: 0.08, blush: 0.08 },
   },
   { id: 'natural', label: '내추럴', values: beauty({ smooth: 0.45, whiten: 0.22, clarity: 0.15, slim: 0.25, jaw: 0.18, eyes: 0.18, nose: 0.12, cheek: 0.08 }) },
   {
@@ -172,9 +172,6 @@ export const BEAUTY_PRESETS: { id: string; label: string; values: BeautyValues; 
   },
   { id: 'boy', label: '남친', values: beauty({ smooth: 0.35, whiten: 0.05, tone: 0.15, clarity: 0.5, slim: 0.25, jaw: 0.35, eyes: 0.08, nose: 0.15, cheek: 0.15 }) },
 ];
-
-/** Earlier `auto` values; a saved camera look that still holds them is moved to the current `auto`. */
-export const LEGACY_AUTO_BEAUTY: BeautyValues = beauty({ smooth: 0.55, whiten: 0.3, tone: 0.1, slim: 0.25, jaw: 0.2, eyes: 0.22, nose: 0.15, cheek: 0.1 });
 
 export const AUTO_PRESET_ID = 'auto';
 

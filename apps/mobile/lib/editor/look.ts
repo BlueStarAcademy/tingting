@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getArEffect } from '@/lib/ar/effects';
 import { getFilter } from './color';
-import { AUTO_PRESET_ID, BEAUTY_PRESETS, EMPTY_BEAUTY, LEGACY_AUTO_BEAUTY, type BeautyKey, type BeautyValues } from './types';
+import { AUTO_PRESET_ID, BEAUTY_PRESETS, EMPTY_BEAUTY, type BeautyKey, type BeautyValues } from './types';
 
 /** Everything the beauty camera hands to the editor so the result matches the live preview. */
 export type CameraLook = {
@@ -96,16 +96,11 @@ export function decodeLook(raw: string | null | undefined): CameraLook | null {
 
 const STORAGE_KEY = 'tingting.cameraLook.v1';
 
-const isLegacyAuto = (look: CameraLook) =>
-  (Object.keys(EMPTY_BEAUTY) as BeautyKey[]).every((k) => Math.abs(LEGACY_AUTO_BEAUTY[k] - look.beauty[k]) < 0.005) &&
-  Math.abs(look.lip - 0.2) < 0.005 &&
-  Math.abs(look.blush - 0.15) < 0.005;
-
+/** The camera always opens with the gentle `auto` beauty; only the filter and AR effect carry over. */
 export async function loadCameraLook(): Promise<CameraLook> {
   try {
     const saved = decodeLook(await AsyncStorage.getItem(STORAGE_KEY));
-    if (!saved) return DEFAULT_CAMERA_LOOK;
-    return isLegacyAuto(saved) ? { ...saved, ...presetLook(AUTO_PRESET_ID, saved) } : saved;
+    return saved ? presetLook(AUTO_PRESET_ID, saved) : DEFAULT_CAMERA_LOOK;
   } catch {
     return DEFAULT_CAMERA_LOOK;
   }
